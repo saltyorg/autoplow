@@ -34,7 +34,7 @@ export CGO_ENABLED=0
 all: test build
 
 ## build: Build the autoplow binary (includes CSS)
-build: css build-go
+build: check css build-go
 
 ## build-go: Build the autoplow binary (without CSS, for CI)
 build-go:
@@ -106,12 +106,10 @@ vet:
 
 ## lint: Run golangci-lint (requires golangci-lint to be installed)
 lint:
-	@echo "Running golangci-lint..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
-	else \
-		echo "golangci-lint not installed. Install with: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin"; \
-	fi
+	@echo "$(GREEN)Running golangci-lint (latest version)...$(NC)"
+	@go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run ./...
+
+check: fmt vet lint
 
 ## run: Run autoplow with default settings (port 8080)
 run:
