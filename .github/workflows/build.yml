@@ -1,0 +1,173 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: 'autoplow'
+  GITHUB_REPO: 'github.com/saltyorg/autoplow'
+
+jobs:
+  build:
+    name: Build (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Get Git Commit SHA
+        id: get_git_commit
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Determine Version
+        id: determine_version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.determine_version.outputs.version }}
+          GIT_COMMIT: ${{ steps.get_git_commit.outputs.short_sha }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: make build
+
+      - name: Rename Binary for Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mv build/${{ env.APP_NAME }} build/${{ env.APP_NAME }}_${{ matrix.goos }}_${{ matrix.goarch }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: build/${{ env.APP_NAME }}*
+
+  release:
+    name: Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          echo "## What's Changed" > release_notes.md
+          echo "" >> release_notes.md
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "### Commits since $PREVIOUS_TAG:" >> release_notes.md
+            echo "" >> release_notes.md
+            git log --pretty=format:"- %s (%h)" "$PREVIOUS_TAG"..HEAD >> release_notes.md
+          else
+            echo "### Commits in this release:" >> release_notes.md
+            echo "" >> release_notes.md
+            git log --pretty=format:"- %s (%h)" >> release_notes.md
+          fi
+
+          echo "" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Full Changelog**: https://github.com/saltyorg/autoplow/compare/$PREVIOUS_TAG...${{ github.ref_name }}" >> release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          body_path: release_notes.md
+          prerelease: false
+          files: |
+            artifacts/${{ env.APP_NAME }}_linux_amd64
+            artifacts/${{ env.APP_NAME }}_linux_arm64
+
+      # - name: Notify Discord
+      #   env:
+      #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      #   run: |
+      #     if [ -n "$DISCORD_WEBHOOK" ]; then
+      #       RELEASE_NOTES=$(cat release_notes.md)
+
+      #       if [ ${#RELEASE_NOTES} -gt 1800 ]; then
+      #         RELEASE_NOTES="${RELEASE_NOTES:0:1800}..."
+      #       fi
+
+      #       cat > discord_payload.json << EOF
+      #     {
+      #       "username": "GitHub",
+      #       "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+      #       "embeds": [
+      #         {
+      #           "title": "🚀 New Release: ${{ github.ref_name }}",
+      #           "description": "$(echo "$RELEASE_NOTES" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')",
+      #           "color": 5814783,
+      #           "url": "https://github.com/saltyorg/autoplow/releases/tag/${{ github.ref_name }}",
+      #           "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+      #           "footer": {
+      #             "text": "autoplow",
+      #             "icon_url": "https://github.com/saltyorg.png"
+      #           },
+      #           "fields": [
+      #             {
+      #               "name": "📥 Download (amd64)",
+      #               "value": "[autoplow_linux_amd64](https://github.com/saltyorg/autoplow/releases/download/${{ github.ref_name }}/autoplow_linux_amd64)",
+      #               "inline": true
+      #             },
+      #             {
+      #               "name": "📥 Download (arm64)",
+      #               "value": "[autoplow_linux_arm64](https://github.com/saltyorg/autoplow/releases/download/${{ github.ref_name }}/autoplow_linux_arm64)",
+      #               "inline": true
+      #             }
+      #           ]
+      #         }
+      #       ]
+      #     }
+      #     EOF
+
+      #       curl -X POST "$DISCORD_WEBHOOK" \
+      #         -H "Content-Type: application/json" \
+      #         -d @discord_payload.json
+      #     fi
