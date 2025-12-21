@@ -26,7 +26,7 @@ BUILD_TIME?=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Build flags
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(GIT_COMMIT) -X main.date=$(BUILD_TIME)"
-BUILD_FLAGS=CGO_ENABLED=1 $(GOBUILD) $(LDFLAGS)
+BUILD_FLAGS=CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS)
 
 .PHONY: all build clean test test-short test-coverage deps update tidy modernize fmt vet lint help run dev version css
 
