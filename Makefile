@@ -34,7 +34,10 @@ BUILD_FLAGS=CGO_ENABLED=1 $(GOBUILD) $(LDFLAGS)
 all: test build
 
 ## build: Build the autoplow binary (includes CSS)
-build: css
+build: css build-go
+
+## build-go: Build the autoplow binary (without CSS, for CI)
+build-go:
 	@echo "$(GREEN)Building $(BINARY_NAME)...$(NC)"
 	@echo "Version: $(VERSION)"
 	@echo "Commit: $(GIT_COMMIT)"
@@ -125,7 +128,7 @@ dev:
 ## css: Build Tailwind CSS (uses Docker)
 css:
 	@echo "$(GREEN)Building Tailwind CSS...$(NC)"
-	docker run --rm -v $(CURDIR):/app -w /app/frontend $(NODE_IMAGE) npm run build
+	docker run --rm -v $(CURDIR):/app -w /app/frontend $(NODE_IMAGE) sh -c "npm ci && npm run build"
 
 ## css-watch: Watch and rebuild Tailwind CSS on changes (uses Docker)
 css-watch:
