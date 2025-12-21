@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/saltyorg/autoplow/internal/throttle"
 )
 
@@ -118,7 +119,7 @@ func (h *Handlers) SettingsThrottleUpdate(w http.ResponseWriter, r *http.Request
 // SettingsThrottleStatus returns current throttle status (for HTMX polling)
 func (h *Handlers) SettingsThrottleStatus(w http.ResponseWriter, r *http.Request) {
 	if h.throttleMgr == nil {
-		w.Write([]byte(`<span class="text-gray-500">Not initialized</span>`))
+		_, _ = w.Write([]byte(`<span class="text-gray-500">Not initialized</span>`))
 		return
 	}
 
@@ -137,18 +138,7 @@ func (h *Handlers) SettingsThrottleStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(`<span class="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium ` + statusClass + `">` + statusText + `</span>`))
-}
-
-// formatBandwidth converts bytes/sec to human-readable format using binary units (1024-based)
-func formatBandwidth(bytesPerSec int64) string {
-	return formatBandwidthWithUnits(bytesPerSec, true)
-}
-
-// formatBandwidthWithUnits converts bytes/sec to human-readable format
-// useBinary: true = MiB/s (1024), false = MB/s (1000)
-func formatBandwidthWithUnits(bytesPerSec int64, useBinary bool) string {
-	return formatBandwidthWithOptions(bytesPerSec, useBinary, false)
+	_, _ = w.Write([]byte(`<span class="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium ` + statusClass + `">` + statusText + `</span>`))
 }
 
 // formatBandwidthWithOptions converts bytes/sec to human-readable format
@@ -334,10 +324,22 @@ func (h *Handlers) loadThrottleConfigFromDB() throttle.Config {
 
 // saveThrottleConfigToDB saves throttle configuration to the database
 func (h *Handlers) saveThrottleConfigToDB(config throttle.Config) {
-	h.db.SetSetting(throttleEnabledKey, strconv.FormatBool(config.Enabled))
-	h.db.SetSetting(throttleMaxBandwidthKey, strconv.FormatInt(config.MaxBandwidth, 10))
-	h.db.SetSetting(throttleStreamBandwidthKey, strconv.FormatInt(config.StreamBandwidth, 10))
-	h.db.SetSetting(throttleMinBandwidthKey, strconv.FormatInt(config.MinBandwidth, 10))
-	h.db.SetSetting(throttleSkipUploadsBelowKey, strconv.FormatInt(config.SkipUploadsBelow, 10))
-	h.db.SetSetting(throttlePollIntervalKey, strconv.Itoa(int(config.PollInterval.Seconds())))
+	if err := h.db.SetSetting(throttleEnabledKey, strconv.FormatBool(config.Enabled)); err != nil {
+		log.Error().Err(err).Str("key", throttleEnabledKey).Msg("Failed to save throttle setting")
+	}
+	if err := h.db.SetSetting(throttleMaxBandwidthKey, strconv.FormatInt(config.MaxBandwidth, 10)); err != nil {
+		log.Error().Err(err).Str("key", throttleMaxBandwidthKey).Msg("Failed to save throttle setting")
+	}
+	if err := h.db.SetSetting(throttleStreamBandwidthKey, strconv.FormatInt(config.StreamBandwidth, 10)); err != nil {
+		log.Error().Err(err).Str("key", throttleStreamBandwidthKey).Msg("Failed to save throttle setting")
+	}
+	if err := h.db.SetSetting(throttleMinBandwidthKey, strconv.FormatInt(config.MinBandwidth, 10)); err != nil {
+		log.Error().Err(err).Str("key", throttleMinBandwidthKey).Msg("Failed to save throttle setting")
+	}
+	if err := h.db.SetSetting(throttleSkipUploadsBelowKey, strconv.FormatInt(config.SkipUploadsBelow, 10)); err != nil {
+		log.Error().Err(err).Str("key", throttleSkipUploadsBelowKey).Msg("Failed to save throttle setting")
+	}
+	if err := h.db.SetSetting(throttlePollIntervalKey, strconv.Itoa(int(config.PollInterval.Seconds()))); err != nil {
+		log.Error().Err(err).Str("key", throttlePollIntervalKey).Msg("Failed to save throttle setting")
+	}
 }

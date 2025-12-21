@@ -134,9 +134,9 @@ func (h *Handlers) LogsPage(w http.ResponseWriter, r *http.Request) {
 
 	// Get counts
 	var scanCount, uploadCount, notificationCount int
-	h.db.QueryRow("SELECT COUNT(*) FROM scans").Scan(&scanCount)
-	h.db.QueryRow("SELECT COUNT(*) FROM uploads").Scan(&uploadCount)
-	h.db.QueryRow("SELECT COUNT(*) FROM notification_log").Scan(&notificationCount)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans").Scan(&scanCount)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads").Scan(&uploadCount)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM notification_log").Scan(&notificationCount)
 
 	totalCount := scanCount + uploadCount + notificationCount
 	totalPages := max((totalCount+limit-1)/limit, 1)

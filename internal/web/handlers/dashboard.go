@@ -97,22 +97,22 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data.Stats.UploadsEnabled = uploadsEnabled
 
 	// Scan stats (only if enabled)
-	h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&data.Stats.PendingScans)
-	h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&data.Stats.ActiveScans)
-	h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&data.Stats.CompletedScans)
-	h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&data.Stats.FailedScans)
-	h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE date(created_at) = date('now')`).Scan(&data.Stats.TotalScansToday)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&data.Stats.PendingScans)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&data.Stats.ActiveScans)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&data.Stats.CompletedScans)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&data.Stats.FailedScans)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE date(created_at) = date('now')`).Scan(&data.Stats.TotalScansToday)
 
 	// Upload stats (only if enabled)
 	if uploadsEnabled {
-		h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&data.Stats.ActiveUploads)
-		h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&data.Stats.QueuedUploads)
-		h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&data.Stats.CompletedUploads)
-		h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&data.Stats.FailedUploads)
+		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&data.Stats.ActiveUploads)
+		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&data.Stats.QueuedUploads)
+		_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&data.Stats.CompletedUploads)
+		_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&data.Stats.FailedUploads)
 	}
 
 	// Get active sessions count
-	h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&data.Stats.ActiveSessions)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&data.Stats.ActiveSessions)
 
 	// Get recent scans
 	rows, err := h.db.Query(`
@@ -227,11 +227,11 @@ func (h *Handlers) DashboardStatsPartial(w http.ResponseWriter, r *http.Request)
 	stats := DashboardStats{}
 
 	// Scan stats
-	h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&stats.PendingScans)
-	h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&stats.ActiveScans)
-	h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&stats.CompletedScans)
-	h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&stats.FailedScans)
-	h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&stats.ActiveSessions)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&stats.PendingScans)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&stats.ActiveScans)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&stats.CompletedScans)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&stats.FailedScans)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&stats.ActiveSessions)
 
 	h.renderPartial(w, "dashboard.html", "scan_stats", stats)
 }
@@ -240,11 +240,11 @@ func (h *Handlers) DashboardStatsPartial(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) DashboardUploadStatsPartial(w http.ResponseWriter, r *http.Request) {
 	stats := DashboardStats{}
 
-	h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&stats.ActiveUploads)
-	h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&stats.QueuedUploads)
-	h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&stats.CompletedUploads)
-	h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&stats.FailedUploads)
-	h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&stats.ActiveSessions)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&stats.ActiveUploads)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&stats.QueuedUploads)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&stats.CompletedUploads)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&stats.FailedUploads)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&stats.ActiveSessions)
 
 	h.renderPartial(w, "dashboard.html", "upload_stats", stats)
 }
@@ -336,7 +336,7 @@ func (h *Handlers) DashboardSessionsPartial(w http.ResponseWriter, r *http.Reque
 func (h *Handlers) DashboardThrottleStatusPartial(w http.ResponseWriter, r *http.Request) {
 	if h.throttleMgr == nil {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-sm text-gray-500 dark:text-gray-400">Throttle not initialized</div>`))
+		_, _ = w.Write([]byte(`<div class="text-sm text-gray-500 dark:text-gray-400">Throttle not initialized</div>`))
 		return
 	}
 
@@ -376,17 +376,6 @@ func (h *Handlers) DashboardThrottleStatusPartial(w http.ResponseWriter, r *http
 	}
 
 	h.renderPartial(w, "dashboard.html", "throttle_status", data)
-}
-
-// formatBitrate converts bits per second to human-readable format (default: Mbps)
-func formatBitrate(bps int64) string {
-	return formatBitrateWithOptions(bps, true, true)
-}
-
-// formatBitrateWithUnits converts bits per second to human-readable format
-// useBinary: true = MiB/s (1024), false = MB/s (1000)
-func formatBitrateWithUnits(bps int64, useBinary bool) string {
-	return formatBitrateWithOptions(bps, useBinary, false)
 }
 
 // formatBitrateWithOptions converts bits per second to human-readable format

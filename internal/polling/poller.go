@@ -351,7 +351,7 @@ func (p *Poller) trackFilesOnly(tp *triggerPoll) {
 			continue
 		}
 
-		filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+		if err := filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return nil
 			}
@@ -361,7 +361,9 @@ func (p *Poller) trackFilesOnly(tp *triggerPoll) {
 			tp.seenMu.Unlock()
 
 			return nil
-		})
+		}); err != nil {
+			log.Error().Err(err).Str("path", absPath).Msg("Failed to walk directory for initial scan")
+		}
 	}
 	tp.firstScan = false
 }

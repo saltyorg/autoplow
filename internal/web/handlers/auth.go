@@ -86,7 +86,9 @@ func (h *Handlers) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 // Logout handles user logout
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("session"); err == nil {
-		h.authService.DeleteSession(cookie.Value)
+		if err := h.authService.DeleteSession(cookie.Value); err != nil {
+			log.Debug().Err(err).Msg("Failed to delete session during logout")
+		}
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -232,7 +234,7 @@ func (h *Handlers) ProfileUpdateUsername(w http.ResponseWriter, r *http.Request)
 	log.Info().Str("old_username", user.Username).Str("new_username", newUsername).Msg("Username updated")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success":  true,
 		"message":  "Username updated successfully",
 		"username": newUsername,

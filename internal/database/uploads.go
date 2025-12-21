@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // UploadMode represents the upload triggering mode
@@ -261,7 +263,7 @@ type UploadHistory struct {
 // CreateRemote creates a new remote
 func (db *DB) CreateRemote(remote *Remote) error {
 	var optionsJSON *string
-	if remote.TransferOptions != nil && len(remote.TransferOptions) > 0 {
+	if len(remote.TransferOptions) > 0 {
 		data, err := json.Marshal(remote.TransferOptions)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transfer options: %w", err)
@@ -332,7 +334,9 @@ func (db *DB) ListRemotes() ([]*Remote, error) {
 			return nil, fmt.Errorf("failed to scan remote: %w", err)
 		}
 		if optionsJSON.Valid && optionsJSON.String != "" {
-			json.Unmarshal([]byte(optionsJSON.String), &remote.TransferOptions)
+			if err := json.Unmarshal([]byte(optionsJSON.String), &remote.TransferOptions); err != nil {
+				log.Warn().Err(err).Int64("remote_id", remote.ID).Msg("Failed to unmarshal remote transfer options")
+			}
 		}
 		remotes = append(remotes, remote)
 	}
@@ -359,7 +363,9 @@ func (db *DB) ListEnabledRemotes() ([]*Remote, error) {
 			return nil, fmt.Errorf("failed to scan remote: %w", err)
 		}
 		if optionsJSON.Valid && optionsJSON.String != "" {
-			json.Unmarshal([]byte(optionsJSON.String), &remote.TransferOptions)
+			if err := json.Unmarshal([]byte(optionsJSON.String), &remote.TransferOptions); err != nil {
+				log.Warn().Err(err).Int64("remote_id", remote.ID).Msg("Failed to unmarshal remote transfer options")
+			}
 		}
 		remotes = append(remotes, remote)
 	}
@@ -370,7 +376,7 @@ func (db *DB) ListEnabledRemotes() ([]*Remote, error) {
 // UpdateRemote updates an existing remote
 func (db *DB) UpdateRemote(remote *Remote) error {
 	var optionsJSON *string
-	if remote.TransferOptions != nil && len(remote.TransferOptions) > 0 {
+	if len(remote.TransferOptions) > 0 {
 		data, err := json.Marshal(remote.TransferOptions)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transfer options: %w", err)
@@ -511,17 +517,25 @@ func (db *DB) GetDestination(id int64) (*Destination, error) {
 
 	// Unmarshal JSON arrays
 	if excludePathsJSON.Valid && excludePathsJSON.String != "" {
-		json.Unmarshal([]byte(excludePathsJSON.String), &dest.ExcludePaths)
+		if err := json.Unmarshal([]byte(excludePathsJSON.String), &dest.ExcludePaths); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude paths")
+		}
 	}
 	if excludeExtensionsJSON.Valid && excludeExtensionsJSON.String != "" {
-		json.Unmarshal([]byte(excludeExtensionsJSON.String), &dest.ExcludeExtensions)
+		if err := json.Unmarshal([]byte(excludeExtensionsJSON.String), &dest.ExcludeExtensions); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude extensions")
+		}
 	}
 	if includedTriggersJSON.Valid && includedTriggersJSON.String != "" {
-		json.Unmarshal([]byte(includedTriggersJSON.String), &dest.IncludedTriggers)
+		if err := json.Unmarshal([]byte(includedTriggersJSON.String), &dest.IncludedTriggers); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination included triggers")
+		}
 	}
 	if advancedFiltersJSON.Valid && advancedFiltersJSON.String != "" {
 		dest.AdvancedFilters = &DestinationAdvancedFilters{}
-		json.Unmarshal([]byte(advancedFiltersJSON.String), dest.AdvancedFilters)
+		if err := json.Unmarshal([]byte(advancedFiltersJSON.String), dest.AdvancedFilters); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination advanced filters")
+		}
 	}
 
 	// Compile advanced filters
@@ -575,17 +589,25 @@ func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
 
 		// Unmarshal JSON arrays
 		if excludePathsJSON.Valid && excludePathsJSON.String != "" {
-			json.Unmarshal([]byte(excludePathsJSON.String), &dest.ExcludePaths)
+			if err := json.Unmarshal([]byte(excludePathsJSON.String), &dest.ExcludePaths); err != nil {
+				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude paths")
+			}
 		}
 		if excludeExtensionsJSON.Valid && excludeExtensionsJSON.String != "" {
-			json.Unmarshal([]byte(excludeExtensionsJSON.String), &dest.ExcludeExtensions)
+			if err := json.Unmarshal([]byte(excludeExtensionsJSON.String), &dest.ExcludeExtensions); err != nil {
+				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude extensions")
+			}
 		}
 		if includedTriggersJSON.Valid && includedTriggersJSON.String != "" {
-			json.Unmarshal([]byte(includedTriggersJSON.String), &dest.IncludedTriggers)
+			if err := json.Unmarshal([]byte(includedTriggersJSON.String), &dest.IncludedTriggers); err != nil {
+				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination included triggers")
+			}
 		}
 		if advancedFiltersJSON.Valid && advancedFiltersJSON.String != "" {
 			dest.AdvancedFilters = &DestinationAdvancedFilters{}
-			json.Unmarshal([]byte(advancedFiltersJSON.String), dest.AdvancedFilters)
+			if err := json.Unmarshal([]byte(advancedFiltersJSON.String), dest.AdvancedFilters); err != nil {
+				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination advanced filters")
+			}
 		}
 
 		// Check if localPath starts with this destination
@@ -632,17 +654,25 @@ func (db *DB) scanDestination(scanner interface {
 
 	// Unmarshal JSON arrays
 	if excludePathsJSON.Valid && excludePathsJSON.String != "" {
-		json.Unmarshal([]byte(excludePathsJSON.String), &d.ExcludePaths)
+		if err := json.Unmarshal([]byte(excludePathsJSON.String), &d.ExcludePaths); err != nil {
+			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination exclude paths")
+		}
 	}
 	if excludeExtensionsJSON.Valid && excludeExtensionsJSON.String != "" {
-		json.Unmarshal([]byte(excludeExtensionsJSON.String), &d.ExcludeExtensions)
+		if err := json.Unmarshal([]byte(excludeExtensionsJSON.String), &d.ExcludeExtensions); err != nil {
+			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination exclude extensions")
+		}
 	}
 	if includedTriggersJSON.Valid && includedTriggersJSON.String != "" {
-		json.Unmarshal([]byte(includedTriggersJSON.String), &d.IncludedTriggers)
+		if err := json.Unmarshal([]byte(includedTriggersJSON.String), &d.IncludedTriggers); err != nil {
+			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination included triggers")
+		}
 	}
 	if advancedFiltersJSON.Valid && advancedFiltersJSON.String != "" {
 		d.AdvancedFilters = &DestinationAdvancedFilters{}
-		json.Unmarshal([]byte(advancedFiltersJSON.String), d.AdvancedFilters)
+		if err := json.Unmarshal([]byte(advancedFiltersJSON.String), d.AdvancedFilters); err != nil {
+			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination advanced filters")
+		}
 	}
 
 	// Compile advanced filters
@@ -665,17 +695,17 @@ func (db *DB) ListDestinations() ([]*Destination, error) {
 	}
 	defer rows.Close()
 
-	var dests []*Destination
+	var destinations []*Destination
 	for rows.Next() {
 		dest, err := db.scanDestination(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan destination: %w", err)
 		}
-		dests = append(dests, dest)
+		destinations = append(destinations, dest)
 	}
 
 	// Load remotes for each destination
-	for _, dest := range dests {
+	for _, dest := range destinations {
 		remotes, err := db.GetDestinationRemotes(dest.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get destination remotes: %w", err)
@@ -683,7 +713,7 @@ func (db *DB) ListDestinations() ([]*Destination, error) {
 		dest.Remotes = remotes
 	}
 
-	return dests, nil
+	return destinations, nil
 }
 
 // ListEnabledDestinations retrieves all enabled destinations

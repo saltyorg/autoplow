@@ -610,13 +610,6 @@ func (m *Manager) processBatch() {
 	m.startBatch(uploads)
 }
 
-// hasBatchRunning checks if there's an active batch job
-func (m *Manager) hasBatchRunning() bool {
-	m.activeBatchMu.RLock()
-	defer m.activeBatchMu.RUnlock()
-	return m.activeBatch != nil
-}
-
 // checkPendingUploads checks pending uploads for readiness
 func (m *Manager) checkPendingUploads() {
 	uploads, err := m.db.ListPendingUploads()
@@ -686,7 +679,9 @@ func (m *Manager) checkUploadReadiness(upload *database.Upload) bool {
 func (m *Manager) startBatch(uploads []*database.Upload) {
 	// Clear any stale stats from previous batch (important when rclone persists between app restarts)
 	cleanupCtx, cleanupCancel := context.WithTimeout(m.ctx, 5*time.Second)
-	_ = m.rcloneMgr.Client().StatsDelete(cleanupCtx, "autoplow")
+	if err := m.rcloneMgr.Client().StatsDelete(cleanupCtx, "autoplow"); err != nil {
+		log.Debug().Err(err).Msg("Failed to clear stale rclone stats (may not exist)")
+	}
 	cleanupCancel()
 
 	// Limit batch size to MaxBatchSize (matches rclone's core/transferred ring buffer)

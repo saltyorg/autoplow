@@ -136,7 +136,9 @@ func (h *Handlers) RetryScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clear the error
-	_ = h.db.UpdateScanError(id, "")
+	if err := h.db.UpdateScanError(id, ""); err != nil {
+		log.Warn().Err(err).Int64("id", id).Msg("Failed to clear scan error during retry")
+	}
 
 	h.flash(w, "Scan queued for retry")
 	h.redirect(w, r, "/history/scans")
@@ -209,47 +211,4 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 		"PrevPage":     page - 1,
 		"NextPage":     page + 1,
 	})
-}
-
-// formatDuration formats seconds into a human readable duration
-func formatDuration(seconds int) string {
-	if seconds < 60 {
-		return strconv.Itoa(seconds) + "s"
-	}
-	if seconds < 3600 {
-		return strconv.Itoa(seconds/60) + "m " + strconv.Itoa(seconds%60) + "s"
-	}
-	hours := seconds / 3600
-	minutes := (seconds % 3600) / 60
-	return strconv.Itoa(hours) + "h " + strconv.Itoa(minutes) + "m"
-}
-
-// formatSpeed formats bytes/s into a human readable speed (binary units)
-func formatSpeed(bytesPerSec int64) string {
-	return formatSpeedWithUnits(bytesPerSec, true)
-}
-
-// formatSpeedWithUnits formats bytes/s into a human readable speed
-// useBinary: true = MiB/s (1024), false = MB/s (1000)
-func formatSpeedWithUnits(bytesPerSec int64, useBinary bool) string {
-	var unit int64
-	var units []string
-	if useBinary {
-		unit = 1024
-		units = []string{"KiB/s", "MiB/s", "GiB/s", "TiB/s"}
-	} else {
-		unit = 1000
-		units = []string{"KB/s", "MB/s", "GB/s", "TB/s"}
-	}
-
-	if bytesPerSec < unit {
-		return strconv.FormatInt(bytesPerSec, 10) + " B/s"
-	}
-	div, exp := unit, 0
-	for n := bytesPerSec / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	val := float64(bytesPerSec) / float64(div)
-	return strconv.FormatFloat(val, 'f', 1, 64) + " " + units[exp]
 }

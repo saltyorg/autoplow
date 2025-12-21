@@ -200,7 +200,7 @@ func (h *Handlers) UploadProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(progress)
+	_ = json.NewEncoder(w).Encode(progress)
 }
 
 // UploadStats returns current upload statistics
@@ -226,7 +226,7 @@ func (h *Handlers) UploadStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	_ = json.NewEncoder(w).Encode(stats)
 }
 
 // UploadQueueStatsPartial returns the upload queue stats partial
@@ -285,7 +285,7 @@ func (h *Handlers) UploadPauseBtn(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
 	if h.uploadMgr == nil {
-		w.Write([]byte(`<button type="button" disabled class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 cursor-not-allowed">Not Available</button>`))
+		_, _ = w.Write([]byte(`<button type="button" disabled class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 cursor-not-allowed">Not Available</button>`))
 		return
 	}
 
@@ -296,13 +296,13 @@ func (h *Handlers) UploadPauseBtn(w http.ResponseWriter, r *http.Request) {
 
 	if h.uploadMgr.IsPaused() {
 		// Show Resume button
-		w.Write([]byte(`<button hx-post="/uploads/resume" hx-swap="none" hx-on::after-request="htmx.trigger('#upload-pause-controls', 'sse-refresh'); htmx.trigger('#upload-status-banner', 'sse-refresh')" class="inline-flex items-center px-3 py-2 border border-green-300 dark:border-green-600 shadow-sm text-sm leading-4 font-medium rounded-md text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50">
+		_, _ = w.Write([]byte(`<button hx-post="/uploads/resume" hx-swap="none" hx-on::after-request="htmx.trigger('#upload-pause-controls', 'sse-refresh'); htmx.trigger('#upload-status-banner', 'sse-refresh')" class="inline-flex items-center px-3 py-2 border border-green-300 dark:border-green-600 shadow-sm text-sm leading-4 font-medium rounded-md text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50">
 			<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
 			Resume
 		</button>`))
 	} else {
 		// Show Pause button
-		w.Write([]byte(`<button hx-post="/uploads/pause" hx-swap="none" hx-on::after-request="htmx.trigger('#upload-pause-controls', 'sse-refresh'); htmx.trigger('#upload-status-banner', 'sse-refresh')" class="inline-flex items-center px-3 py-2 border border-yellow-300 dark:border-yellow-600 shadow-sm text-sm leading-4 font-medium rounded-md text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 hover:bg-yellow-100 dark:hover:bg-yellow-900/50">
+		_, _ = w.Write([]byte(`<button hx-post="/uploads/pause" hx-swap="none" hx-on::after-request="htmx.trigger('#upload-pause-controls', 'sse-refresh'); htmx.trigger('#upload-status-banner', 'sse-refresh')" class="inline-flex items-center px-3 py-2 border border-yellow-300 dark:border-yellow-600 shadow-sm text-sm leading-4 font-medium rounded-md text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 hover:bg-yellow-100 dark:hover:bg-yellow-900/50">
 			<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
 			Pause
 		</button>`))
@@ -322,14 +322,14 @@ func (h *Handlers) UploadStatusBanner(w http.ResponseWriter, r *http.Request) {
 		if dbErr := h.uploadMgr.GetDatabaseError(); dbErr != nil {
 			errMsg = dbErr.Error()
 		}
-		w.Write([]byte(`<div class="mt-3 p-3 rounded-md bg-red-50 dark:bg-red-900/30">
+		_, _ = w.Write([]byte(`<div class="mt-3 p-3 rounded-md bg-red-50 dark:bg-red-900/30">
 			<p class="text-sm font-medium text-red-800 dark:text-red-200">Database Error: ` + errMsg + `. Application restart required.</p>
 		</div>`))
 		return
 	}
 
 	if h.uploadMgr.IsPaused() {
-		w.Write([]byte(`<div class="mt-3 p-3 rounded-md bg-yellow-50 dark:bg-yellow-900/30">
+		_, _ = w.Write([]byte(`<div class="mt-3 p-3 rounded-md bg-yellow-50 dark:bg-yellow-900/30">
 			<p class="text-sm font-medium text-yellow-800 dark:text-yellow-200">Upload manager is paused. New uploads will not start until resumed.</p>
 		</div>`))
 		return

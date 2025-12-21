@@ -88,12 +88,31 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save to database
-	h.db.SetSetting("processor.max_retries", strconv.Itoa(maxRetries))
-	h.db.SetSetting("processor.cleanup_days", strconv.Itoa(cleanupDays))
-	h.db.SetSetting("scanning.enabled", strconv.FormatBool(scanningEnabled))
-	h.db.SetSetting("uploads.enabled", strconv.FormatBool(uploadsEnabled))
-	h.db.SetSetting("display.use_binary_units", strconv.FormatBool(useBinaryUnits))
-	h.db.SetSetting("display.use_bits_for_bitrate", strconv.FormatBool(useBitsForBitrate))
+	var saveErr error
+	if err := h.db.SetSetting("processor.max_retries", strconv.Itoa(maxRetries)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("processor.cleanup_days", strconv.Itoa(cleanupDays)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("scanning.enabled", strconv.FormatBool(scanningEnabled)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("uploads.enabled", strconv.FormatBool(uploadsEnabled)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("display.use_binary_units", strconv.FormatBool(useBinaryUnits)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("display.use_bits_for_bitrate", strconv.FormatBool(useBitsForBitrate)); err != nil {
+		saveErr = err
+	}
+
+	if saveErr != nil {
+		h.flashErr(w, "Failed to save some settings")
+		h.redirect(w, r, "/settings")
+		return
+	}
 
 	h.flash(w, "Settings saved")
 	h.redirect(w, r, "/settings")

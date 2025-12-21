@@ -168,7 +168,9 @@ func (w *Watcher) addTriggerLocked(trigger *database.Trigger) error {
 	// Remove existing watches for this trigger if any
 	if existing, ok := w.triggers[trigger.ID]; ok {
 		for _, path := range existing.paths {
-			w.watcher.Remove(path)
+			if err := w.watcher.Remove(path); err != nil {
+				log.Debug().Err(err).Str("path", path).Msg("Failed to remove existing watch (may not exist)")
+			}
 		}
 	}
 
@@ -207,7 +209,9 @@ func (w *Watcher) RemoveTrigger(triggerID int64) {
 
 	if tw, ok := w.triggers[triggerID]; ok {
 		for _, path := range tw.paths {
-			w.watcher.Remove(path)
+			if err := w.watcher.Remove(path); err != nil {
+				log.Debug().Err(err).Str("path", path).Msg("Failed to remove watch during trigger removal")
+			}
 		}
 		delete(w.triggers, triggerID)
 		removed = true
@@ -427,7 +431,7 @@ func (w *Watcher) ScanExistingFiles() {
 	for _, tw := range triggers {
 		triggerID := tw.trigger.ID
 		for _, watchPath := range tw.paths {
-			filepath.WalkDir(watchPath, func(path string, d fs.DirEntry, err error) error {
+			if err := filepath.WalkDir(watchPath, func(path string, d fs.DirEntry, err error) error {
 				if err != nil || d.IsDir() {
 					return nil
 				}
@@ -439,7 +443,9 @@ func (w *Watcher) ScanExistingFiles() {
 				})
 				fileCount++
 				return nil
-			})
+			}); err != nil {
+				log.Warn().Err(err).Str("path", watchPath).Msg("Failed to walk directory for existing files")
+			}
 		}
 	}
 

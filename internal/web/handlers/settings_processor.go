@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/saltyorg/autoplow/internal/processor"
 )
 
@@ -69,13 +71,17 @@ func (h *Handlers) SettingsProcessorPage(w http.ResponseWriter, r *http.Request)
 		anchorEnabled = true // default
 	}
 	if val, _ := h.db.GetSetting("processor.anchor.anchor_files"); val != "" {
-		json.Unmarshal([]byte(val), &anchorFiles)
+		if err := json.Unmarshal([]byte(val), &anchorFiles); err != nil {
+			log.Error().Err(err).Msg("Failed to parse anchor_files setting")
+		}
 	}
 
 	// Load path-specific anchor files
 	var pathAnchorFiles []PathAnchorFile
 	if val, _ := h.db.GetSetting("processor.anchor.path_anchor_files"); val != "" {
-		json.Unmarshal([]byte(val), &pathAnchorFiles)
+		if err := json.Unmarshal([]byte(val), &pathAnchorFiles); err != nil {
+			log.Error().Err(err).Msg("Failed to parse path_anchor_files setting")
+		}
 	}
 
 	// Use loaded values or defaults
@@ -156,20 +162,39 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Save to database
-	h.db.SetSetting("processor.minimum_age_seconds", strconv.Itoa(minAge))
-	h.db.SetSetting("processor.batch_interval_seconds", strconv.Itoa(batchInterval))
-	h.db.SetSetting("processor.path_not_found_retries", strconv.Itoa(pathNotFoundRetries))
-	h.db.SetSetting("processor.path_not_found_delay_seconds", strconv.Itoa(pathNotFoundDelaySeconds))
-	h.db.SetSetting("processor.anchor.enabled", strconv.FormatBool(anchorEnabled))
+	var saveErr error
+	if err := h.db.SetSetting("processor.minimum_age_seconds", strconv.Itoa(minAge)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("processor.batch_interval_seconds", strconv.Itoa(batchInterval)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("processor.path_not_found_retries", strconv.Itoa(pathNotFoundRetries)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("processor.path_not_found_delay_seconds", strconv.Itoa(pathNotFoundDelaySeconds)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("processor.anchor.enabled", strconv.FormatBool(anchorEnabled)); err != nil {
+		saveErr = err
+	}
 
 	// Save default anchor files as JSON
 	if anchorFilesJSON, err := json.Marshal(anchorFiles); err == nil {
-		h.db.SetSetting("processor.anchor.anchor_files", string(anchorFilesJSON))
+		if err := h.db.SetSetting("processor.anchor.anchor_files", string(anchorFilesJSON)); err != nil {
+			saveErr = err
+		}
 	}
 
 	// Save path-specific anchor files as JSON
 	if pathAnchorJSON, err := json.Marshal(pathAnchorFiles); err == nil {
-		h.db.SetSetting("processor.anchor.path_anchor_files", string(pathAnchorJSON))
+		if err := h.db.SetSetting("processor.anchor.path_anchor_files", string(pathAnchorJSON)); err != nil {
+			saveErr = err
+		}
+	}
+
+	if saveErr != nil {
+		log.Error().Err(saveErr).Msg("Failed to save some processor settings")
 	}
 
 	// Update processor config if available

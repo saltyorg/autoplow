@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -52,7 +53,11 @@ func (db *DB) CreateNotificationProvider(p *NotificationProvider) error {
 		return err
 	}
 
-	p.ID, _ = result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert id: %w", err)
+	}
+	p.ID = id
 	return nil
 }
 

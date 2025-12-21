@@ -272,7 +272,7 @@ func (h *Handlers) RemoteTest(w http.ResponseWriter, r *http.Request) {
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": "Rclone is not running",
 		})
@@ -286,7 +286,7 @@ func (h *Handlers) RemoteTest(w http.ResponseWriter, r *http.Request) {
 	remotes, err := h.rcloneMgr.Client().ListRemotes(ctx)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": "Failed to list rclone remotes: " + err.Error(),
 		})
@@ -304,7 +304,7 @@ func (h *Handlers) RemoteTest(w http.ResponseWriter, r *http.Request) {
 
 	if !found {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": "Remote not found in rclone configuration",
 		})
@@ -313,7 +313,7 @@ func (h *Handlers) RemoteTest(w http.ResponseWriter, r *http.Request) {
 
 	log.Info().Int64("remote_id", id).Msg("Remote test successful")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"message": "Remote is configured and accessible",
 	})
@@ -336,7 +336,7 @@ func (h *Handlers) RemoteListAvailable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(remotes)
+	_ = json.NewEncoder(w).Encode(remotes)
 }
 
 // RemoteBackendOptionsPartial returns HTML partial with backend options for adding to form
@@ -345,7 +345,7 @@ func (h *Handlers) RemoteBackendOptionsPartial(w http.ResponseWriter, r *http.Re
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500 text-sm">Rclone is not running</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500 text-sm">Rclone is not running</div>`))
 		return
 	}
 
@@ -353,7 +353,7 @@ func (h *Handlers) RemoteBackendOptionsPartial(w http.ResponseWriter, r *http.Re
 	providers := h.rcloneMgr.Providers()
 	if len(providers) == 0 {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-yellow-500 text-sm">Provider data is loading, please wait...</div>`))
+		_, _ = w.Write([]byte(`<div class="text-yellow-500 text-sm">Provider data is loading, please wait...</div>`))
 		return
 	}
 
@@ -368,7 +368,7 @@ func (h *Handlers) RemoteBackendOptionsPartial(w http.ResponseWriter, r *http.Re
 
 	if provider == nil {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500 text-sm">Backend not found: ` + backendName + `</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500 text-sm">Backend not found: ` + backendName + `</div>`))
 		return
 	}
 
@@ -384,7 +384,7 @@ func (h *Handlers) RemoteAddOptionPartial(w http.ResponseWriter, r *http.Request
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500 text-sm">Rclone is not running</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500 text-sm">Rclone is not running</div>`))
 		return
 	}
 
@@ -407,7 +407,7 @@ func (h *Handlers) RemoteAddOptionPartial(w http.ResponseWriter, r *http.Request
 
 	if option == nil {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500 text-sm">Option not found</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500 text-sm">Option not found</div>`))
 		return
 	}
 
@@ -426,7 +426,7 @@ func (h *Handlers) RemoteGlobalOptionsPartial(w http.ResponseWriter, r *http.Req
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500 text-sm">Rclone is not running</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500 text-sm">Rclone is not running</div>`))
 		return
 	}
 
@@ -436,14 +436,14 @@ func (h *Handlers) RemoteGlobalOptionsPartial(w http.ResponseWriter, r *http.Req
 	globalOptions, err := h.rcloneMgr.Client().GetOptions(ctx)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500 text-sm">Error: ` + err.Error() + `</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500 text-sm">Error: ` + err.Error() + `</div>`))
 		return
 	}
 
 	categoryOptions, ok := globalOptions[category]
 	if !ok {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500 text-sm">Category not found: ` + category + `</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500 text-sm">Category not found: ` + category + `</div>`))
 		return
 	}
 

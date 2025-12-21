@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/log"
 
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/notification"
@@ -266,9 +267,15 @@ func (h *Handlers) NotificationProviderUpdate(w http.ResponseWriter, r *http.Req
 		string(notification.EventSystemError),
 	}
 
+	var subscriptionErr error
 	for _, et := range eventTypes {
 		enabled := r.FormValue("event_"+et) == "on"
-		h.db.SetNotificationSubscription(id, et, enabled)
+		if err := h.db.SetNotificationSubscription(id, et, enabled); err != nil {
+			subscriptionErr = err
+		}
+	}
+	if subscriptionErr != nil {
+		log.Error().Err(subscriptionErr).Msg("Failed to save some notification subscriptions")
 	}
 
 	// Re-register with notification manager

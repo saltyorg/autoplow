@@ -183,11 +183,11 @@ func (h *Handlers) redirect(w http.ResponseWriter, r *http.Request, url string) 
 func (h *Handlers) jsonError(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write([]byte(`{"error":"` + message + `"}`))
+	_, _ = w.Write([]byte(`{"error":"` + message + `"}`))
 }
 
 // jsonSuccess sends a JSON success response
 func (h *Handlers) jsonSuccess(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"success":true,"message":"` + message + `"}`))
+	_, _ = w.Write([]byte(`{"success":true,"message":"` + message + `"}`))
 }

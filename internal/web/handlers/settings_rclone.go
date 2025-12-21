@@ -17,7 +17,7 @@ import (
 // generateRandomString generates a random hex string of the specified byte length
 func generateRandomString(byteLen int) string {
 	b := make([]byte, byteLen)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -59,8 +59,12 @@ func LoadRcloneConfigFromDB(db interface {
 		// Generate random credentials for security
 		username = generateRandomString(16)
 		password = generateRandomString(32)
-		db.SetSetting("rclone.username", username)
-		db.SetSetting("rclone.password", password)
+		if err := db.SetSetting("rclone.username", username); err != nil {
+			log.Error().Err(err).Msg("Failed to save rclone username")
+		}
+		if err := db.SetSetting("rclone.password", password); err != nil {
+			log.Error().Err(err).Msg("Failed to save rclone password")
+		}
 		log.Info().Msg("Generated random rclone RCD credentials for security")
 	}
 	config.Username = username
@@ -84,24 +88,6 @@ func LoadRcloneConfigFromDB(db interface {
 // loadRcloneConfig loads rclone configuration from database settings
 func (h *Handlers) loadRcloneConfig() rclone.ManagerConfig {
 	return LoadRcloneConfigFromDB(h.db)
-}
-
-// ensureRcloneCredentials ensures username/password are set, generating random ones if needed
-func (h *Handlers) ensureRcloneCredentials() (username, password string, generated bool) {
-	username, _ = h.db.GetSetting("rclone.username")
-	password, _ = h.db.GetSetting("rclone.password")
-
-	// If both are empty, generate random credentials for security
-	if username == "" && password == "" {
-		username = generateRandomString(16)
-		password = generateRandomString(32)
-		h.db.SetSetting("rclone.username", username)
-		h.db.SetSetting("rclone.password", password)
-		log.Info().Msg("Generated random rclone RCD credentials for security")
-		return username, password, true
-	}
-
-	return username, password, false
 }
 
 // formatUptime formats a duration as a human-readable string with whole units
@@ -261,7 +247,7 @@ func (h *Handlers) SettingsRcloneUpdate(w http.ResponseWriter, r *http.Request) 
 func (h *Handlers) SettingsRcloneTest(w http.ResponseWriter, r *http.Request) {
 	if h.rcloneMgr == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": "Rclone manager not initialized",
 		})
@@ -273,7 +259,7 @@ func (h *Handlers) SettingsRcloneTest(w http.ResponseWriter, r *http.Request) {
 
 	if !h.rcloneMgr.Healthy(ctx) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": "Rclone RCD is not responding",
 		})
@@ -284,7 +270,7 @@ func (h *Handlers) SettingsRcloneTest(w http.ResponseWriter, r *http.Request) {
 	version, err := h.rcloneMgr.Client().Version(ctx)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": "Failed to get rclone version: " + err.Error(),
 		})
@@ -292,7 +278,7 @@ func (h *Handlers) SettingsRcloneTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"message": "Connected to rclone " + version.Version,
 		"version": version.Version,
@@ -394,7 +380,9 @@ func (h *Handlers) SettingsRcloneOptionsUpdate(w http.ResponseWriter, r *http.Re
 	if v := r.FormValue("transfers"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			mainOpts["Transfers"] = i
-			h.db.SetSetting("rclone.transfers", v)
+			if err := h.db.SetSetting("rclone.transfers", v); err != nil {
+				log.Error().Err(err).Msg("Failed to save rclone.transfers setting")
+			}
 		}
 	}
 
@@ -402,14 +390,18 @@ func (h *Handlers) SettingsRcloneOptionsUpdate(w http.ResponseWriter, r *http.Re
 	if v := r.FormValue("checkers"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			mainOpts["Checkers"] = i
-			h.db.SetSetting("rclone.checkers", v)
+			if err := h.db.SetSetting("rclone.checkers", v); err != nil {
+				log.Error().Err(err).Msg("Failed to save rclone.checkers setting")
+			}
 		}
 	}
 
 	// Parse and save buffer size
 	if v := r.FormValue("buffer_size"); v != "" {
 		mainOpts["BufferSize"] = ParseSizeString(v)
-		h.db.SetSetting("rclone.buffer_size", v)
+		if err := h.db.SetSetting("rclone.buffer_size", v); err != nil {
+			log.Error().Err(err).Msg("Failed to save rclone.buffer_size setting")
+		}
 	}
 
 	// Apply to running rclone if available
@@ -438,7 +430,7 @@ func (h *Handlers) SettingsRcloneOptionsUpdate(w http.ResponseWriter, r *http.Re
 func (h *Handlers) SettingsRcloneStatus(w http.ResponseWriter, r *http.Request) {
 	if h.rcloneMgr == nil {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:text-gray-300">Not initialized</span>`))
+		_, _ = w.Write([]byte(`<span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:text-gray-300">Not initialized</span>`))
 		return
 	}
 
@@ -454,7 +446,7 @@ func (h *Handlers) SettingsRcloneStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(`<span class="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium ` + statusClass + `">` + statusText + `</span>`))
+	_, _ = w.Write([]byte(`<span class="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium ` + statusClass + `">` + statusText + `</span>`))
 }
 
 // SettingsRcloneStartStopBtn returns context-aware start/stop button HTML
@@ -462,7 +454,7 @@ func (h *Handlers) SettingsRcloneStartStopBtn(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "text/html")
 
 	if h.rcloneMgr == nil {
-		w.Write([]byte(`<button type="button" disabled class="inline-flex items-center rounded-md bg-gray-400 px-3 py-2 text-sm font-semibold text-white shadow-sm cursor-not-allowed"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>Not Initialized</button>`))
+		_, _ = w.Write([]byte(`<button type="button" disabled class="inline-flex items-center rounded-md bg-gray-400 px-3 py-2 text-sm font-semibold text-white shadow-sm cursor-not-allowed"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>Not Initialized</button>`))
 		return
 	}
 
@@ -470,9 +462,9 @@ func (h *Handlers) SettingsRcloneStartStopBtn(w http.ResponseWriter, r *http.Req
 
 	if status.Running {
 		// Show Stop button - use hx-post, page redirects after action
-		w.Write([]byte(`<button hx-post="/settings/rclone/stop" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>Stop</button>`))
+		_, _ = w.Write([]byte(`<button hx-post="/settings/rclone/stop" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>Stop</button>`))
 	} else {
 		// Show Start button - use hx-post, page redirects after action
-		w.Write([]byte(`<button hx-post="/settings/rclone/start" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Start</button>`))
+		_, _ = w.Write([]byte(`<button hx-post="/settings/rclone/start" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Start</button>`))
 	}
 }

@@ -744,7 +744,7 @@ func (h *Handlers) ManualScan(w http.ResponseWriter, r *http.Request) {
 	log.Info().Str("path", path).Msg("Manual scan queued from UI")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"message": "Scan queued for: " + path,
 		"path":    path,

@@ -567,7 +567,6 @@ func (p *Processor) processScan(scan *database.Scan) {
 
 			// Log results and collect errors
 			successCount := 0
-			var failedTargets []string
 			var lastError string
 			for _, result := range scanResult.Results {
 				if result.Success {
@@ -577,7 +576,6 @@ func (p *Processor) processScan(scan *database.Scan) {
 						Str("target", result.Message).
 						Msg("Target scan triggered")
 				} else {
-					failedTargets = append(failedTargets, result.Message)
 					lastError = result.Error
 					log.Warn().
 						Int64("scan_id", scan.ID).

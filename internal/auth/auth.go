@@ -269,7 +269,11 @@ func (s *AuthService) GetSession(sessionID string) (*Session, error) {
 
 	// Check if expired
 	if time.Now().After(session.ExpiresAt) {
-		s.DeleteSession(sessionID)
+		if err := s.DeleteSession(sessionID); err != nil {
+			// Log but don't fail - session is expired and won't be used anyway
+			// Caller will handle the nil return appropriately
+			return nil, fmt.Errorf("failed to delete expired session: %w", err)
+		}
 		return nil, nil
 	}
 

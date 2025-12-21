@@ -72,7 +72,7 @@ func (h *Handlers) RcloneOptionsAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"error":   "Rclone RCD is not running",
 		})
@@ -84,14 +84,14 @@ func (h *Handlers) RcloneOptionsAPI(w http.ResponseWriter, r *http.Request) {
 
 	options, err := h.rcloneMgr.Client().GetOptions(ctx)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"error":   err.Error(),
 		})
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"options": options,
 	})
@@ -102,7 +102,7 @@ func (h *Handlers) RcloneProvidersAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"error":   "Rclone RCD is not running",
 		})
@@ -114,14 +114,14 @@ func (h *Handlers) RcloneProvidersAPI(w http.ResponseWriter, r *http.Request) {
 
 	providers, err := h.rcloneMgr.Client().GetProviders(ctx)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"error":   err.Error(),
 		})
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success":   true,
 		"providers": providers,
 	})
@@ -133,7 +133,7 @@ func (h *Handlers) RcloneProviderOptionsPartial(w http.ResponseWriter, r *http.R
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500">Rclone RCD is not running</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500">Rclone RCD is not running</div>`))
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *Handlers) RcloneProviderOptionsPartial(w http.ResponseWriter, r *http.R
 	providers := h.rcloneMgr.Providers()
 	if len(providers) == 0 {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-yellow-500">Provider data is loading, please wait...</div>`))
+		_, _ = w.Write([]byte(`<div class="text-yellow-500">Provider data is loading, please wait...</div>`))
 		return
 	}
 
@@ -194,7 +194,7 @@ func (h *Handlers) RcloneProviderOptionsPartial(w http.ResponseWriter, r *http.R
 
 	if provider == nil {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500">Provider not found: ` + providerName + `</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500">Provider not found: ` + providerName + `</div>`))
 		return
 	}
 
@@ -209,7 +209,7 @@ func (h *Handlers) RcloneGlobalOptionsPartial(w http.ResponseWriter, r *http.Req
 
 	if h.rcloneMgr == nil || !h.rcloneMgr.IsRunning() {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500">Rclone RCD is not running</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500">Rclone RCD is not running</div>`))
 		return
 	}
 
@@ -219,14 +219,14 @@ func (h *Handlers) RcloneGlobalOptionsPartial(w http.ResponseWriter, r *http.Req
 	options, err := h.rcloneMgr.Client().GetOptions(ctx)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500">Error: ` + err.Error() + `</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500">Error: ` + err.Error() + `</div>`))
 		return
 	}
 
 	categoryOptions, ok := options[category]
 	if !ok {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="text-red-500">Category not found: ` + category + `</div>`))
+		_, _ = w.Write([]byte(`<div class="text-red-500">Category not found: ` + category + `</div>`))
 		return
 	}
 

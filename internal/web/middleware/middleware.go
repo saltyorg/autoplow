@@ -80,7 +80,9 @@ func SessionAuth(authService *auth.AuthService) func(http.Handler) http.Handler 
 			}
 
 			// Extend session on activity
-			authService.ExtendSession(session.ID)
+			if err := authService.ExtendSession(session.ID); err != nil {
+				log.Debug().Err(err).Str("session_id", session.ID).Msg("Failed to extend session")
+			}
 
 			// Add to context
 			ctx := context.WithValue(r.Context(), UserContextKey, user)

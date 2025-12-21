@@ -138,7 +138,11 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 	// Read and log raw request body at trace level for debugging
 	var bodyBytes []byte
 	if r.Body != nil {
-		bodyBytes, _ = io.ReadAll(r.Body)
+		var err error
+		bodyBytes, err = io.ReadAll(r.Body)
+		if err != nil {
+			log.Warn().Err(err).Int64("trigger_id", triggerID).Msg("Failed to read webhook request body")
+		}
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 		if len(bodyBytes) > 0 {
@@ -161,7 +165,7 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 			Str("event_type", eventType).
 			Msg("Ignoring event")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"message": "Event ignored: " + eventType,
 		})
@@ -210,7 +214,7 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 			Int64("trigger_id", triggerID).
 			Msg("All paths filtered out by trigger path rules")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"message": "All paths filtered out by path rules",
 			"paths":   []string{},
@@ -235,7 +239,7 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"message": "Scan queued",
 		"paths":   paths,

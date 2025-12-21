@@ -1021,7 +1021,7 @@ func (s *PlexTarget) watchSessionsOnce(ctx context.Context, callback func(sessio
 	select {
 	case <-ctx.Done():
 		// Send close message
-		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		return ctx.Err()
 	case err := <-readErrCh:
 		return err

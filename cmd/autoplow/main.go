@@ -83,7 +83,9 @@ func run(cmd *cobra.Command, args []string) error {
 	// Check for PORT env var if flag not set
 	if port == 0 {
 		if envPort := os.Getenv("PORT"); envPort != "" {
-			fmt.Sscanf(envPort, "%d", &port)
+			if _, err := fmt.Sscanf(envPort, "%d", &port); err != nil {
+				return fmt.Errorf("invalid PORT environment variable %q: %w", envPort, err)
+			}
 		}
 	}
 
@@ -277,7 +279,9 @@ func run(cmd *cobra.Command, args []string) error {
 		log.Info().Str("signal", sig.String()).Msg("Received shutdown signal")
 		// Stop rclone first to prevent restart attempts when child process receives SIGINT
 		if rcloneMgr.IsRunning() {
-			rcloneMgr.Stop()
+			if err := rcloneMgr.Stop(); err != nil {
+				log.Debug().Err(err).Msg("Error stopping rclone during shutdown (ignored)")
+			}
 		}
 		cancel()
 	}()

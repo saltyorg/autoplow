@@ -694,7 +694,7 @@ func (s *MediaBrowserTarget) watchSessionsOnce(ctx context.Context, callback fun
 		select {
 		case <-ctx.Done():
 			// Send close message
-			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			return ctx.Err()
 		case err := <-readErrCh:
 			return err

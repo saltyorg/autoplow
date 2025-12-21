@@ -450,7 +450,7 @@ func (h *Handlers) TargetTestNew(w http.ResponseWriter, r *http.Request) {
 		// Fall back to regular form parsing
 		if err := r.ParseForm(); err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"success": false,
 				"message": "Invalid form data",
 			})
@@ -465,7 +465,7 @@ func (h *Handlers) TargetTestNew(w http.ResponseWriter, r *http.Request) {
 		targetType != database.TargetTypeAutoplow &&
 		targetType != database.TargetTypeTdarr {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": fmt.Sprintf("Invalid target type: %q", r.FormValue("type")),
 		})
@@ -494,7 +494,7 @@ func (h *Handlers) testTarget(w http.ResponseWriter, r *http.Request, target *da
 	t, err := mgr.GetTargetForDBTarget(target)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": err.Error(),
 		})
@@ -509,7 +509,7 @@ func (h *Handlers) testTarget(w http.ResponseWriter, r *http.Request, target *da
 		log.Warn().Err(err).Str("target_url", target.URL).Msg("Target connection test failed")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"message": err.Error(),
 		})
@@ -522,7 +522,7 @@ func (h *Handlers) testTarget(w http.ResponseWriter, r *http.Request, target *da
 		log.Warn().Err(err).Str("target_url", target.URL).Msg("Failed to get libraries after successful connection test")
 		// Still return success, just without libraries
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"message": "Connection successful",
 		})
@@ -531,7 +531,7 @@ func (h *Handlers) testTarget(w http.ResponseWriter, r *http.Request, target *da
 
 	log.Info().Str("target_url", target.URL).Int("library_count", len(libraries)).Msg("Target connection test successful")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success":   true,
 		"message":   "Connection successful",
 		"libraries": libraries,
@@ -571,7 +571,7 @@ func (h *Handlers) TargetLibraries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(libraries)
+	_ = json.NewEncoder(w).Encode(libraries)
 }
 
 // parseExcludeExtensions extracts exclude extensions from form data
