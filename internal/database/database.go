@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
+	_ "modernc.org/sqlite"
 )
 
 // DB wraps the SQLite database connection
