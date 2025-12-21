@@ -1,0 +1,271 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Rclone Explorer</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Explore rclone configuration options, available backends, and their settings.
+        </p>
+    </div>
+
+    {{if not .Content.RcloneRunning}}
+    <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 p-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                </svg>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-200">Rclone RCD Not Running</h3>
+                <p class="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                    Start rclone RCD from <a href="/settings/rclone" class="underline font-medium">Settings &gt; Rclone</a> to explore options.
+                </p>
+            </div>
+        </div>
+    </div>
+    {{else}}
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+            <a href="/rclone?tab=global" class="{{if eq .Content.Tab "global"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Global Options
+            </a>
+            <a href="/rclone?tab=backends" class="{{if eq .Content.Tab "backends"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Backends ({{len .Content.Providers}})
+            </a>
+            <a href="/rclone?tab=remotes" class="{{if eq .Content.Tab "remotes"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Configured Remotes ({{len .Content.ConfiguredRemotes}})
+            </a>
+        </nav>
+    </div>
+
+    {{if eq .Content.Tab "global"}}
+    <!-- Global Options Tab -->
+    <div class="space-y-6">
+        <!-- All Option Categories -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">All Option Categories</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Click a category to see all options within it</p>
+                    </div>
+                    <a href="/rclone/api/options" target="_blank" class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                        Raw JSON
+                    </a>
+                </div>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {{range $key, $value := .Content.GlobalOptions}}
+                    <div x-data="{ open: false }">
+                        <button @click="open = !open" class="w-full flex items-center justify-between rounded-md bg-gray-50 dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600">
+                            <span>{{$key}}</span>
+                            <svg class="w-4 h-4 transition-transform" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div x-show="open" x-cloak class="mt-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-md">
+                            <pre class="text-xs text-gray-700 dark:text-gray-300 overflow-x-auto max-h-64">{{$value | json}}</pre>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "backends"}}
+    <!-- Backends Tab -->
+    <div class="space-y-6" x-data="{ selectedBackend: '', search: '' }">
+        <!-- Search -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-4">
+            <input type="text" x-model="search" placeholder="Search backends..." class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Backend List -->
+            <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+                <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Available Backends</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select a backend to view its options</p>
+                </div>
+                <div class="max-h-[600px] overflow-y-auto">
+                    <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {{range .Content.Providers}}
+                        <li x-show="'{{.Name}} {{.Description}}'.toLowerCase().includes(search.toLowerCase())">
+                            <button
+                                @click="selectedBackend = '{{.Name}}'"
+                                :class="{ 'bg-indigo-50 dark:bg-indigo-900/50': selectedBackend === '{{.Name}}' }"
+                                class="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                <div class="font-medium text-sm text-gray-900 dark:text-white">{{.Name}}</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{.Description}}</div>
+                            </button>
+                        </li>
+                        {{end}}
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Backend Options -->
+            <div class="lg:col-span-2 bg-white dark:bg-gray-800 shadow rounded-lg">
+                <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">
+                        <span x-show="!selectedBackend">Select a Backend</span>
+                        <span x-show="selectedBackend" x-text="selectedBackend + ' Options'"></span>
+                    </h3>
+                </div>
+                <div class="px-4 py-5 sm:p-6">
+                    <div x-show="!selectedBackend" class="text-center py-12">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">Select a backend from the list to view its configuration options</p>
+                    </div>
+                    <div x-show="selectedBackend" id="backend-options"
+                         hx-get="/rclone/providers/"
+                         hx-trigger="click from:button[x-on\\:click]"
+                         x-effect="if(selectedBackend) { htmx.ajax('GET', '/rclone/providers/' + selectedBackend, '#backend-options') }">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Link -->
+        <div class="text-right">
+            <a href="/rclone/api/providers" target="_blank" class="inline-flex items-center text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+                View all providers as JSON
+            </a>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "remotes"}}
+    <!-- Configured Remotes Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Configured Remotes</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Remotes configured in your rclone.conf file
+                </p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.ConfiguredRemotes}}
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {{range .Content.ConfiguredRemotes}}
+                    <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div class="flex items-center">
+                            <svg class="h-8 w-8 text-indigo-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                            </svg>
+                            <div>
+                                <div class="font-medium text-gray-900 dark:text-white">{{.}}</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 font-mono">{{.}}:</div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="text-center py-12">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/>
+                    </svg>
+                    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No remotes configured in rclone</p>
+                    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Use <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">rclone config</code> to add remotes</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        {{if .Content.ConfiguredRemotes}}
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Using Remotes in Autoplow</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    To use these remotes for uploads, go to <a href="/uploads/remotes" class="text-indigo-600 dark:text-indigo-400 hover:underline">Uploads &gt; Remotes</a> and add them to Autoplow.
+                </p>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+
+    {{end}}
+</div>
+{{end}}
+
+{{define "provider_options"}}
+<div class="space-y-4">
+    <div class="mb-4">
+        <h4 class="font-medium text-gray-900 dark:text-white">{{.Provider.Name}}</h4>
+        <p class="text-sm text-gray-500 dark:text-gray-400">{{.Provider.Description}}</p>
+    </div>
+
+    {{if .Provider.Options}}
+    <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="sticky top-0 bg-white dark:bg-gray-800">
+                <tr>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Option</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Default</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Description</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                {{range .Provider.Options}}
+                <tr class="{{if .Advanced}}bg-gray-50 dark:bg-gray-700/50{{end}}">
+                    <td class="px-3 py-2 text-sm">
+                        <div class="font-mono text-gray-900 dark:text-white">{{.Name}}</div>
+                        <div class="flex gap-1 mt-1">
+                            {{if .Required}}<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400">required</span>{{end}}
+                            {{if .Advanced}}<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-400">advanced</span>{{end}}
+                            {{if .IsPassword}}<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400">sensitive</span>{{end}}
+                        </div>
+                    </td>
+                    <td class="px-3 py-2 text-sm font-mono text-indigo-600 dark:text-indigo-400">
+                        {{if .DefaultStr}}{{.DefaultStr}}{{else}}<span class="text-gray-400">-</span>{{end}}
+                    </td>
+                    <td class="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">
+                        <div>{{.Help}}</div>
+                        {{if .Examples}}
+                        <details class="mt-2">
+                            <summary class="text-xs text-indigo-600 dark:text-indigo-400 cursor-pointer">Examples</summary>
+                            <ul class="mt-1 text-xs space-y-1">
+                                {{range .Examples}}
+                                <li><code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">{{.Value}}</code> - {{.Help}}</li>
+                                {{end}}
+                            </ul>
+                        </details>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-sm text-gray-500 dark:text-gray-400">No options available for this backend</p>
+    {{end}}
+</div>
+{{end}}
+
+{{define "category_options"}}
+<div>
+    <h4 class="font-medium text-gray-900 dark:text-white mb-4">{{.Category}}</h4>
+    <pre class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg overflow-x-auto text-xs text-gray-800 dark:text-gray-200 font-mono">{{.Options | json}}</pre>
+</div>
+{{end}}
+
+{{template "base" .}}

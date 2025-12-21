@@ -1,0 +1,209 @@
+/* Tailwind CSS v3.4 - Download from https://cdn.tailwindcss.com or build with tailwindcss CLI */
+/* This is a minimal placeholder - replace with actual Tailwind CSS build */
+
+*, ::before, ::after { box-sizing: border-box; border-width: 0; border-style: solid; }
+html { line-height: 1.5; -webkit-text-size-adjust: 100%; font-family: ui-sans-serif, system-ui, sans-serif; }
+body { margin: 0; line-height: inherit; }
+h1, h2, h3, p { margin: 0; }
+a { color: inherit; text-decoration: inherit; }
+button, input { font-family: inherit; font-size: 100%; margin: 0; padding: 0; }
+button { cursor: pointer; }
+table { text-indent: 0; border-color: inherit; border-collapse: collapse; }
+img, svg { display: block; vertical-align: middle; }
+
+/* Utility classes - subset for basic functionality */
+.h-full { height: 100%; }
+.min-h-full { min-height: 100%; }
+.w-full { width: 100%; }
+.flex { display: flex; }
+.hidden { display: none; }
+.grid { display: grid; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.25rem; }
+.space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.5rem; }
+.gap-5 { gap: 1.25rem; }
+.gap-6 { gap: 1.5rem; }
+.overflow-hidden { overflow: hidden; }
+.rounded-md { border-radius: 0.375rem; }
+.rounded-lg { border-radius: 0.5rem; }
+.border { border-width: 1px; }
+.border-b { border-bottom-width: 1px; }
+.bg-white { background-color: #fff; }
+.bg-gray-50 { background-color: #f9fafb; }
+.bg-gray-100 { background-color: #f3f4f6; }
+.bg-gray-900 { background-color: #111827; }
+.bg-indigo-600 { background-color: #4f46e5; }
+.bg-green-50 { background-color: #f0fdf4; }
+.bg-red-50 { background-color: #fef2f2; }
+.bg-blue-50 { background-color: #eff6ff; }
+.bg-yellow-50 { background-color: #fefce8; }
+.p-4 { padding: 1rem; }
+.p-5 { padding: 1.25rem; }
+.px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+.px-4 { padding-left: 1rem; padding-right: 1rem; }
+.px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+.py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+.py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+.py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+.py-5 { padding-top: 1.25rem; padding-bottom: 1.25rem; }
+.py-10 { padding-top: 2.5rem; padding-bottom: 2.5rem; }
+.py-12 { padding-top: 3rem; padding-bottom: 3rem; }
+.text-xs { font-size: 0.75rem; line-height: 1rem; }
+.text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+.text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+.text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+.text-2xl { font-size: 1.5rem; line-height: 2rem; }
+.text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+.uppercase { text-transform: uppercase; }
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-white { color: #fff; }
+.text-gray-400 { color: #9ca3af; }
+.text-gray-500 { color: #6b7280; }
+.text-gray-600 { color: #4b5563; }
+.text-gray-700 { color: #374151; }
+.text-gray-900 { color: #111827; }
+.text-indigo-600 { color: #4f46e5; }
+.text-green-400 { color: #4ade80; }
+.text-green-700 { color: #15803d; }
+.text-green-800 { color: #166534; }
+.text-red-400 { color: #f87171; }
+.text-red-700 { color: #b91c1c; }
+.text-red-800 { color: #991b1b; }
+.text-blue-400 { color: #60a5fa; }
+.text-blue-700 { color: #1d4ed8; }
+.text-blue-800 { color: #1e40af; }
+.text-yellow-700 { color: #a16207; }
+.text-purple-400 { color: #c084fc; }
+.shadow { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); }
+.shadow-sm { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+.ring-1 { box-shadow: 0 0 0 1px var(--tw-ring-color); }
+.ring-gray-300 { --tw-ring-color: #d1d5db; }
+.divide-y > :not([hidden]) ~ :not([hidden]) { border-top-width: 1px; }
+.divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: #e5e7eb; }
+.border-gray-200 { border-color: #e5e7eb; }
+.border-gray-300 { border-color: #d1d5db; }
+.border-indigo-500 { border-color: #6366f1; }
+.border-transparent { border-color: transparent; }
+.border-b-2 { border-bottom-width: 2px; }
+
+.mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-4 { margin-top: 1rem; }
+.mt-6 { margin-top: 1.5rem; }
+.mt-10 { margin-top: 2.5rem; }
+.mt-auto { margin-top: auto; }
+.mb-4 { margin-bottom: 1rem; }
+.ml-2 { margin-left: 0.5rem; }
+.ml-3 { margin-left: 0.75rem; }
+.ml-5 { margin-left: 1.25rem; }
+.mr-1\.5 { margin-right: 0.375rem; }
+.-mx-2 { margin-left: -0.5rem; margin-right: -0.5rem; }
+.-ml-0\.5 { margin-left: -0.125rem; }
+.-mb-px { margin-bottom: -1px; }
+
+.flex-1 { flex: 1 1 0%; }
+.flex-col { flex-direction: column; }
+.flex-shrink-0 { flex-shrink: 0; }
+.grow { flex-grow: 1; }
+.gap-x-3 { column-gap: 0.75rem; }
+.gap-x-4 { column-gap: 1rem; }
+.gap-y-5 { row-gap: 1.25rem; }
+.gap-y-7 { row-gap: 1.75rem; }
+.self-stretch { align-self: stretch; }
+.overflow-y-auto { overflow-y: auto; }
+.whitespace-nowrap { white-space: nowrap; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.max-w-xs { max-width: 20rem; }
+.max-w-md { max-width: 28rem; }
+.leading-6 { line-height: 1.5rem; }
+.leading-9 { line-height: 2.25rem; }
+.tracking-tight { letter-spacing: -0.025em; }
+.tracking-wider { letter-spacing: 0.05em; }
+
+.inline-flex { display: inline-flex; }
+.list-disc { list-style-type: disc; }
+.list-inside { list-style-position: inside; }
+
+.h-4 { height: 1rem; }
+.h-5 { height: 1.25rem; }
+.h-6 { height: 1.5rem; }
+.h-16 { height: 4rem; }
+.w-0 { width: 0; }
+.w-4 { width: 1rem; }
+.w-6 { width: 1.5rem; }
+.w-16 { width: 4rem; }
+.w-72 { width: 18rem; }
+.shrink-0 { flex-shrink: 0; }
+
+.fixed { position: fixed; }
+.sticky { position: sticky; }
+.relative { position: relative; }
+.inset-0 { inset: 0; }
+.inset-y-0 { top: 0; bottom: 0; }
+.top-0 { top: 0; }
+.left-full { left: 100%; }
+.z-40 { z-index: 40; }
+.z-50 { z-index: 50; }
+
+.cursor-pointer { cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+
+/* Hover states */
+.hover\:bg-gray-800:hover { background-color: #1f2937; }
+.hover\:bg-indigo-500:hover { background-color: #6366f1; }
+.hover\:text-white:hover { color: #fff; }
+.hover\:text-gray-700:hover { color: #374151; }
+.hover\:text-gray-900:hover { color: #111827; }
+.hover\:text-indigo-500:hover { color: #6366f1; }
+.hover\:border-gray-300:hover { border-color: #d1d5db; }
+
+/* Focus states */
+.focus\:ring-2:focus { box-shadow: 0 0 0 2px; }
+.focus\:ring-indigo-600:focus { --tw-ring-color: #4f46e5; }
+.focus\:ring-indigo-500:focus { --tw-ring-color: #6366f1; }
+.focus\:border-indigo-500:focus { border-color: #6366f1; }
+.focus\:ring-inset:focus { --tw-ring-inset: inset; }
+.focus-visible\:outline:focus-visible { outline-style: solid; }
+.focus-visible\:outline-2:focus-visible { outline-width: 2px; }
+.focus-visible\:outline-offset-2:focus-visible { outline-offset: 2px; }
+.focus-visible\:outline-indigo-600:focus-visible { outline-color: #4f46e5; }
+
+/* Responsive */
+@media (min-width: 640px) {
+  .sm\:mx-auto { margin-left: auto; margin-right: auto; }
+  .sm\:w-full { width: 100%; }
+  .sm\:max-w-md { max-width: 28rem; }
+  .sm\:max-w-\[480px\] { max-width: 480px; }
+  .sm\:rounded-lg { border-radius: 0.5rem; }
+  .sm\:px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+  .sm\:px-12 { padding-left: 3rem; padding-right: 3rem; }
+  .sm\:p-6 { padding: 1.5rem; }
+  .sm\:text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+  .sm\:leading-6 { line-height: 1.5rem; }
+  .sm\:flex { display: flex; }
+  .sm\:items-center { align-items: center; }
+  .sm\:justify-between { justify-content: space-between; }
+  .sm\:mt-0 { margin-top: 0; }
+  .sm\:gap-x-6 { column-gap: 1.5rem; }
+  .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .lg\:hidden { display: none; }
+  .lg\:flex { display: flex; }
+  .lg\:fixed { position: fixed; }
+  .lg\:inset-y-0 { top: 0; bottom: 0; }
+  .lg\:z-50 { z-index: 50; }
+  .lg\:w-72 { width: 18rem; }
+  .lg\:flex-col { flex-direction: column; }
+  .lg\:pl-72 { padding-left: 18rem; }
+  .lg\:px-8 { padding-left: 2rem; padding-right: 2rem; }
+  .lg\:gap-x-6 { column-gap: 1.5rem; }
+  .lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lg\:grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}

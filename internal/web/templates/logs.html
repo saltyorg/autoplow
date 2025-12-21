@@ -1,0 +1,111 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Activity Log</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">View recent scan, upload, and notification activity.</p>
+    </div>
+
+    <!-- Stats cards -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Events</dt>
+            <dd class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{.Content.TotalCount}}</dd>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Scans</dt>
+            <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">{{.Content.ScanCount}}</dd>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Uploads</dt>
+            <dd class="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">{{.Content.UploadCount}}</dd>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Notifications</dt>
+            <dd class="mt-1 text-2xl font-semibold text-purple-600 dark:text-purple-400">{{.Content.NotificationCount}}</dd>
+        </div>
+    </div>
+
+    <!-- Filter -->
+    <div class="flex items-center gap-4">
+        <label for="type-filter" class="text-sm font-medium text-gray-700 dark:text-gray-300">Filter by type:</label>
+        <select id="type-filter" onchange="window.location.href='/logs?type=' + this.value" class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            <option value="all" {{if or (eq .Content.Type "") (eq .Content.Type "all")}}selected{{end}}>All</option>
+            <option value="scan" {{if eq .Content.Type "scan"}}selected{{end}}>Scans</option>
+            <option value="upload" {{if eq .Content.Type "upload"}}selected{{end}}>Uploads</option>
+            <option value="notification" {{if eq .Content.Type "notification"}}selected{{end}}>Notifications</option>
+        </select>
+    </div>
+
+    <!-- Activity Table -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Type</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Path / Details</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Time</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {{if .Content.Activities}}
+                {{range .Content.Activities}}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+                            {{if eq .Type "scan"}}bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{{end}}
+                            {{if eq .Type "upload"}}bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-green-400{{end}}
+                            {{if eq .Type "notification"}}bg-purple-50 text-purple-700 dark:bg-purple-900/50 dark:text-purple-400{{end}}
+                        ">{{.Type}}</span>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                        <div class="truncate max-w-md" title="{{.Path}}">{{.Path}}</div>
+                        {{if .Message}}
+                        <div class="text-xs text-red-500 dark:text-red-400 truncate mt-1" title="{{.Message}}">{{.Message}}</div>
+                        {{end}}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+                            {{if eq .Status "completed"}}bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-green-400{{end}}
+                            {{if eq .Status "sent"}}bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-green-400{{end}}
+                            {{if eq .Status "pending"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
+                            {{if eq .Status "queued"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
+                            {{if eq .Status "scanning"}}bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{{end}}
+                            {{if eq .Status "uploading"}}bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{{end}}
+                            {{if eq .Status "failed"}}bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-400{{end}}
+                        ">{{.Status}}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{formatTime .CreatedAt}}</td>
+                </tr>
+                {{end}}
+                {{else}}
+                <tr>
+                    <td colspan="4" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No activity yet</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {{if gt .Content.TotalPages 1}}
+    <nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 rounded-lg shadow">
+        <div class="hidden sm:block">
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+                Page <span class="font-medium">{{.Content.Page}}</span> of <span class="font-medium">{{.Content.TotalPages}}</span>
+            </p>
+        </div>
+        <div class="flex flex-1 justify-between sm:justify-end gap-2">
+            {{if .Content.HasPrev}}
+            <a href="/logs?page={{.Content.PrevPage}}{{if .Content.Type}}&type={{.Content.Type}}{{end}}" class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">Previous</a>
+            {{end}}
+            {{if .Content.HasNext}}
+            <a href="/logs?page={{.Content.NextPage}}{{if .Content.Type}}&type={{.Content.Type}}{{end}}" class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">Next</a>
+            {{end}}
+        </div>
+    </nav>
+    {{end}}
+</div>
+{{end}}
+
+{{template "base" .}}

@@ -1,0 +1,1436 @@
+{{define "content"}}
+<div class="space-y-6">
+    {{if .Content.IsNew}}
+    <!-- New Target Form -->
+    <div class="sm:flex sm:items-center">
+        <div class="sm:flex-auto">
+            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">New Target</h1>
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Add a new Plex, Emby, Jellyfin server, or Autoplow instance.</p>
+        </div>
+    </div>
+
+    <form action="/targets" method="POST" class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6">
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                <input type="text" name="name" id="name" required
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    placeholder="My Plex Server">
+            </div>
+            <div>
+                <label for="type" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                <select name="type" id="type" required
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="plex">Plex</option>
+                    <option value="emby">Emby</option>
+                    <option value="jellyfin">Jellyfin</option>
+                    <option value="tdarr">Tdarr</option>
+                    <option value="autoplow">Autoplow (Forward to Instance)</option>
+                </select>
+            </div>
+            <div class="sm:col-span-2">
+                <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Server URL</label>
+                <input type="url" name="url" id="url" required
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    placeholder="http://127.0.0.1:32400">
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">The full URL to your media server (including port)</p>
+            </div>
+            <div id="auth-field" class="sm:col-span-2">
+                <!-- Plex Token (shown by default since Plex is first option) -->
+                <div id="plex-auth">
+                    <label for="token" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Plex Token</label>
+                    <input type="password" name="token" id="token"
+                        class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                        placeholder="X-Plex-Token">
+                </div>
+                <!-- Emby/Jellyfin API Key (hidden by default) -->
+                <div id="emby-auth" class="hidden">
+                    <label for="api_key" class="block text-sm font-medium text-gray-700 dark:text-gray-300">API Key</label>
+                    <input type="password" name="api_key" id="api_key"
+                        class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                        placeholder="API Key">
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Go to Dashboard > API Keys to create a new API key</p>
+                </div>
+                <!-- Tdarr DB ID (hidden by default) -->
+                <div id="tdarr-auth" class="hidden">
+                    <label for="tdarr_db_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Library ID (DB ID)</label>
+                    <input type="text" name="tdarr_db_id" id="tdarr_db_id"
+                        class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                        placeholder="e.g., lRn8YIpNj">
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">The Tdarr library ID (found in Tdarr UI under Libraries)</p>
+                </div>
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" name="enabled" id="enabled" checked
+                    class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                <label for="enabled" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Enabled</label>
+            </div>
+        </div>
+
+        <!-- Test Connection -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center gap-4">
+                <button type="button" id="test-btn" class="btn-secondary">
+                    Test Connection
+                </button>
+                <span id="test-result" class="text-sm"></span>
+            </div>
+            <!-- Libraries display (shown after successful test) -->
+            <div id="libraries-section" class="hidden mt-4">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Libraries</h3>
+                <div id="libraries-list" class="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
+                    <!-- Libraries will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan Options (common to all target types) -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Scan Options</h3>
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                    <div>
+                        <label for="scan_delay" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan Delay (seconds)</label>
+                        <input type="text" inputmode="numeric" name="scan_delay" id="scan_delay" value="0"
+                            class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delay before scanning. Default: 0</p>
+                    </div>
+                    <div>
+                        <label for="scan_completion_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Delay (seconds)</label>
+                        <input type="text" inputmode="numeric" name="scan_completion_seconds" id="scan_completion_seconds" value="300"
+                            class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p id="upload-delay-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fixed delay before allowing uploads after scan. Default: 300</p>
+                    </div>
+                </div>
+                <!-- Plex Specific Options (hidden by default, shown when type is plex) -->
+                <div id="plex-options" class="hidden space-y-4">
+                    <div>
+                        <label for="scan_completion_idle_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan Idle Threshold (seconds)</label>
+                        <input type="text" inputmode="numeric" name="scan_completion_idle_seconds" id="scan_completion_idle_seconds" value="10"
+                            class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Seconds of no Plex activity before scan is considered complete. Resets on each activity event. Default: 10</p>
+                    </div>
+                </div>
+                <!-- Emby/Jellyfin Specific Options (hidden by default, shown when type changes) -->
+                <div id="emby-options" class="hidden space-y-4">
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input type="checkbox" name="refresh_metadata" id="refresh_metadata" checked
+                                class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        </div>
+                        <div class="ml-3">
+                            <label for="refresh_metadata" class="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Direct Item Refresh</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">When enabled, autoplow will search for the item in the library and refresh it directly instead of using path-based scanning. Falls back to path scan if item is not found.</p>
+                        </div>
+                    </div>
+                    <div id="metadata-refresh-mode-container">
+                        <label for="metadata_refresh_mode" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Metadata Refresh Mode</label>
+                        <select name="metadata_refresh_mode" id="metadata_refresh_mode"
+                            class="mt-1 block w-48 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <option value="FullRefresh" selected>Full Refresh</option>
+                            <option value="Default">Default</option>
+                            <option value="ValidationOnly">Validation Only</option>
+                            <option value="None">None</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How aggressively to refresh metadata when using direct item refresh</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Path Mappings -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Path Mappings</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map local paths to media server paths (e.g., for different mount points or rclone remotes)</p>
+                </div>
+                <button type="button" id="add-path-mapping" class="btn-secondary text-xs">
+                    Add Mapping
+                </button>
+            </div>
+            <div id="path-mappings-container" class="space-y-3">
+                <!-- Path mappings will be added here dynamically -->
+            </div>
+        </div>
+
+        <!-- Exclude Paths -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Paths</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Skip scanning paths that start with these prefixes for this target</p>
+                </div>
+                <button type="button" id="add-exclude-path" class="btn-secondary text-xs">
+                    Add Exclude Path
+                </button>
+            </div>
+            <div id="exclude-paths-container" class="space-y-3">
+                <!-- Exclude paths will be added here dynamically -->
+            </div>
+        </div>
+
+        <!-- Advanced Filters (Regex) -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="mb-4">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Advanced Filters (Regex)</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Use regular expressions for complex filtering. Applied after basic filters.</p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <!-- Include Patterns -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Include Patterns (match any)</label>
+                        <button type="button" id="add-adv-include-pattern" class="btn-secondary text-xs">Add Include Pattern</button>
+                    </div>
+                    <div id="adv-include-patterns-container" class="space-y-2">
+                        <!-- Include patterns will be added here dynamically -->
+                    </div>
+                </div>
+                <!-- Exclude Patterns -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Exclude Patterns (reject any match)</label>
+                        <button type="button" id="add-adv-exclude-pattern" class="btn-secondary text-xs">Add Exclude Pattern</button>
+                    </div>
+                    <div id="adv-exclude-patterns-container" class="space-y-2">
+                        <!-- Exclude patterns will be added here dynamically -->
+                    </div>
+                </div>
+            </div>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Examples: <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">.*\.(mkv|mp4)$</code> for video files, <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">(?i)sample</code> for case-insensitive "sample"</p>
+        </div>
+
+        <!-- Exclude Triggers -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Triggers</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Ignore scans from these triggers for this target (by trigger name)</p>
+                </div>
+                <button type="button" id="add-exclude-trigger" class="btn-secondary text-xs">
+                    Add Exclude Trigger
+                </button>
+            </div>
+            <div id="exclude-triggers-container" class="space-y-3">
+                <!-- Exclude triggers will be added here dynamically -->
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-3">
+            <a href="/targets" class="btn-secondary">Cancel</a>
+            <button type="submit" id="submit-btn" class="btn-primary opacity-50 cursor-not-allowed" disabled>Create Server</button>
+        </div>
+    </form>
+
+    <script>
+    (function() {
+        const form = document.querySelector('form');
+        const typeSelect = document.getElementById('type');
+        const plexAuth = document.getElementById('plex-auth');
+        const embyAuth = document.getElementById('emby-auth');
+        const tdarrAuth = document.getElementById('tdarr-auth');
+        const embyOptions = document.getElementById('emby-options');
+        const plexOptions = document.getElementById('plex-options');
+        const urlInput = document.getElementById('url');
+        const tokenInput = document.getElementById('token');
+        const apiKeyInput = document.getElementById('api_key');
+        const tdarrDbIdInput = document.getElementById('tdarr_db_id');
+        const testBtn = document.getElementById('test-btn');
+        const testResult = document.getElementById('test-result');
+        const submitBtn = document.getElementById('submit-btn');
+        const librariesSection = document.getElementById('libraries-section');
+        const librariesList = document.getElementById('libraries-list');
+        const refreshMetadataCheckbox = document.getElementById('refresh_metadata');
+        const metadataRefreshModeContainer = document.getElementById('metadata-refresh-mode-container');
+        const metadataRefreshModeSelect = document.getElementById('metadata_refresh_mode');
+
+        let isValidated = false;
+
+        const urlPlaceholders = {
+            'plex': 'https://plex.example.com',
+            'emby': 'https://emby.example.com',
+            'jellyfin': 'https://jellyfin.example.com',
+            'tdarr': 'http://127.0.0.1:8265',
+            'autoplow': 'https://autoplow.example.com/api/triggers/autoplow/1?api_key=...'
+        };
+
+        const urlLabels = {
+            'plex': 'Server URL',
+            'emby': 'Server URL',
+            'jellyfin': 'Server URL',
+            'tdarr': 'Server URL',
+            'autoplow': 'Webhook URL'
+        };
+
+        const urlHelp = {
+            'plex': 'The full URL to your media server (including port)',
+            'emby': 'The full URL to your media server (including port)',
+            'jellyfin': 'The full URL to your media server (including port)',
+            'tdarr': 'The full URL to your Tdarr server (default port 8265)',
+            'autoplow': 'The full webhook URL from the remote Autoplow instance (including API key)'
+        };
+
+        const uploadDelayHelp = {
+            'plex': 'Maximum wait time for smart detection (actual completion uses idle threshold below). Default: 300',
+            'emby': 'Fixed delay before allowing uploads after scan. Default: 300',
+            'jellyfin': 'Fixed delay before allowing uploads after scan. Default: 300',
+            'tdarr': 'Fixed delay before allowing uploads after scan. Default: 300',
+            'autoplow': 'Fixed delay before allowing uploads after scan. Default: 300'
+        };
+
+        function updateAuthField() {
+            const type = typeSelect.value;
+            const urlLabel = document.querySelector('label[for="url"]');
+            const urlHelpText = urlInput.nextElementSibling;
+
+            // Hide all auth fields first
+            plexAuth.classList.add('hidden');
+            embyAuth.classList.add('hidden');
+            tdarrAuth.classList.add('hidden');
+            embyOptions.classList.add('hidden');
+            plexOptions.classList.add('hidden');
+            tokenInput.required = false;
+            apiKeyInput.required = false;
+
+            if (type === 'plex') {
+                plexAuth.classList.remove('hidden');
+                plexOptions.classList.remove('hidden');
+                tokenInput.required = true;
+                apiKeyInput.value = '';
+                tdarrDbIdInput.value = '';
+            } else if (type === 'tdarr') {
+                tdarrAuth.classList.remove('hidden');
+                tokenInput.value = '';
+                apiKeyInput.value = '';
+            } else if (type === 'autoplow') {
+                tokenInput.value = '';
+                apiKeyInput.value = '';
+                tdarrDbIdInput.value = '';
+            } else {
+                // Emby/Jellyfin
+                embyAuth.classList.remove('hidden');
+                embyOptions.classList.remove('hidden');
+                apiKeyInput.required = true;
+                tokenInput.value = '';
+                tdarrDbIdInput.value = '';
+            }
+            urlInput.placeholder = urlPlaceholders[type] || 'https://plex.example.com';
+            if (urlLabel) urlLabel.textContent = urlLabels[type] || 'Server URL';
+            if (urlHelpText) urlHelpText.textContent = urlHelp[type] || '';
+
+            // Update upload delay help text based on type
+            const uploadDelayHelpText = document.getElementById('upload-delay-help');
+            if (uploadDelayHelpText) uploadDelayHelpText.textContent = uploadDelayHelp[type] || 'Fixed delay before allowing uploads after scan. Default: 300';
+
+            invalidateTest();
+        }
+
+        // Toggle MetadataRefreshMode based on RefreshMetadata checkbox
+        if (refreshMetadataCheckbox && metadataRefreshModeContainer && metadataRefreshModeSelect) {
+            refreshMetadataCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    metadataRefreshModeContainer.classList.remove('opacity-50');
+                    metadataRefreshModeSelect.disabled = false;
+                } else {
+                    metadataRefreshModeContainer.classList.add('opacity-50');
+                    metadataRefreshModeSelect.disabled = true;
+                }
+            });
+        }
+
+        function invalidateTest() {
+            isValidated = false;
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            testResult.textContent = '';
+            testResult.className = 'text-sm';
+            librariesSection.classList.add('hidden');
+        }
+
+        function validateTest() {
+            isValidated = true;
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        // Normalize URL: keep protocol + host/ip + port, strip paths and trailing slashes
+        // For autoplow, keep the full URL including path and query params
+        urlInput.addEventListener('blur', function() {
+            if (this.value) {
+                const type = typeSelect.value;
+                if (type === 'autoplow') {
+                    // For autoplow, just trim trailing slashes but keep path/query
+                    this.value = this.value.replace(/\/+$/, '');
+                } else {
+                    try {
+                        const parsed = new URL(this.value);
+                        this.value = parsed.origin;
+                    } catch {
+                        this.value = this.value.replace(/\/+$/, '');
+                    }
+                }
+            }
+        });
+
+        // Invalidate test when connection fields change
+        urlInput.addEventListener('input', invalidateTest);
+        tokenInput.addEventListener('input', invalidateTest);
+        apiKeyInput.addEventListener('input', invalidateTest);
+        typeSelect.addEventListener('change', updateAuthField);
+
+        // Test connection
+        testBtn.addEventListener('click', async function() {
+            const type = typeSelect.value;
+            const url = urlInput.value;
+            const token = tokenInput.value;
+            const apiKey = apiKeyInput.value;
+
+            if (!url) {
+                testResult.textContent = 'Please enter a server URL';
+                testResult.className = 'text-sm text-red-600 dark:text-red-400';
+                return;
+            }
+
+            if (type === 'plex' && !token) {
+                testResult.textContent = 'Please enter a Plex token';
+                testResult.className = 'text-sm text-red-600 dark:text-red-400';
+                return;
+            }
+
+            if ((type === 'emby' || type === 'jellyfin') && !apiKey) {
+                testResult.textContent = 'Please enter an API key';
+                testResult.className = 'text-sm text-red-600 dark:text-red-400';
+                return;
+            }
+
+            const tdarrDbId = tdarrDbIdInput.value;
+            if (type === 'tdarr' && !tdarrDbId) {
+                testResult.textContent = 'Please enter a Tdarr Library ID';
+                testResult.className = 'text-sm text-red-600 dark:text-red-400';
+                return;
+            }
+
+            // Autoplow only needs the URL (which contains the API key in query params)
+
+            testBtn.disabled = true;
+            testBtn.textContent = 'Testing...';
+            testResult.textContent = '';
+
+            try {
+                const formData = new FormData();
+                formData.append('type', type);
+                formData.append('url', url);
+                formData.append('token', token);
+                formData.append('api_key', apiKey);
+                formData.append('tdarr_db_id', tdarrDbId);
+
+                const response = await fetch('/targets/test', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    testResult.textContent = 'Connection successful';
+                    testResult.className = 'text-sm text-green-600 dark:text-green-400';
+                    validateTest();
+
+                    // Show libraries if available
+                    if (data.libraries && data.libraries.length > 0) {
+                        librariesSection.classList.remove('hidden');
+                        const formatLibs = (libraries) => {
+                            const grouped = {};
+                            libraries.forEach(lib => {
+                                const type = lib.type || 'other';
+                                if (!grouped[type]) grouped[type] = [];
+                                grouped[type].push(lib);
+                            });
+                            const formatPaths = (lib) => {
+                                const paths = lib.paths && lib.paths.length > 0 ? lib.paths : (lib.path ? [lib.path] : []);
+                                return paths.map(p => `<code class="text-xs bg-gray-100 dark:bg-gray-600 px-1 rounded" title="${p}">${p}</code>`).join(' ');
+                            };
+                            return Object.entries(grouped).map(([type, libs]) => `
+                                <div class="mb-2 last:mb-0">
+                                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">${type}</span>
+                                    <div class="mt-1 space-y-1">
+                                        ${libs.map(lib => `<div class="flex items-baseline gap-2 flex-wrap">
+                                            <span class="text-sm text-gray-900 dark:text-white">${lib.name}</span>
+                                            <span class="text-gray-400">—</span>
+                                            ${formatPaths(lib)}
+                                        </div>`).join('')}
+                                    </div>
+                                </div>
+                            `).join('');
+                        };
+                        librariesList.innerHTML = formatLibs(data.libraries);
+                    } else {
+                        librariesSection.classList.add('hidden');
+                    }
+                } else {
+                    testResult.textContent = 'Failed: ' + (data.message || data.error || 'Unknown error');
+                    testResult.className = 'text-sm text-red-600 dark:text-red-400';
+                    librariesSection.classList.add('hidden');
+                }
+            } catch (err) {
+                testResult.textContent = 'Error: ' + (err.message || 'Request failed');
+                testResult.className = 'text-sm text-red-600 dark:text-red-400';
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = 'Test Connection';
+            }
+        });
+
+        // Path mappings management
+        const container = document.getElementById('path-mappings-container');
+        const addBtn = document.getElementById('add-path-mapping');
+
+        function createPathMappingRow(from = '', to = '') {
+            const row = document.createElement('div');
+            row.className = 'path-mapping-row flex items-center gap-3';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" name="path_mapping_from[]" value="${from}" placeholder="Local path (e.g., /mnt/media)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <span class="text-gray-500 dark:text-gray-400">→</span>
+                <div class="flex-1">
+                    <input type="text" name="path_mapping_to[]" value="${to}" placeholder="Server path (e.g., /data/media)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-path-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addBtn) {
+            addBtn.addEventListener('click', function() {
+                container.appendChild(createPathMappingRow());
+            });
+        }
+
+        if (container) {
+            container.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-path-mapping')) {
+                    e.target.closest('.path-mapping-row').remove();
+                }
+            });
+        }
+
+        // Exclude paths management
+        const excludeContainer = document.getElementById('exclude-paths-container');
+        const addExcludeBtn = document.getElementById('add-exclude-path');
+
+        function createExcludePathRow(path = '') {
+            const row = document.createElement('div');
+            row.className = 'exclude-path-row flex items-center gap-3';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" name="exclude_paths[]" value="${path}" placeholder="Path prefix to exclude (e.g., /mnt/media/samples)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-exclude-path text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addExcludeBtn) {
+            addExcludeBtn.addEventListener('click', function() {
+                excludeContainer.appendChild(createExcludePathRow());
+            });
+        }
+
+        if (excludeContainer) {
+            excludeContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-exclude-path')) {
+                    e.target.closest('.exclude-path-row').remove();
+                }
+            });
+        }
+
+        // Exclude triggers management
+        const excludeTriggersContainer = document.getElementById('exclude-triggers-container');
+        const addExcludeTriggerBtn = document.getElementById('add-exclude-trigger');
+
+        function createExcludeTriggerRow(triggerName = '') {
+            const row = document.createElement('div');
+            row.className = 'exclude-trigger-row flex items-center gap-3';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" name="exclude_triggers[]" value="${triggerName}" placeholder="Trigger name to exclude (e.g., sonarr-trigger)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-exclude-trigger text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addExcludeTriggerBtn) {
+            addExcludeTriggerBtn.addEventListener('click', function() {
+                excludeTriggersContainer.appendChild(createExcludeTriggerRow());
+            });
+        }
+
+        if (excludeTriggersContainer) {
+            excludeTriggersContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-exclude-trigger')) {
+                    e.target.closest('.exclude-trigger-row').remove();
+                }
+            });
+        }
+
+        updateAuthField();
+    })();
+    </script>
+
+    {{else if .Content.Target}}
+    <!-- Edit Target Form -->
+    <div class="sm:flex sm:items-center">
+        <div class="sm:flex-auto">
+            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Edit Media Server</h1>
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Update media server settings.</p>
+        </div>
+    </div>
+
+    <form action="/targets/{{.Content.Target.ID}}" method="POST" class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6">
+        <input type="hidden" name="_method" value="PUT">
+
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                <input type="text" name="name" id="name" required value="{{.Content.Target.Name}}"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                <p class="mt-1 text-sm text-gray-900 dark:text-white py-2 capitalize">{{.Content.Target.Type}}</p>
+            </div>
+            <div class="sm:col-span-2">
+                <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Server URL</label>
+                <input type="url" name="url" id="url" required value="{{.Content.Target.URL}}"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            {{if eq .Content.Target.Type "plex"}}
+            <div>
+                <label for="token" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Plex Token</label>
+                <input type="password" name="token" id="token" value="{{.Content.Target.Token}}"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            {{else if eq .Content.Target.Type "tdarr"}}
+            <div>
+                <label for="tdarr_db_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Library ID (DB ID)</label>
+                <input type="text" name="tdarr_db_id" id="tdarr_db_id" value="{{.Content.Target.Config.TdarrDBID}}"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    placeholder="e.g., lRn8YIpNj">
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">The Tdarr library ID (found in Tdarr UI under Libraries)</p>
+            </div>
+            {{else if ne .Content.Target.Type "autoplow"}}
+            <div>
+                <label for="api_key" class="block text-sm font-medium text-gray-700 dark:text-gray-300">API Key</label>
+                <input type="password" name="api_key" id="api_key" value="{{.Content.Target.APIKey}}"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            {{end}}
+            <div class="flex items-center pt-6">
+                <input type="checkbox" name="enabled" id="enabled" {{if .Content.Target.Enabled}}checked{{end}}
+                    class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                <label for="enabled" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Enabled</label>
+            </div>
+        </div>
+
+        <!-- Test Connection -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center gap-4">
+                <button type="button" id="test-btn"
+                    hx-post="/targets/{{.Content.Target.ID}}/test"
+                    hx-swap="none"
+                    class="btn-secondary">
+                    Test Connection
+                </button>
+                <span id="test-result" class="text-sm"></span>
+            </div>
+            <!-- Libraries display (shown after successful test) -->
+            <div id="libraries-section" class="hidden mt-4">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Libraries</h3>
+                <div id="libraries-list" class="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
+                    <!-- Libraries will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan Options (common to all target types) -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Scan Options</h3>
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                    <div>
+                        <label for="scan_delay" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan Delay (seconds)</label>
+                        <input type="text" inputmode="numeric" name="scan_delay" id="scan_delay" value="{{.Content.Target.Config.ScanDelay}}"
+                            class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delay before scanning. Default: 0</p>
+                    </div>
+                    <div>
+                        <label for="scan_completion_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Delay (seconds)</label>
+                        <input type="text" inputmode="numeric" name="scan_completion_seconds" id="scan_completion_seconds" value="{{if .Content.Target.Config.ScanCompletionSeconds}}{{.Content.Target.Config.ScanCompletionSeconds}}{{else}}300{{end}}"
+                            class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        {{if eq .Content.Target.Type "plex"}}
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum wait time for smart detection (actual completion uses idle threshold below). Default: 300</p>
+                        {{else}}
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fixed delay before allowing uploads after scan. Default: 300</p>
+                        {{end}}
+                    </div>
+                    {{if eq .Content.Target.Type "plex"}}
+                    <div>
+                        <label for="scan_completion_idle_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan Idle Threshold (seconds)</label>
+                        <input type="text" inputmode="numeric" name="scan_completion_idle_seconds" id="scan_completion_idle_seconds" value="{{if .Content.Target.Config.ScanCompletionIdleSeconds}}{{.Content.Target.Config.ScanCompletionIdleSeconds}}{{else}}10{{end}}"
+                            class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Seconds of no Plex activity before scan is considered complete. Resets on each activity event. Default: 10</p>
+                    </div>
+                    {{end}}
+                </div>
+                {{if or (eq .Content.Target.Type "emby") (eq .Content.Target.Type "jellyfin")}}
+                <!-- Emby/Jellyfin Specific Options -->
+                <div class="flex items-start">
+                    <div class="flex items-center h-5">
+                        <input type="checkbox" name="refresh_metadata" id="refresh_metadata" {{if or .Content.Target.Config.RefreshMetadata (not .Content.Target.Config.MetadataRefreshMode)}}checked{{end}}
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                    </div>
+                    <div class="ml-3">
+                        <label for="refresh_metadata" class="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Direct Item Refresh</label>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">When enabled, autoplow will search for the item in the library and refresh it directly instead of using path-based scanning. Falls back to path scan if item is not found.</p>
+                    </div>
+                </div>
+                <div id="metadata-refresh-mode-container" class="{{if and (not .Content.Target.Config.RefreshMetadata) .Content.Target.Config.MetadataRefreshMode}}opacity-50{{end}}">
+                    <label for="metadata_refresh_mode" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Metadata Refresh Mode</label>
+                    <select name="metadata_refresh_mode" id="metadata_refresh_mode" {{if and (not .Content.Target.Config.RefreshMetadata) .Content.Target.Config.MetadataRefreshMode}}disabled{{end}}
+                        class="mt-1 block w-48 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <option value="FullRefresh" {{if or (eq .Content.Target.Config.MetadataRefreshMode "FullRefresh") (not .Content.Target.Config.MetadataRefreshMode)}}selected{{end}}>Full Refresh</option>
+                        <option value="Default" {{if eq .Content.Target.Config.MetadataRefreshMode "Default"}}selected{{end}}>Default</option>
+                        <option value="ValidationOnly" {{if eq .Content.Target.Config.MetadataRefreshMode "ValidationOnly"}}selected{{end}}>Validation Only</option>
+                        <option value="None" {{if eq .Content.Target.Config.MetadataRefreshMode "None"}}selected{{end}}>None</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How aggressively to refresh metadata when using direct item refresh</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Path Mappings -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Path Mappings</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map local paths to media server paths (e.g., for different mount points or rclone remotes)</p>
+                </div>
+                <button type="button" id="add-path-mapping" class="btn-secondary text-xs">
+                    Add Mapping
+                </button>
+            </div>
+            <div id="path-mappings-container" class="space-y-3">
+                {{range $i, $mapping := .Content.Target.Config.PathMappings}}
+                <div class="path-mapping-row flex items-center gap-3">
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_from[]" value="{{$mapping.From}}" placeholder="Local path (e.g., /mnt/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <span class="text-gray-500 dark:text-gray-400">→</span>
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_to[]" value="{{$mapping.To}}" placeholder="Server path (e.g., /data/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-path-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Exclude Paths -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Paths</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Skip scanning paths that start with these prefixes for this target</p>
+                </div>
+                <button type="button" id="add-exclude-path" class="btn-secondary text-xs">
+                    Add Exclude Path
+                </button>
+            </div>
+            <div id="exclude-paths-container" class="space-y-3">
+                {{range $i, $path := .Content.Target.Config.ExcludePaths}}
+                <div class="exclude-path-row flex items-center gap-3">
+                    <div class="flex-1">
+                        <input type="text" name="exclude_paths[]" value="{{$path}}" placeholder="Path prefix to exclude (e.g., /mnt/media/samples)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-exclude-path text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Exclude Extensions -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Extensions</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Skip scanning files with these extensions (e.g., .nfo, .txt, .jpg)</p>
+                </div>
+                <button type="button" id="add-exclude-extension" class="btn-secondary text-xs">
+                    Add Extension
+                </button>
+            </div>
+            <div id="exclude-extensions-container" class="flex flex-wrap gap-2">
+                {{range $i, $ext := .Content.Target.Config.ExcludeExtensions}}
+                <div class="exclude-ext-row flex items-center gap-1">
+                    <input type="text" name="exclude_extensions[]" value="{{$ext}}" class="w-24 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1 border">
+                    <button type="button" class="remove-exclude-extension text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Advanced Filters (Regex) -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="mb-4">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Advanced Filters (Regex)</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Use regular expressions for complex filtering. Applied after basic filters.</p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <!-- Include Patterns -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Include Patterns (match any)</label>
+                        <button type="button" id="add-adv-include-pattern" class="btn-secondary text-xs">Add Include Pattern</button>
+                    </div>
+                    <div id="adv-include-patterns-container" class="space-y-2">
+                        {{if .Content.Target.Config.AdvancedFilters}}
+                        {{range .Content.Target.Config.AdvancedFilters.IncludePatterns}}
+                        <div class="adv-include-row flex items-center gap-2">
+                            <input type="text" name="advanced_include_patterns[]" value="{{.}}" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono text-xs">
+                            <button type="button" class="remove-adv-include text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                        {{end}}
+                        {{end}}
+                    </div>
+                </div>
+                <!-- Exclude Patterns -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Exclude Patterns (reject any match)</label>
+                        <button type="button" id="add-adv-exclude-pattern" class="btn-secondary text-xs">Add Exclude Pattern</button>
+                    </div>
+                    <div id="adv-exclude-patterns-container" class="space-y-2">
+                        {{if .Content.Target.Config.AdvancedFilters}}
+                        {{range .Content.Target.Config.AdvancedFilters.ExcludePatterns}}
+                        <div class="adv-exclude-row flex items-center gap-2">
+                            <input type="text" name="advanced_exclude_patterns[]" value="{{.}}" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono text-xs">
+                            <button type="button" class="remove-adv-exclude text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                        {{end}}
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Examples: <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">.*\.(mkv|mp4)$</code> for video files, <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">(?i)sample</code> for case-insensitive "sample"</p>
+        </div>
+
+        <!-- Exclude Triggers -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Triggers</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Ignore scans from these triggers for this target (by trigger name)</p>
+                </div>
+                <button type="button" id="add-exclude-trigger" class="btn-secondary text-xs">
+                    Add Exclude Trigger
+                </button>
+            </div>
+            <div id="exclude-triggers-container" class="space-y-3">
+                {{range $i, $trigger := .Content.Target.Config.ExcludeTriggers}}
+                <div class="exclude-trigger-row flex items-center gap-3">
+                    <div class="flex-1">
+                        <input type="text" name="exclude_triggers[]" value="{{$trigger}}" placeholder="Trigger name to exclude (e.g., sonarr-trigger)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-exclude-trigger text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-3">
+            <a href="/targets" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Save Changes</button>
+        </div>
+    </form>
+
+    <script>
+        (function() {
+            // Normalize URL: keep protocol + host/ip + port, strip paths and trailing slashes
+            const urlInput = document.getElementById('url');
+            urlInput.addEventListener('blur', function() {
+                if (this.value) {
+                    try {
+                        const parsed = new URL(this.value);
+                        this.value = parsed.origin;
+                    } catch {
+                        this.value = this.value.replace(/\/+$/, '');
+                    }
+                }
+            });
+
+            // Test connection and display libraries
+            document.body.addEventListener('htmx:afterRequest', function(evt) {
+                if (evt.detail.pathInfo.requestPath.includes('/test')) {
+                    const result = document.getElementById('test-result');
+                    const librariesSection = document.getElementById('libraries-section');
+                    const librariesList = document.getElementById('libraries-list');
+                    const response = JSON.parse(evt.detail.xhr.responseText);
+
+                    if (response.success) {
+                        result.textContent = 'Connection successful';
+                        result.className = 'text-sm text-green-600 dark:text-green-400';
+
+                        // Show libraries if available
+                        if (response.libraries && response.libraries.length > 0) {
+                            librariesSection.classList.remove('hidden');
+                            const formatLibs = (libraries) => {
+                                const grouped = {};
+                                libraries.forEach(lib => {
+                                    const type = lib.type || 'other';
+                                    if (!grouped[type]) grouped[type] = [];
+                                    grouped[type].push(lib);
+                                });
+                                const formatPaths = (lib) => {
+                                    const paths = lib.paths && lib.paths.length > 0 ? lib.paths : (lib.path ? [lib.path] : []);
+                                    return paths.map(p => `<code class="text-xs bg-gray-100 dark:bg-gray-600 px-1 rounded" title="${p}">${p}</code>`).join(' ');
+                                };
+                                return Object.entries(grouped).map(([type, libs]) => `
+                                    <div class="mb-2 last:mb-0">
+                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">${type}</span>
+                                        <div class="mt-1 space-y-1">
+                                            ${libs.map(lib => `<div class="flex items-baseline gap-2 flex-wrap">
+                                                <span class="text-sm text-gray-900 dark:text-white">${lib.name}</span>
+                                                <span class="text-gray-400">—</span>
+                                                ${formatPaths(lib)}
+                                            </div>`).join('')}
+                                        </div>
+                                    </div>
+                                `).join('');
+                            };
+                            librariesList.innerHTML = formatLibs(response.libraries);
+                        } else {
+                            librariesSection.classList.add('hidden');
+                        }
+                    } else {
+                        result.textContent = 'Failed: ' + response.message;
+                        result.className = 'text-sm text-red-600 dark:text-red-400';
+                        librariesSection.classList.add('hidden');
+                    }
+                }
+            });
+
+            // Path mappings management
+            const container = document.getElementById('path-mappings-container');
+            const addBtn = document.getElementById('add-path-mapping');
+
+            function createPathMappingRow(from = '', to = '') {
+                const row = document.createElement('div');
+                row.className = 'path-mapping-row flex items-center gap-3';
+                row.innerHTML = `
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_from[]" value="${from}" placeholder="Local path (e.g., /mnt/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <span class="text-gray-500 dark:text-gray-400">→</span>
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_to[]" value="${to}" placeholder="Server path (e.g., /data/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-path-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                `;
+                return row;
+            }
+
+            addBtn.addEventListener('click', function() {
+                container.appendChild(createPathMappingRow());
+            });
+
+            container.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-path-mapping')) {
+                    e.target.closest('.path-mapping-row').remove();
+                }
+            });
+
+            // Exclude paths management
+            const excludeContainer = document.getElementById('exclude-paths-container');
+            const addExcludeBtn = document.getElementById('add-exclude-path');
+
+            function createExcludePathRow(path = '') {
+                const row = document.createElement('div');
+                row.className = 'exclude-path-row flex items-center gap-3';
+                row.innerHTML = `
+                    <div class="flex-1">
+                        <input type="text" name="exclude_paths[]" value="${path}" placeholder="Path prefix to exclude (e.g., /mnt/media/samples)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-exclude-path text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                `;
+                return row;
+            }
+
+            if (addExcludeBtn) {
+                addExcludeBtn.addEventListener('click', function() {
+                    excludeContainer.appendChild(createExcludePathRow());
+                });
+            }
+
+            if (excludeContainer) {
+                excludeContainer.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-exclude-path')) {
+                        e.target.closest('.exclude-path-row').remove();
+                    }
+                });
+            }
+
+            // Exclude triggers management
+            const excludeTriggersContainer = document.getElementById('exclude-triggers-container');
+            const addExcludeTriggerBtn = document.getElementById('add-exclude-trigger');
+
+            function createExcludeTriggerRow(triggerName = '') {
+                const row = document.createElement('div');
+                row.className = 'exclude-trigger-row flex items-center gap-3';
+                row.innerHTML = `
+                    <div class="flex-1">
+                        <input type="text" name="exclude_triggers[]" value="${triggerName}" placeholder="Trigger name to exclude (e.g., sonarr-trigger)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-exclude-trigger text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                `;
+                return row;
+            }
+
+            if (addExcludeTriggerBtn) {
+                addExcludeTriggerBtn.addEventListener('click', function() {
+                    excludeTriggersContainer.appendChild(createExcludeTriggerRow());
+                });
+            }
+
+            if (excludeTriggersContainer) {
+                excludeTriggersContainer.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-exclude-trigger')) {
+                        e.target.closest('.exclude-trigger-row').remove();
+                    }
+                });
+            }
+
+            // Exclude extensions management
+            const excludeExtContainer = document.getElementById('exclude-extensions-container');
+            const addExcludeExtBtn = document.getElementById('add-exclude-extension');
+
+            function createExcludeExtRow(ext = '') {
+                const row = document.createElement('div');
+                row.className = 'exclude-ext-row flex items-center gap-1';
+                row.innerHTML = `
+                    <input type="text" name="exclude_extensions[]" value="${ext}" placeholder=".nfo" class="w-24 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1 border">
+                    <button type="button" class="remove-exclude-extension text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                `;
+                return row;
+            }
+
+            if (addExcludeExtBtn) {
+                addExcludeExtBtn.addEventListener('click', function() {
+                    excludeExtContainer.appendChild(createExcludeExtRow());
+                });
+            }
+
+            if (excludeExtContainer) {
+                excludeExtContainer.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-exclude-extension')) {
+                        e.target.closest('.exclude-ext-row').remove();
+                    }
+                });
+            }
+
+            // Advanced filters management
+            const advIncludeContainer = document.getElementById('adv-include-patterns-container');
+            const addAdvIncludeBtn = document.getElementById('add-adv-include-pattern');
+            const advExcludeContainer = document.getElementById('adv-exclude-patterns-container');
+            const addAdvExcludeBtn = document.getElementById('add-adv-exclude-pattern');
+
+            function createAdvIncludeRow(pattern = '') {
+                const row = document.createElement('div');
+                row.className = 'adv-include-row flex items-center gap-2';
+                row.innerHTML = `
+                    <input type="text" name="advanced_include_patterns[]" value="${pattern}" placeholder=".*\\.(mkv|mp4)$" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono text-xs">
+                    <button type="button" class="remove-adv-include text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                `;
+                return row;
+            }
+
+            function createAdvExcludeRow(pattern = '') {
+                const row = document.createElement('div');
+                row.className = 'adv-exclude-row flex items-center gap-2';
+                row.innerHTML = `
+                    <input type="text" name="advanced_exclude_patterns[]" value="${pattern}" placeholder="(?i)sample" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono text-xs">
+                    <button type="button" class="remove-adv-exclude text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                `;
+                return row;
+            }
+
+            if (addAdvIncludeBtn) {
+                addAdvIncludeBtn.addEventListener('click', function() {
+                    advIncludeContainer.appendChild(createAdvIncludeRow());
+                });
+            }
+
+            if (advIncludeContainer) {
+                advIncludeContainer.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-adv-include')) {
+                        e.target.closest('.adv-include-row').remove();
+                    }
+                });
+            }
+
+            if (addAdvExcludeBtn) {
+                addAdvExcludeBtn.addEventListener('click', function() {
+                    advExcludeContainer.appendChild(createAdvExcludeRow());
+                });
+            }
+
+            if (advExcludeContainer) {
+                advExcludeContainer.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-adv-exclude')) {
+                        e.target.closest('.adv-exclude-row').remove();
+                    }
+                });
+            }
+
+            // Toggle MetadataRefreshMode based on RefreshMetadata checkbox
+            const refreshMetadataCheckbox = document.getElementById('refresh_metadata');
+            const metadataRefreshModeContainer = document.getElementById('metadata-refresh-mode-container');
+            const metadataRefreshModeSelect = document.getElementById('metadata_refresh_mode');
+
+            if (refreshMetadataCheckbox && metadataRefreshModeContainer && metadataRefreshModeSelect) {
+                refreshMetadataCheckbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        metadataRefreshModeContainer.classList.remove('opacity-50');
+                        metadataRefreshModeSelect.disabled = false;
+                    } else {
+                        metadataRefreshModeContainer.classList.add('opacity-50');
+                        metadataRefreshModeSelect.disabled = true;
+                    }
+                });
+            }
+        })();
+    </script>
+
+    {{else}}
+    <!-- Targets List -->
+    <div class="sm:flex sm:items-center sm:justify-between">
+        <div>
+            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Targets</h1>
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Configure Plex, Emby, Jellyfin servers, or forward scans to other Autoplow instances.</p>
+        </div>
+        <div class="mt-4 sm:mt-0">
+            <a href="/targets/new" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                </svg>
+                Add Target
+            </a>
+        </div>
+    </div>
+
+    {{if .Content.Targets}}
+    <div class="space-y-6">
+        {{/* Plex Section */}}
+        {{if .Content.Plex}}
+        <div>
+            <h2 class="text-lg font-medium text-yellow-600 dark:text-yellow-400 mb-3 flex items-center gap-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-400">Plex</span>
+            </h2>
+            <div class="space-y-3">
+                {{range .Content.Plex}}
+                <div id="target-{{.ID}}" class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</h3>
+                            <span class="text-sm text-gray-500 dark:text-gray-400" title="{{.URL}}">{{.URL}}</span>
+                            {{if .Enabled}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">Enabled</span>
+                            {{else}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Disabled</span>
+                            {{end}}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="/targets/{{.ID}}" class="text-sm text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</a>
+                            <button type="button" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this server?" class="text-sm text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                        </div>
+                    </div>
+                    <div class="px-4 py-3">
+                        <div id="libraries-{{.ID}}" class="text-sm text-gray-500 dark:text-gray-400" data-target-id="{{.ID}}">
+                            <span class="loading-libraries">Loading libraries...</span>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        {{/* Emby Section */}}
+        {{if .Content.Emby}}
+        <div>
+            <h2 class="text-lg font-medium text-green-600 dark:text-green-400 mb-3 flex items-center gap-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">Emby</span>
+            </h2>
+            <div class="space-y-3">
+                {{range .Content.Emby}}
+                <div id="target-{{.ID}}" class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</h3>
+                            <span class="text-sm text-gray-500 dark:text-gray-400" title="{{.URL}}">{{.URL}}</span>
+                            {{if .Enabled}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">Enabled</span>
+                            {{else}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Disabled</span>
+                            {{end}}
+                            {{if or .Config.RefreshMetadata (not .Config.MetadataRefreshMode)}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-400" title="Direct item refresh enabled">Direct Refresh: {{if .Config.MetadataRefreshMode}}{{.Config.MetadataRefreshMode}}{{else}}FullRefresh{{end}}</span>
+                            {{end}}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="/targets/{{.ID}}" class="text-sm text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</a>
+                            <button type="button" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this server?" class="text-sm text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                        </div>
+                    </div>
+                    <div class="px-4 py-3">
+                        <div id="libraries-{{.ID}}" class="text-sm text-gray-500 dark:text-gray-400" data-target-id="{{.ID}}">
+                            <span class="loading-libraries">Loading libraries...</span>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        {{/* Jellyfin Section */}}
+        {{if .Content.Jellyfin}}
+        <div>
+            <h2 class="text-lg font-medium text-purple-600 dark:text-purple-400 mb-3 flex items-center gap-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-400">Jellyfin</span>
+            </h2>
+            <div class="space-y-3">
+                {{range .Content.Jellyfin}}
+                <div id="target-{{.ID}}" class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</h3>
+                            <span class="text-sm text-gray-500 dark:text-gray-400" title="{{.URL}}">{{.URL}}</span>
+                            {{if .Enabled}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">Enabled</span>
+                            {{else}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Disabled</span>
+                            {{end}}
+                            {{if or .Config.RefreshMetadata (not .Config.MetadataRefreshMode)}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-400" title="Direct item refresh enabled">Direct Refresh: {{if .Config.MetadataRefreshMode}}{{.Config.MetadataRefreshMode}}{{else}}FullRefresh{{end}}</span>
+                            {{end}}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="/targets/{{.ID}}" class="text-sm text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</a>
+                            <button type="button" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this server?" class="text-sm text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                        </div>
+                    </div>
+                    <div class="px-4 py-3">
+                        <div id="libraries-{{.ID}}" class="text-sm text-gray-500 dark:text-gray-400" data-target-id="{{.ID}}">
+                            <span class="loading-libraries">Loading libraries...</span>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        {{/* Tdarr Section */}}
+        {{if .Content.Tdarr}}
+        <div>
+            <h2 class="text-lg font-medium text-cyan-600 dark:text-cyan-400 mb-3 flex items-center gap-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-400">Tdarr</span>
+            </h2>
+            <div class="space-y-3">
+                {{range .Content.Tdarr}}
+                <div id="target-{{.ID}}" class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                    <div class="px-4 py-3 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</h3>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 truncate max-w-md" title="{{.URL}}">{{.URL}}</span>
+                            {{if .Enabled}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">Enabled</span>
+                            {{else}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Disabled</span>
+                            {{end}}
+                            {{if .Config.TdarrDBID}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-400" title="Library ID">{{.Config.TdarrDBID}}</span>
+                            {{end}}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="/targets/{{.ID}}" class="text-sm text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</a>
+                            <button type="button" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this target?" class="text-sm text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        {{/* Autoplow Section */}}
+        {{if .Content.Autoplow}}
+        <div>
+            <h2 class="text-lg font-medium text-orange-600 dark:text-orange-400 mb-3 flex items-center gap-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-400">Autoplow</span>
+            </h2>
+            <div class="space-y-3">
+                {{range .Content.Autoplow}}
+                <div id="target-{{.ID}}" class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                    <div class="px-4 py-3 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</h3>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 truncate max-w-md" title="{{.URL}}">{{.URL}}</span>
+                            {{if .Enabled}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">Enabled</span>
+                            {{else}}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Disabled</span>
+                            {{end}}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="/targets/{{.ID}}" class="text-sm text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</a>
+                            <button type="button" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this target?" class="text-sm text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <script>
+    (function() {
+        const formatLibraries = (libraries) => {
+            // Group by type
+            const grouped = {};
+            libraries.forEach(lib => {
+                const type = lib.type || 'other';
+                if (!grouped[type]) grouped[type] = [];
+                grouped[type].push(lib);
+            });
+
+            // Format paths compactly
+            const formatPaths = (lib) => {
+                const paths = lib.paths && lib.paths.length > 0 ? lib.paths : (lib.path ? [lib.path] : []);
+                return paths.map(p => `<code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded" title="${p}">${p}</code>`).join(' ');
+            };
+
+            // Render each type group
+            return Object.entries(grouped).map(([type, libs]) => `
+                <div class="mb-2 last:mb-0">
+                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">${type}</span>
+                    <div class="mt-1 space-y-1">
+                        ${libs.map(lib => `<div class="flex items-baseline gap-2">
+                            <span class="text-sm text-gray-900 dark:text-white">${lib.name}</span>
+                            <span class="text-gray-400">—</span>
+                            ${formatPaths(lib)}
+                        </div>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+        };
+
+        document.querySelectorAll('[data-target-id]').forEach(async (el) => {
+            const targetId = el.dataset.targetId;
+            try {
+                const response = await fetch(`/targets/${targetId}/libraries`);
+                if (!response.ok) throw new Error('Failed to fetch');
+                const libraries = await response.json();
+
+                if (libraries && libraries.length > 0) {
+                    el.innerHTML = formatLibraries(libraries);
+                } else {
+                    el.innerHTML = '<span class="text-gray-400 dark:text-gray-500">No libraries found</span>';
+                }
+            } catch (err) {
+                el.innerHTML = '<span class="text-red-500 dark:text-red-400">Failed to load libraries</span>';
+            }
+        });
+    })();
+    </script>
+    {{else}}
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+            No media servers configured yet. <a href="/targets/new" class="text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">Add your first server</a>
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+</div>
+{{end}}
+
+{{template "base" .}}

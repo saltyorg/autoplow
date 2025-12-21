@@ -1,0 +1,27 @@
+module github.com/saltyorg/autoplow
+
+go 1.25.5
+
+require (
+	github.com/fsnotify/fsnotify v1.9.0
+	github.com/go-chi/chi/v5 v5.2.3
+	github.com/gorilla/websocket v1.5.3
+	github.com/mattn/go-sqlite3 v1.14.32
+	github.com/rclone/rclone v1.72.1
+	github.com/rs/zerolog v1.34.0
+	github.com/spf13/cobra v1.10.2
+	golang.org/x/crypto v0.46.0
+)
+
+require (
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jzelinskie/whirlpool v0.0.0-20201016144138-0675e54bb004 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/zeebo/blake3 v0.2.4 // indirect
+	github.com/zeebo/xxh3 v1.0.2 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
+)

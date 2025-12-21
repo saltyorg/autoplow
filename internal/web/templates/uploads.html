@@ -1,0 +1,1501 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Upload Configuration</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Configure cloud remotes and destinations for rclone uploads.</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+            <a href="/uploads" class="{{if eq .Content.Tab "queue"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Queue</a>
+            <a href="/uploads/remotes" class="{{if eq .Content.Tab "remotes"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Remotes</a>
+            <a href="/uploads/destinations" class="{{if eq .Content.Tab "destinations"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Destinations</a>
+        </nav>
+    </div>
+
+    {{if eq .Content.Tab "queue"}}
+    <!-- Active Transfers Section -->
+    <div id="active-transfers" hx-get="/uploads/active" hx-trigger="load, sse-refresh" hx-swap="innerHTML">
+        {{template "active_transfers" .Content.ActiveTransfers}}
+    </div>
+
+    <!-- Queue Tab -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <div>
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Upload Queue</h3>
+                <p id="upload-queue-stats" class="text-sm text-gray-500 dark:text-gray-400 mt-1" hx-get="/uploads/queue-stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="5s">
+                    {{template "upload_queue_stats" .Content}}
+                </p>
+            </div>
+            <div class="flex items-center gap-3">
+                {{if .Content.IsPaused}}
+                <form method="POST" action="/uploads/resume" class="inline">
+                    <button type="submit" class="inline-flex items-center px-3 py-2 border border-green-300 dark:border-green-600 shadow-sm text-sm leading-4 font-medium rounded-md text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Resume
+                    </button>
+                </form>
+                {{else}}
+                <form method="POST" action="/uploads/pause" class="inline">
+                    <button type="submit" class="inline-flex items-center px-3 py-2 border border-yellow-300 dark:border-yellow-600 shadow-sm text-sm leading-4 font-medium rounded-md text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 hover:bg-yellow-100 dark:hover:bg-yellow-900/50">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Pause
+                    </button>
+                </form>
+                {{end}}
+            </div>
+        </div>
+        <div class="overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Path</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Remote</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Size</th>
+                        <th class="relative px-6 py-3">
+                            <span class="sr-only">Actions</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="upload-queue" hx-get="/uploads/queue?page={{.Content.Page}}&pageSize={{.Content.PageSize}}" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="3s" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {{template "upload_queue" .Content.Uploads}}
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination -->
+        <div id="upload-queue-pagination" hx-get="/uploads/queue-pagination?page={{.Content.Page}}&pageSize={{.Content.PageSize}}" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="5s">
+            {{template "upload_queue_pagination" .Content}}
+        </div>
+    </div>
+
+    {{else if eq .Content.Tab "remotes"}}
+    <!-- Remotes Tab -->
+    {{if .Content.IsNew}}
+    <!-- New Remote Form -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">New Remote</h3>
+        </div>
+        <form method="POST" action="/uploads/remotes" class="p-6 space-y-4">
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                <input type="text" name="name" id="name" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label for="rclone_remote" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Rclone Remote</label>
+                {{if .Content.AvailableRemotes}}
+                <select name="rclone_remote" id="rclone_remote" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    {{range .Content.AvailableRemotes}}
+                    <option value="{{.}}:">{{.}}</option>
+                    {{end}}
+                </select>
+                {{else}}
+                <input type="text" name="rclone_remote" id="rclone_remote" placeholder="gdrive:" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Enter the rclone remote name (e.g., gdrive:, dropbox:)</p>
+                {{end}}
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" name="enabled" id="enabled" checked class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                <label for="enabled" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Enabled</label>
+            </div>
+
+            <!-- Transfer Options -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Transfer Options</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Add backend types to see available options. Click an option to add it to this remote's configuration.</p>
+
+                <!-- Added options will appear here -->
+                <div id="configured-options" class="space-y-2 mb-4"></div>
+
+                <!-- Add Backend Type -->
+                {{if .Content.Providers}}
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Add backend options</label>
+                        <select onchange="showBackendPanel(this.value)" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-1.5 border">
+                            <option value="">Select a backend type to add...</option>
+                            {{range .Content.Providers}}
+                            <option value="{{.Name}}">{{.Name}} - {{truncate .Description 50}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+
+                    <!-- Backend options panels (pre-rendered, hidden by default) -->
+                    <div id="backend-options-container">
+                        {{range $provider := .Content.Providers}}
+                        <div id="backend-panel-{{$provider.Name}}" class="hidden border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                            <div class="bg-gray-100 dark:bg-gray-700 px-3 py-2 flex justify-between items-center">
+                                <h5 class="text-sm font-medium text-gray-900 dark:text-white">{{$provider.Name}} Options</h5>
+                                <button type="button" onclick="hideBackendPanel()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                            <div class="max-h-80 overflow-y-auto">{{range $provider.Options}}
+                                <button type="button" onclick="addOption('{{$provider.Name}}', '{{.Name}}', '{{jsEscape .DefaultStr}}', '{{jsEscape .Help}}', '{{.Type}}', '{{typeChoices .Type}}')"
+                                    class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 flex justify-between items-start group border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+                                    <div class="flex-1 min-w-0">
+                                        <span class="font-medium text-gray-700 dark:text-gray-300">{{.Name}}</span>
+                                        {{if .Advanced}}<span class="text-orange-500 dark:text-orange-400 ml-1 text-xs">(adv)</span>{{end}}
+                                        {{if .DefaultStr}}<span class="text-gray-400 ml-1">(default: {{.DefaultStr}})</span>{{end}}
+                                        <p class="text-gray-500 dark:text-gray-400 truncate text-xs">{{truncate .Help 80}}</p>
+                                    </div>
+                                    <span class="text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 ml-2">+ Add</span>
+                                </button>{{end}}
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{else}}
+                <p class="text-xs text-yellow-600 dark:text-yellow-400">Rclone is not running. Start rclone to see available options.</p>
+                {{end}}
+            </div>
+
+            <div class="flex justify-end space-x-3">
+                <a href="/uploads/remotes" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</a>
+                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Create Remote</button>
+            </div>
+        </form>
+    </div>
+    {{else if .Content.Remote}}
+    <!-- Edit Remote Form -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Edit Remote</h3>
+        </div>
+        <form method="POST" action="/uploads/remotes/{{.Content.Remote.ID}}" class="p-6 space-y-4">
+            <input type="hidden" name="_method" value="PUT">
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                <input type="text" name="name" id="name" value="{{.Content.Remote.Name}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label for="rclone_remote" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Rclone Remote</label>
+                <input type="text" name="rclone_remote" id="rclone_remote" value="{{.Content.Remote.RcloneRemote}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" name="enabled" id="enabled" {{if .Content.Remote.Enabled}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                <label for="enabled" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Enabled</label>
+            </div>
+
+            <!-- Transfer Options -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Transfer Options</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Add backend types to see available options. Click an option to add it to this remote's configuration.</p>
+
+                <!-- Configured options (grouped by backend) -->
+                <div id="configured-options" class="space-y-3 mb-4">
+                    {{if .Content.Remote.TransferOptions}}
+                    <div id="opt-group-existing" class="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                        <div class="bg-gray-100 dark:bg-gray-700 px-3 py-2 flex justify-between items-center">
+                            <h5 class="text-sm font-medium text-gray-900 dark:text-white">Saved Options</h5>
+                            <button type="button" onclick="removeBackendGroup('existing')" class="text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 text-xs">Remove All</button>
+                        </div>
+                        <div class="p-3 space-y-3" id="opt-group-content-existing">
+                            {{range $key, $value := .Content.Remote.TransferOptions}}
+                            <div class="bg-white dark:bg-gray-600 p-3 rounded shadow-sm space-y-2" id="opt-row-{{$key}}">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{$key}}</label>
+                                    <button type="button" onclick="removeOption('{{$key}}', 'existing')" class="text-red-600 hover:text-red-800 dark:text-red-400 text-xs">Remove</button>
+                                </div>
+                                <input type="text" name="opt_{{$key}}" value="{{$value}}" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-500 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1.5 border">
+                                <p class="text-xs text-gray-500 dark:text-gray-400 italic">Select this option from a backend below to see its description.</p>
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+
+                <!-- Add Backend Type -->
+                {{if .Content.Providers}}
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Add backend options</label>
+                        <select onchange="showBackendPanel(this.value)" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-1.5 border">
+                            <option value="">Select a backend type to add...</option>
+                            {{range .Content.Providers}}
+                            <option value="{{.Name}}">{{.Name}} - {{truncate .Description 50}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+
+                    <!-- Backend options panels (pre-rendered, hidden by default) -->
+                    <div id="backend-options-container">
+                        {{range $provider := .Content.Providers}}
+                        <div id="backend-panel-{{$provider.Name}}" class="hidden border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                            <div class="bg-gray-100 dark:bg-gray-700 px-3 py-2 flex justify-between items-center">
+                                <h5 class="text-sm font-medium text-gray-900 dark:text-white">{{$provider.Name}} Options</h5>
+                                <button type="button" onclick="hideBackendPanel()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                            <div class="max-h-80 overflow-y-auto">{{range $provider.Options}}
+                                <button type="button" onclick="addOption('{{$provider.Name}}', '{{.Name}}', '{{jsEscape .DefaultStr}}', '{{jsEscape .Help}}', '{{.Type}}', '{{typeChoices .Type}}')"
+                                    class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 flex justify-between items-start group border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+                                    <div class="flex-1 min-w-0">
+                                        <span class="font-medium text-gray-700 dark:text-gray-300">{{.Name}}</span>
+                                        {{if .Advanced}}<span class="text-orange-500 dark:text-orange-400 ml-1 text-xs">(adv)</span>{{end}}
+                                        {{if .DefaultStr}}<span class="text-gray-400 ml-1">(default: {{.DefaultStr}})</span>{{end}}
+                                        <p class="text-gray-500 dark:text-gray-400 truncate text-xs">{{truncate .Help 80}}</p>
+                                    </div>
+                                    <span class="text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 ml-2">+ Add</span>
+                                </button>{{end}}
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{else}}
+                <p class="text-xs text-yellow-600 dark:text-yellow-400">Rclone is not running. Start rclone to see available options.</p>
+                {{end}}
+            </div>
+
+            <div class="flex justify-end space-x-3">
+                <a href="/uploads/remotes" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</a>
+                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Update Remote</button>
+            </div>
+        </form>
+    </div>
+    {{else}}
+    <!-- Remotes List -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Rclone Remotes</h3>
+            <a href="/uploads/remotes/new" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Remote</a>
+        </div>
+        <div class="overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Rclone Remote</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th class="relative px-6 py-3">
+                            <span class="sr-only">Actions</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {{if .Content.Remotes}}
+                    {{range .Content.Remotes}}
+                    <tr id="remote-{{.ID}}">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.RcloneRemote}}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            {{if .Enabled}}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Enabled</span>
+                            {{else}}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">Disabled</span>
+                            {{end}}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="testRemote(this, {{.ID}})" class="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 mr-3">Test</button>
+                            <a href="/uploads/remotes/{{.ID}}" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-3">Edit</a>
+                            <button hx-delete="/uploads/remotes/{{.ID}}" hx-target="#remote-{{.ID}}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this remote?" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                    {{else}}
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+                            No remotes configured. <a href="/uploads/remotes/new" class="text-indigo-600 hover:text-indigo-900">Add one</a>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+    async function testRemote(btn, id) {
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Testing...';
+        try {
+            const response = await fetch('/uploads/remotes/' + id + '/test', { method: 'POST' });
+            const data = await response.json();
+            showToast(data.success, data.message);
+        } catch (error) {
+            showToast(false, 'Failed to test: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+    </script>
+    {{end}}
+
+    {{else if eq .Content.Tab "destinations"}}
+    <!-- Destinations Tab -->
+    {{if .Content.IsNew}}
+    <!-- New Destination Form -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">New Destination</h3>
+        </div>
+        <form method="POST" action="/uploads/destinations" id="new-destination-form" class="p-6 space-y-4">
+            <div>
+                <label for="local_path" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Local Path</label>
+                <input type="text" name="local_path" id="local_path" placeholder="/mnt/local/Media" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label for="upload_mode_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Mode</label>
+                <select name="upload_mode" id="upload_mode_new" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="immediate">Immediate</option>
+                    <option value="age">Age-based</option>
+                    <option value="size">Size-based</option>
+                </select>
+            </div>
+            <div id="mode_value_field_new" class="hidden">
+                <label for="mode_value_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span id="mode_value_label_new">Value</span>
+                </label>
+                <input type="number" name="mode_value" id="mode_value_new" min="1" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p id="mode_value_help_new" class="mt-1 text-sm text-gray-500 dark:text-gray-400"></p>
+            </div>
+            <div>
+                <label for="transfer_type_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Transfer Type</label>
+                <select name="transfer_type" id="transfer_type_new" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="move" selected>Move (delete after upload)</option>
+                    <option value="copy">Copy (keep original)</option>
+                </select>
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" name="enabled" id="enabled" checked class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                <label for="enabled" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Enabled</label>
+            </div>
+
+            <!-- Exclude Paths -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Paths</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Path prefixes to exclude from uploads</p>
+                    </div>
+                    <button type="button" id="add-exclude-path" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        Add Path
+                    </button>
+                </div>
+                <div id="exclude-paths-container" class="space-y-3"></div>
+            </div>
+
+            <!-- Exclude Extensions -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Extensions</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">File extensions to exclude from uploads</p>
+                    </div>
+                    <button type="button" id="add-exclude-extension" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        Add Extension
+                    </button>
+                </div>
+                <div id="exclude-extensions-container" class="space-y-3"></div>
+            </div>
+
+            <!-- Advanced Filters (Regex) -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Advanced Filters (Regex)</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Use regex patterns for fine-grained control. Include patterns whitelist paths (path must match one). Exclude patterns blacklist paths (matching paths are skipped).</p>
+                </div>
+
+                <!-- Include Patterns -->
+                <div class="mb-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Include Patterns (whitelist)</label>
+                        <button type="button" id="add-adv-include-pattern" class="btn-secondary text-xs">Add Include Pattern</button>
+                    </div>
+                    <div id="adv-include-patterns-container" class="space-y-2"></div>
+                </div>
+
+                <!-- Exclude Patterns -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Exclude Patterns (blacklist)</label>
+                        <button type="button" id="add-adv-exclude-pattern" class="btn-secondary text-xs">Add Exclude Pattern</button>
+                    </div>
+                    <div id="adv-exclude-patterns-container" class="space-y-2"></div>
+                </div>
+            </div>
+
+            <!-- Remote Destinations -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Remote Destinations</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">First remote is primary, others are failover. Drag to reorder.</p>
+                    </div>
+                    {{if .Content.Remotes}}
+                    <button type="button" id="add-new-path-remote" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        Add Remote
+                    </button>
+                    {{end}}
+                </div>
+                <div id="new-path-remotes-container" class="space-y-3"></div>
+                {{if not .Content.Remotes}}
+                <p class="text-sm text-gray-500 dark:text-gray-400">No remotes configured. <a href="/uploads/remotes/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create one first</a>.</p>
+                {{end}}
+            </div>
+
+            <!-- Included Triggers -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Allowed Triggers</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Only files from selected local triggers (inotify/polling) will be uploaded to this destination. At least one must be selected.</p>
+                </div>
+                {{if .Content.LocalTriggers}}
+                <div class="space-y-2">
+                    {{range .Content.LocalTriggers}}
+                    <label class="flex items-center">
+                        <input type="checkbox" name="included_triggers[]" value="{{.ID}}" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                        <span class="ml-2 text-sm text-gray-900 dark:text-gray-300">{{.Name}}</span>
+                        <span class="ml-2 text-xs px-1.5 py-0.5 rounded {{if eq .Type "inotify"}}bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-400{{else}}bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-400{{end}}">{{.Type}}</span>
+                    </label>
+                    {{end}}
+                </div>
+                {{else}}
+                <p class="text-sm text-gray-500 dark:text-gray-400">No local triggers configured. <a href="/triggers" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create one first</a>.</p>
+                {{end}}
+            </div>
+
+            <div class="flex justify-end space-x-3 pt-4">
+                <a href="/uploads/destinations" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</a>
+                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Create Destination</button>
+            </div>
+        </form>
+    </div>
+    <script>
+    (function() {
+        function toggleModeValue(mode, suffix) {
+            const field = document.getElementById('mode_value_field_' + suffix);
+            const label = document.getElementById('mode_value_label_' + suffix);
+            const help = document.getElementById('mode_value_help_' + suffix);
+            if (mode === 'immediate') {
+                field.classList.add('hidden');
+            } else {
+                field.classList.remove('hidden');
+                if (mode === 'age') {
+                    label.textContent = 'Minimum Age (hours)';
+                    help.textContent = 'Upload files older than this many hours';
+                } else {
+                    label.textContent = 'Minimum Size (GB)';
+                    help.textContent = 'Upload when accumulated size exceeds this many GB';
+                }
+            }
+        }
+
+        // Setup mode toggle for new form
+        const modeSelect = document.getElementById('upload_mode_new');
+        if (modeSelect) {
+            modeSelect.addEventListener('change', function() {
+                toggleModeValue(this.value, 'new');
+            });
+            // Initialize on page load
+            toggleModeValue(modeSelect.value, 'new');
+        }
+
+        // Exclude paths management
+        const excludePathsContainer = document.getElementById('exclude-paths-container');
+        const addExcludePathBtn = document.getElementById('add-exclude-path');
+
+        function createExcludePathRow(path = '') {
+            const row = document.createElement('div');
+            row.className = 'exclude-path-row flex items-center gap-3';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" name="exclude_paths[]" value="${path}" placeholder="Path prefix to exclude (e.g., /mnt/media/temp)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-exclude-path text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addExcludePathBtn) {
+            addExcludePathBtn.addEventListener('click', function() {
+                excludePathsContainer.appendChild(createExcludePathRow());
+            });
+        }
+
+        if (excludePathsContainer) {
+            excludePathsContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-exclude-path')) {
+                    e.target.closest('.exclude-path-row').remove();
+                }
+            });
+        }
+
+        // Exclude extensions management
+        const excludeExtContainer = document.getElementById('exclude-extensions-container');
+        const addExcludeExtBtn = document.getElementById('add-exclude-extension');
+
+        function createExcludeExtRow(ext = '') {
+            const row = document.createElement('div');
+            row.className = 'exclude-ext-row flex items-center gap-3';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" name="exclude_extensions[]" value="${ext}" placeholder="Extension to exclude (e.g., .tmp)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-exclude-ext text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addExcludeExtBtn) {
+            addExcludeExtBtn.addEventListener('click', function() {
+                excludeExtContainer.appendChild(createExcludeExtRow());
+            });
+        }
+
+        if (excludeExtContainer) {
+            excludeExtContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-exclude-ext')) {
+                    e.target.closest('.exclude-ext-row').remove();
+                }
+            });
+        }
+
+        // Advanced filters management (new destination form)
+        function createAdvPatternRow(name, value = '') {
+            const row = document.createElement('div');
+            row.className = 'adv-pattern-row flex items-center gap-2';
+            row.innerHTML = `
+                <input type="text" name="${name}" value="${value}" placeholder="Regex pattern (e.g., \\.mkv$)"
+                    class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-1.5 border">
+                <button type="button" class="remove-adv-pattern text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            `;
+            return row;
+        }
+
+        const advIncludeContainer = document.getElementById('adv-include-patterns-container');
+        const advExcludeContainer = document.getElementById('adv-exclude-patterns-container');
+        const addAdvIncludeBtn = document.getElementById('add-adv-include-pattern');
+        const addAdvExcludeBtn = document.getElementById('add-adv-exclude-pattern');
+
+        if (addAdvIncludeBtn && advIncludeContainer) {
+            addAdvIncludeBtn.addEventListener('click', function() {
+                advIncludeContainer.appendChild(createAdvPatternRow('advanced_include_patterns[]'));
+            });
+        }
+
+        if (addAdvExcludeBtn && advExcludeContainer) {
+            addAdvExcludeBtn.addEventListener('click', function() {
+                advExcludeContainer.appendChild(createAdvPatternRow('advanced_exclude_patterns[]'));
+            });
+        }
+
+        // Remove pattern handlers
+        [advIncludeContainer, advExcludeContainer].forEach(cont => {
+            if (cont) {
+                cont.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-adv-pattern')) {
+                        e.target.closest('.adv-pattern-row').remove();
+                    }
+                });
+            }
+        });
+
+        // Remote destinations management
+        const remotesData = [
+            {{range .Content.Remotes}}
+            { id: {{.ID}}, name: "{{.Name}}" },
+            {{end}}
+        ];
+
+        const container = document.getElementById('new-path-remotes-container');
+        const addBtn = document.getElementById('add-new-path-remote');
+
+        function createRemoteMappingRow(remoteId = '', remotePath = '') {
+            const row = document.createElement('div');
+            row.className = 'remote-mapping-row flex items-center gap-3';
+
+            const optionsHtml = remotesData.map(r =>
+                `<option value="${r.id}" ${r.id == remoteId ? 'selected' : ''}>${r.name}</option>`
+            ).join('');
+
+            row.innerHTML = `
+                <svg class="w-4 h-4 text-gray-400 cursor-move handle flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                <div class="w-48 flex-shrink-0">
+                    <select name="remote_ids[]" class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        ${optionsHtml}
+                    </select>
+                </div>
+                <span class="text-gray-500 dark:text-gray-400 flex-shrink-0">→</span>
+                <div class="flex-1">
+                    <input type="text" name="remote_paths[]" value="${remotePath}" placeholder="Remote path (e.g., /Media/TV)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-remote-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addBtn) {
+            addBtn.addEventListener('click', function() {
+                container.appendChild(createRemoteMappingRow());
+            });
+        }
+
+        if (container) {
+            container.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-remote-mapping')) {
+                    e.target.closest('.remote-mapping-row').remove();
+                }
+            });
+
+            // Initialize sortable for drag-and-drop reordering
+            new Sortable(container, {
+                animation: 150,
+                handle: '.handle'
+            });
+        }
+
+        // Form validation with modal popup
+        const form = document.getElementById('new-destination-form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                const remoteSelects = form.querySelectorAll('select[name="remote_ids[]"]');
+                const triggerCheckboxes = form.querySelectorAll('input[name="included_triggers[]"]:checked');
+
+                const errors = [];
+                if (remoteSelects.length === 0) {
+                    errors.push('At least one remote must be configured');
+                }
+                if (triggerCheckboxes.length === 0) {
+                    errors.push('At least one trigger must be selected');
+                }
+
+                if (errors.length > 0) {
+                    e.preventDefault();
+                    showAlertModal('error', 'Validation Error', errors);
+                }
+            });
+        }
+    })();
+    </script>
+    {{else if .Content.Destination}}
+    <!-- Edit Destination Form -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Edit Destination</h3>
+        </div>
+        <form method="POST" action="/uploads/destinations/{{.Content.Destination.ID}}" id="edit-destination-form" class="p-6 space-y-4">
+            <input type="hidden" name="_method" value="PUT">
+            <div>
+                <label for="local_path" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Local Path</label>
+                <input type="text" name="local_path" id="local_path" value="{{.Content.Destination.LocalPath}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label for="upload_mode_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Mode</label>
+                <select name="upload_mode" id="upload_mode_edit" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="immediate" {{if eq .Content.Destination.UploadMode "immediate"}}selected{{end}}>Immediate</option>
+                    <option value="age" {{if eq .Content.Destination.UploadMode "age"}}selected{{end}}>Age-based</option>
+                    <option value="size" {{if eq .Content.Destination.UploadMode "size"}}selected{{end}}>Size-based</option>
+                </select>
+            </div>
+            <div id="mode_value_field_edit" class="{{if eq .Content.Destination.UploadMode "immediate"}}hidden{{end}}">
+                <label for="mode_value_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span id="mode_value_label_edit">{{if eq .Content.Destination.UploadMode "age"}}Minimum Age (hours){{else}}Minimum Size (GB){{end}}</span>
+                </label>
+                <input type="number" name="mode_value" id="mode_value_edit" min="1" value="{{if .Content.Destination.ModeValue}}{{.Content.Destination.ModeValue}}{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p id="mode_value_help_edit" class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{if eq .Content.Destination.UploadMode "age"}}Upload files older than this many hours{{else}}Upload when accumulated size exceeds this many GB{{end}}</p>
+            </div>
+            <div>
+                <label for="transfer_type_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Transfer Type</label>
+                <select name="transfer_type" id="transfer_type_edit" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="move" {{if eq .Content.Destination.TransferType "move"}}selected{{end}}>Move (delete after upload)</option>
+                    <option value="copy" {{if eq .Content.Destination.TransferType "copy"}}selected{{end}}>Copy (keep original)</option>
+                </select>
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" name="enabled" id="enabled" {{if .Content.Destination.Enabled}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                <label for="enabled" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Enabled</label>
+            </div>
+
+            <!-- Exclude Paths -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Paths</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Path prefixes to exclude from uploads</p>
+                    </div>
+                    <button type="button" id="add-exclude-path-edit" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        Add Path
+                    </button>
+                </div>
+                <div id="exclude-paths-container-edit" class="space-y-3">
+                    {{range .Content.Destination.ExcludePaths}}
+                    <div class="exclude-path-row flex items-center gap-3">
+                        <div class="flex-1">
+                            <input type="text" name="exclude_paths[]" value="{{.}}" placeholder="Path prefix to exclude (e.g., /mnt/media/temp)"
+                                class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        </div>
+                        <button type="button" class="remove-exclude-path text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Exclude Extensions -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Exclude Extensions</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">File extensions to exclude from uploads</p>
+                    </div>
+                    <button type="button" id="add-exclude-extension-edit" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        Add Extension
+                    </button>
+                </div>
+                <div id="exclude-extensions-container-edit" class="space-y-3">
+                    {{range .Content.Destination.ExcludeExtensions}}
+                    <div class="exclude-ext-row flex items-center gap-3">
+                        <div class="flex-1">
+                            <input type="text" name="exclude_extensions[]" value="{{.}}" placeholder="Extension to exclude (e.g., .tmp)"
+                                class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        </div>
+                        <button type="button" class="remove-exclude-ext text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Advanced Filters (Regex) -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Advanced Filters (Regex)</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Use regex patterns for fine-grained control. Include patterns whitelist paths (path must match one). Exclude patterns blacklist paths (matching paths are skipped).</p>
+                </div>
+
+                <!-- Include Patterns -->
+                <div class="mb-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Include Patterns (whitelist)</label>
+                        <button type="button" id="add-adv-include-pattern-edit" class="btn-secondary text-xs">Add Include Pattern</button>
+                    </div>
+                    <div id="adv-include-patterns-container-edit" class="space-y-2">
+                        {{if .Content.Destination.AdvancedFilters}}
+                        {{range .Content.Destination.AdvancedFilters.IncludePatterns}}
+                        <div class="adv-pattern-row flex items-center gap-2">
+                            <input type="text" name="advanced_include_patterns[]" value="{{.}}" placeholder="Regex pattern (e.g., \.mkv$)"
+                                class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-1.5 border">
+                            <button type="button" class="remove-adv-pattern text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        {{end}}
+                        {{end}}
+                    </div>
+                </div>
+
+                <!-- Exclude Patterns -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Exclude Patterns (blacklist)</label>
+                        <button type="button" id="add-adv-exclude-pattern-edit" class="btn-secondary text-xs">Add Exclude Pattern</button>
+                    </div>
+                    <div id="adv-exclude-patterns-container-edit" class="space-y-2">
+                        {{if .Content.Destination.AdvancedFilters}}
+                        {{range .Content.Destination.AdvancedFilters.ExcludePatterns}}
+                        <div class="adv-pattern-row flex items-center gap-2">
+                            <input type="text" name="advanced_exclude_patterns[]" value="{{.}}" placeholder="Regex pattern (e.g., /sample/)"
+                                class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-1.5 border">
+                            <button type="button" class="remove-adv-pattern text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        {{end}}
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Remote Destinations -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Remote Destinations</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">First remote is primary, others are failover. Drag to reorder.</p>
+                    </div>
+                    {{if .Content.Remotes}}
+                    <button type="button" id="add-remote-mapping" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        Add Remote
+                    </button>
+                    {{end}}
+                </div>
+                <div id="remote-mappings-container" class="space-y-3">
+                    {{range $idx, $remote := .Content.Destination.Remotes}}
+                    <div class="remote-mapping-row flex items-center gap-3" data-remote-id="{{$remote.RemoteID}}">
+                        <svg class="w-4 h-4 text-gray-400 cursor-move handle flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                        <div class="w-48 flex-shrink-0">
+                            <select name="remote_ids[]" class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                {{range $.Content.Remotes}}
+                                <option value="{{.ID}}" {{if eq .ID $remote.RemoteID}}selected{{end}}>{{.Name}}</option>
+                                {{end}}
+                            </select>
+                        </div>
+                        <span class="text-gray-500 dark:text-gray-400 flex-shrink-0">→</span>
+                        <div class="flex-1">
+                            <input type="text" name="remote_paths[]" value="{{$remote.RemotePath}}" placeholder="Remote path (e.g., /Media/TV)"
+                                class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        </div>
+                        <button type="button" class="remove-remote-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                    {{end}}
+                </div>
+                {{if not .Content.Remotes}}
+                <p class="text-sm text-gray-500 dark:text-gray-400">No remotes configured. <a href="/uploads/remotes/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create one first</a>.</p>
+                {{end}}
+            </div>
+
+            <!-- Included Triggers -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">Allowed Triggers</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Only files from selected local triggers (inotify/polling) will be uploaded to this destination. At least one must be selected.</p>
+                </div>
+                {{if .Content.LocalTriggers}}
+                <div class="space-y-2">
+                    {{range .Content.LocalTriggers}}
+                    <label class="flex items-center">
+                        <input type="checkbox" name="included_triggers[]" value="{{.ID}}" {{if $.Content.Destination.ShouldAllowTrigger .ID}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                        <span class="ml-2 text-sm text-gray-900 dark:text-gray-300">{{.Name}}</span>
+                        <span class="ml-2 text-xs px-1.5 py-0.5 rounded {{if eq .Type "inotify"}}bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-400{{else}}bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-400{{end}}">{{.Type}}</span>
+                    </label>
+                    {{end}}
+                </div>
+                {{else}}
+                <p class="text-sm text-gray-500 dark:text-gray-400">No local triggers configured. <a href="/triggers" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create one first</a>.</p>
+                {{end}}
+            </div>
+
+            <div class="flex justify-end space-x-3 pt-4">
+                <a href="/uploads/destinations" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</a>
+                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Update Destination</button>
+            </div>
+        </form>
+    </div>
+    <script>
+    (function() {
+        // Mode value toggle for edit form
+        function toggleModeValue(mode) {
+            const field = document.getElementById('mode_value_field_edit');
+            const label = document.getElementById('mode_value_label_edit');
+            const help = document.getElementById('mode_value_help_edit');
+            if (mode === 'immediate') {
+                field.classList.add('hidden');
+            } else {
+                field.classList.remove('hidden');
+                if (mode === 'age') {
+                    label.textContent = 'Minimum Age (hours)';
+                    help.textContent = 'Upload files older than this many hours';
+                } else {
+                    label.textContent = 'Minimum Size (GB)';
+                    help.textContent = 'Upload when accumulated size exceeds this many GB';
+                }
+            }
+        }
+
+        const modeSelect = document.getElementById('upload_mode_edit');
+        if (modeSelect) {
+            modeSelect.addEventListener('change', function() {
+                toggleModeValue(this.value);
+            });
+        }
+
+        // Exclude paths management
+        const excludePathsContainer = document.getElementById('exclude-paths-container-edit');
+        const addExcludePathBtn = document.getElementById('add-exclude-path-edit');
+
+        function createExcludePathRow(path = '') {
+            const row = document.createElement('div');
+            row.className = 'exclude-path-row flex items-center gap-3';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" name="exclude_paths[]" value="${path}" placeholder="Path prefix to exclude (e.g., /mnt/media/temp)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-exclude-path text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addExcludePathBtn) {
+            addExcludePathBtn.addEventListener('click', function() {
+                excludePathsContainer.appendChild(createExcludePathRow());
+            });
+        }
+
+        if (excludePathsContainer) {
+            excludePathsContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-exclude-path')) {
+                    e.target.closest('.exclude-path-row').remove();
+                }
+            });
+        }
+
+        // Exclude extensions management
+        const excludeExtContainer = document.getElementById('exclude-extensions-container-edit');
+        const addExcludeExtBtn = document.getElementById('add-exclude-extension-edit');
+
+        function createExcludeExtRow(ext = '') {
+            const row = document.createElement('div');
+            row.className = 'exclude-ext-row flex items-center gap-3';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" name="exclude_extensions[]" value="${ext}" placeholder="Extension to exclude (e.g., .tmp)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-exclude-ext text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addExcludeExtBtn) {
+            addExcludeExtBtn.addEventListener('click', function() {
+                excludeExtContainer.appendChild(createExcludeExtRow());
+            });
+        }
+
+        if (excludeExtContainer) {
+            excludeExtContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-exclude-ext')) {
+                    e.target.closest('.exclude-ext-row').remove();
+                }
+            });
+        }
+
+        // Advanced filters management (edit destination form)
+        function createAdvPatternRowEdit(name, value = '') {
+            const row = document.createElement('div');
+            row.className = 'adv-pattern-row flex items-center gap-2';
+            row.innerHTML = `
+                <input type="text" name="${name}" value="${value}" placeholder="Regex pattern (e.g., \\.mkv$)"
+                    class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-1.5 border">
+                <button type="button" class="remove-adv-pattern text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            `;
+            return row;
+        }
+
+        const advIncludeContainerEdit = document.getElementById('adv-include-patterns-container-edit');
+        const advExcludeContainerEdit = document.getElementById('adv-exclude-patterns-container-edit');
+        const addAdvIncludeBtnEdit = document.getElementById('add-adv-include-pattern-edit');
+        const addAdvExcludeBtnEdit = document.getElementById('add-adv-exclude-pattern-edit');
+
+        if (addAdvIncludeBtnEdit && advIncludeContainerEdit) {
+            addAdvIncludeBtnEdit.addEventListener('click', function() {
+                advIncludeContainerEdit.appendChild(createAdvPatternRowEdit('advanced_include_patterns[]'));
+            });
+        }
+
+        if (addAdvExcludeBtnEdit && advExcludeContainerEdit) {
+            addAdvExcludeBtnEdit.addEventListener('click', function() {
+                advExcludeContainerEdit.appendChild(createAdvPatternRowEdit('advanced_exclude_patterns[]'));
+            });
+        }
+
+        // Remove pattern handlers (edit form)
+        [advIncludeContainerEdit, advExcludeContainerEdit].forEach(cont => {
+            if (cont) {
+                cont.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-adv-pattern')) {
+                        e.target.closest('.adv-pattern-row').remove();
+                    }
+                });
+            }
+        });
+
+        // Remote destinations management
+        const remotesData = [
+            {{range .Content.Remotes}}
+            { id: {{.ID}}, name: "{{.Name}}" },
+            {{end}}
+        ];
+
+        const container = document.getElementById('remote-mappings-container');
+        const addBtn = document.getElementById('add-remote-mapping');
+
+        function createRemoteMappingRow(remoteId = '', remotePath = '') {
+            const row = document.createElement('div');
+            row.className = 'remote-mapping-row flex items-center gap-3';
+
+            const optionsHtml = remotesData.map(r =>
+                `<option value="${r.id}" ${r.id == remoteId ? 'selected' : ''}>${r.name}</option>`
+            ).join('');
+
+            row.innerHTML = `
+                <svg class="w-4 h-4 text-gray-400 cursor-move handle flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                <div class="w-48 flex-shrink-0">
+                    <select name="remote_ids[]" class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        ${optionsHtml}
+                    </select>
+                </div>
+                <span class="text-gray-500 dark:text-gray-400 flex-shrink-0">→</span>
+                <div class="flex-1">
+                    <input type="text" name="remote_paths[]" value="${remotePath}" placeholder="Remote path (e.g., /Media/TV)"
+                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                </div>
+                <button type="button" class="remove-remote-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            `;
+            return row;
+        }
+
+        if (addBtn) {
+            addBtn.addEventListener('click', function() {
+                container.appendChild(createRemoteMappingRow());
+            });
+        }
+
+        if (container) {
+            container.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-remote-mapping')) {
+                    e.target.closest('.remote-mapping-row').remove();
+                }
+            });
+
+            // Initialize sortable for drag-and-drop reordering
+            new Sortable(container, {
+                animation: 150,
+                handle: '.handle'
+            });
+        }
+
+        // Form validation
+        const form = document.getElementById('edit-destination-form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                const remoteSelects = form.querySelectorAll('select[name="remote_ids[]"]');
+                const triggerCheckboxes = form.querySelectorAll('input[name="included_triggers[]"]:checked');
+
+                const errors = [];
+                if (remoteSelects.length === 0) {
+                    errors.push('At least one remote must be configured');
+                }
+                if (triggerCheckboxes.length === 0) {
+                    errors.push('At least one trigger must be selected');
+                }
+
+                if (errors.length > 0) {
+                    e.preventDefault();
+                    showAlertModal('error', 'Validation Error', errors);
+                }
+            });
+        }
+    })();
+    </script>
+    {{else}}
+    <!-- Destinations List -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Destinations</h3>
+            <a href="/uploads/destinations/new" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Destination</a>
+        </div>
+        <div class="overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Local Path</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Mode</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Remotes</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th class="relative px-6 py-3">
+                            <span class="sr-only">Actions</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {{if .Content.Destinations}}
+                    {{range .Content.Destinations}}
+                    <tr id="destination-{{.ID}}">
+                        <td class="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
+                            <div class="truncate max-w-xs" title="{{.LocalPath}}">{{.LocalPath}}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {{if eq .UploadMode "immediate"}}Immediate{{else if eq .UploadMode "age"}}Age ({{.ModeValue}}h){{else}}Size ({{.ModeValue}}GB){{end}}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {{len .Remotes}} configured
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            {{if .Enabled}}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Enabled</span>
+                            {{else}}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">Disabled</span>
+                            {{end}}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <a href="/uploads/destinations/{{.ID}}" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-3">Edit</a>
+                            <button hx-delete="/uploads/destinations/{{.ID}}" hx-target="#destination-{{.ID}}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this destination?" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                    {{else}}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+                            No destinations configured. <a href="/uploads/destinations/new" class="text-indigo-600 hover:text-indigo-900">Add one</a>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+</div>
+
+<script>
+// Track currently shown backend panel
+let currentBackend = null;
+
+function showBackendPanel(backend) {
+    // Hide any currently visible panel
+    if (currentBackend) {
+        const oldPanel = document.getElementById('backend-panel-' + currentBackend);
+        if (oldPanel) oldPanel.classList.add('hidden');
+    }
+
+    // Show the new panel if a backend was selected
+    if (backend) {
+        const newPanel = document.getElementById('backend-panel-' + backend);
+        if (newPanel) newPanel.classList.remove('hidden');
+        currentBackend = backend;
+    } else {
+        currentBackend = null;
+    }
+}
+
+function hideBackendPanel() {
+    if (currentBackend) {
+        const panel = document.getElementById('backend-panel-' + currentBackend);
+        if (panel) panel.classList.add('hidden');
+    }
+    currentBackend = null;
+    // Reset select
+    const select = document.querySelector('select[onchange="showBackendPanel(this.value)"]');
+    if (select) select.value = '';
+}
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function getOrCreateBackendGroup(backend) {
+    const container = document.getElementById('configured-options');
+    const safeBackend = escapeHtml(backend);
+    let group = document.getElementById('opt-group-' + safeBackend);
+
+    if (!group) {
+        group = document.createElement('div');
+        group.id = 'opt-group-' + safeBackend;
+        group.className = 'border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden';
+        group.innerHTML = `
+            <div class="bg-gray-100 dark:bg-gray-700 px-3 py-2 flex justify-between items-center">
+                <h5 class="text-sm font-medium text-gray-900 dark:text-white">${safeBackend === '_global' ? 'Global' : safeBackend} Options</h5>
+                <button type="button" onclick="removeBackendGroup('${safeBackend}')" class="text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 text-xs">Remove All</button>
+            </div>
+            <div class="p-3 space-y-3" id="opt-group-content-${safeBackend}"></div>
+        `;
+        container.appendChild(group);
+    }
+
+    return document.getElementById('opt-group-content-' + safeBackend);
+}
+
+function addOption(backend, optName, optDefault, optHelp, optType, choicesJson) {
+    // Check if option already exists
+    if (document.querySelector('[name="opt_' + optName + '"]')) {
+        alert('Option "' + optName + '" is already configured');
+        return;
+    }
+
+    const groupContent = getOrCreateBackendGroup(backend);
+    const div = document.createElement('div');
+    div.className = 'bg-white dark:bg-gray-600 p-3 rounded shadow-sm space-y-2';
+    div.id = 'opt-row-' + escapeHtml(optName);
+
+    const defaultVal = optDefault !== null && optDefault !== undefined ? String(optDefault) : '';
+    const safeName = escapeHtml(optName);
+    const safeDefault = escapeHtml(defaultVal);
+    // Convert \n to <br> for proper line breaks in help text
+    // Convert markdown links [text](url) to clickable links (relative paths go to rclone.org)
+    // Convert direct URLs like https://... to clickable links
+    const safeHelp = escapeHtml(optHelp || '')
+        .replace(/\\n/g, '<br>')
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" class="text-indigo-600 dark:text-indigo-400 underline">$1</a>')
+        .replace(/\[([^\]]+)\]\(\/([^)]+)\)/g, '<a href="https://rclone.org/$2" target="_blank" class="text-indigo-600 dark:text-indigo-400 underline">$1</a>')
+        .replace(/(?<![">])(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="text-indigo-600 dark:text-indigo-400 underline">$1</a>');
+    const safeType = escapeHtml(optType || 'string');
+
+    // Parse choices if provided
+    let choices = null;
+    if (choicesJson && choicesJson !== '') {
+        try {
+            choices = JSON.parse(choicesJson);
+        } catch (e) {
+            console.warn('Failed to parse choices for option', optName, e);
+        }
+    }
+
+    // Build the input element - use select for limited choices, text input otherwise
+    let inputHtml;
+    if (optType === 'Encoding' && choices && choices.length > 0) {
+        // Use checkbox list + editable text field for Encoding
+        const defaultFlags = defaultVal ? defaultVal.split(',').map(s => s.trim()).filter(s => s) : [];
+        const checkboxes = choices.map(c => {
+            const checked = defaultFlags.includes(c) ? ' checked' : '';
+            return `<label class="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300"><input type="checkbox" value="${escapeHtml(c)}"${checked} onchange="updateEncodingFromCheckboxes('${safeName}')" class="rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500">${escapeHtml(c)}</label>`;
+        }).join('');
+        inputHtml = `
+            <input type="text" name="opt_${safeName}" id="opt-input-${safeName}" value="${safeDefault}" oninput="updateEncodingCheckboxes('${safeName}')" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-500 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1.5 border mb-2">
+            <div id="opt-checkboxes-${safeName}" class="grid grid-cols-3 gap-1 p-2 bg-gray-50 dark:bg-gray-700 rounded max-h-32 overflow-y-auto">${checkboxes}</div>`;
+    } else if (choices && choices.length > 0) {
+        // Use a dropdown for types with limited choices
+        const options = choices.map(c => {
+            const selected = c === defaultVal ? ' selected' : '';
+            return `<option value="${escapeHtml(c)}"${selected}>${escapeHtml(c)}</option>`;
+        }).join('');
+        inputHtml = `<select name="opt_${safeName}" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-500 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1.5 border">${options}</select>`;
+    } else {
+        // Use text input for free-form values
+        inputHtml = `<input type="text" name="opt_${safeName}" value="${safeDefault}" placeholder="${safeDefault}" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-500 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1.5 border">`;
+    }
+
+    div.innerHTML = `
+        <div class="flex items-center justify-between">
+            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">${safeName}</label>
+            <button type="button" onclick="removeOption('${safeName}', '${escapeHtml(backend)}')" class="text-red-600 hover:text-red-800 dark:text-red-400 text-xs">Remove</button>
+        </div>
+        <input type="hidden" name="opt_type_${safeName}" value="${safeType}">
+        ${inputHtml}
+        <p class="text-xs text-gray-500 dark:text-gray-400">${safeHelp}</p>
+    `;
+
+    groupContent.appendChild(div);
+
+    // Focus the new input/select
+    const focusEl = div.querySelector('input[type="text"], select');
+    if (focusEl) focusEl.focus();
+}
+
+function removeOption(optName, backend) {
+    const row = document.getElementById('opt-row-' + escapeHtml(optName));
+    if (row) row.remove();
+
+    // Remove the group if empty
+    if (backend) {
+        const groupContent = document.getElementById('opt-group-content-' + escapeHtml(backend));
+        if (groupContent && groupContent.children.length === 0) {
+            const group = document.getElementById('opt-group-' + escapeHtml(backend));
+            if (group) group.remove();
+        }
+    }
+}
+
+function removeBackendGroup(backend) {
+    const group = document.getElementById('opt-group-' + escapeHtml(backend));
+    if (group) group.remove();
+}
+
+function removeBackendPanel(backend) {
+    hideBackendPanel();
+}
+
+function updateEncodingFromCheckboxes(optName) {
+    const container = document.getElementById('opt-checkboxes-' + optName);
+    const input = document.getElementById('opt-input-' + optName);
+    if (container && input) {
+        const checked = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+        input.value = checked.join(',');
+    }
+}
+
+function updateEncodingCheckboxes(optName) {
+    const container = document.getElementById('opt-checkboxes-' + optName);
+    const input = document.getElementById('opt-input-' + optName);
+    if (container && input) {
+        const flags = input.value.split(',').map(s => s.trim()).filter(s => s);
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.checked = flags.includes(cb.value);
+        });
+    }
+}
+</script>
+{{end}}
+
+{{define "upload_queue"}}
+{{if .}}
+{{range .}}
+<tr id="upload-{{.ID}}">
+    <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">
+        <div class="truncate max-w-xs" title="{{.LocalPath}}">{{.LocalPath}}</div>
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.RemoteName}}</td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        {{if eq .Status "uploading"}}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Uploading</span>
+        {{else if eq .Status "queued"}}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">Queued</span>
+        {{else if eq .Status "pending"}}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">Pending</span>
+        {{else if eq .Status "completed"}}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Completed</span>
+        {{else if eq .Status "failed"}}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">Failed</span>
+        {{end}}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+        {{if .SizeBytes}}{{formatBytes .SizeBytes}}{{else}}-{{end}}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+        {{if eq .Status "failed"}}
+        <button hx-post="/uploads/{{.ID}}/retry" hx-target="#upload-{{.ID}}" hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Retry</button>
+        {{end}}
+    </td>
+</tr>
+{{end}}
+{{else}}
+<tr>
+    <td colspan="5" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+        No uploads in queue
+    </td>
+</tr>
+{{end}}
+{{end}}
+
+{{define "active_transfers"}}
+<div class="bg-white dark:bg-gray-800 shadow rounded-lg mb-6">
+    <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Active Transfers</h3>
+        {{if and . .Transfers}}
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{formatBytes .Stats.Bytes}} / {{formatBytes .Stats.TotalBytes}} at {{formatSpeed .Stats.Speed}}/s
+            {{if .Stats.ETA}} | ETA: {{formatETA .Stats.ETA}}{{end}}
+        </p>
+        {{else}}
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">No active transfers</p>
+        {{end}}
+    </div>
+    {{if and . .Transfers}}
+    <div class="p-4 space-y-3">
+        {{range .Transfers}}
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <!-- Row 1: Filename and ETA -->
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-gray-900 dark:text-white truncate flex-1 mr-4" title="{{.Name}}">
+                    {{.Name}}
+                </span>
+                <span class="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{{if .ETA}}{{formatETA .ETA}}{{else}}-{{end}}</span>
+            </div>
+            <!-- Row 2: Progress bar (full width) -->
+            <div class="bg-gray-200 dark:bg-gray-600 rounded-full h-2.5 mb-2">
+                <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: {{.Percentage}}%"></div>
+            </div>
+            <!-- Row 3: Size, Percentage (centered), Speed -->
+            <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                <span class="flex-1">{{formatBytes .Bytes}} / {{formatBytes .Size}}</span>
+                <span class="flex-1 text-center w-12">{{.Percentage}}%</span>
+                <span class="flex-1 text-right">{{formatSpeed .Speed}}/s</span>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "upload_queue_stats"}}Active: {{.ActiveCount}} | Queued: {{.QueuedCount}} | Pending: {{.PendingCount}}{{end}}
+
+{{define "upload_queue_pagination"}}
+{{if gt .TotalCount 0}}
+<div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+        <span class="text-sm text-gray-700 dark:text-gray-300">
+            Showing {{if gt .TotalCount 0}}{{add (mul (sub .Page 1) .PageSize) 1}}{{else}}0{{end}} to {{min (mul .Page .PageSize) .TotalCount}} of {{.TotalCount}} uploads
+        </span>
+        <div class="flex items-center gap-2">
+            <label for="pageSize" class="text-sm text-gray-700 dark:text-gray-300">Per page:</label>
+            <select id="pageSize" onchange="window.location.href='/uploads?page=1&pageSize=' + this.value" class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-1 px-2 border">
+                <option value="10" {{if eq .PageSize 10}}selected{{end}}>10</option>
+                <option value="20" {{if eq .PageSize 20}}selected{{end}}>20</option>
+                <option value="50" {{if eq .PageSize 50}}selected{{end}}>50</option>
+                <option value="100" {{if eq .PageSize 100}}selected{{end}}>100</option>
+            </select>
+        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        {{if gt .Page 1}}
+        <a href="/uploads?page={{sub .Page 1}}&pageSize={{.PageSize}}" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+            Previous
+        </a>
+        {{else}}
+        <span class="inline-flex items-center px-3 py-2 border border-gray-200 dark:border-gray-700 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 cursor-not-allowed">
+            Previous
+        </span>
+        {{end}}
+        <span class="text-sm text-gray-700 dark:text-gray-300">
+            Page {{.Page}} of {{.TotalPages}}
+        </span>
+        {{if lt .Page .TotalPages}}
+        <a href="/uploads?page={{add .Page 1}}&pageSize={{.PageSize}}" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+            Next
+        </a>
+        {{else}}
+        <span class="inline-flex items-center px-3 py-2 border border-gray-200 dark:border-gray-700 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 cursor-not-allowed">
+            Next
+        </span>
+        {{end}}
+    </div>
+</div>
+{{end}}
+{{end}}
+
+{{template "base" .}}

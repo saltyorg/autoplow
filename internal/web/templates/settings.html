@@ -1,0 +1,963 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Settings</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Configure processor, throttling, notifications, and rclone settings.</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+            <a href="/settings" class="{{if eq .Content.Tab "general"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">General</a>
+            {{if .ScanningEnabled}}
+            <a href="/settings/processor" class="{{if eq .Content.Tab "processor"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Processor</a>
+            {{end}}
+            <a href="/settings/throttle" class="{{if eq .Content.Tab "throttle"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Throttle</a>
+            <a href="/settings/notifications" class="{{if eq .Content.Tab "notifications"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Notifications</a>
+            <a href="/settings/rclone" class="{{if eq .Content.Tab "rclone"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Rclone</a>
+        </nav>
+    </div>
+
+    {{if eq .Content.Tab "general"}}
+    <!-- General Settings -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">General Settings</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="/settings" method="POST" class="space-y-6">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Retries</label>
+                        <input type="text" inputmode="numeric" name="max_retries" value="{{.Content.Settings.MaxRetries}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum retry attempts for failed operations</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan History Cleanup (days)</label>
+                        <input type="text" inputmode="numeric" name="cleanup_days" value="{{.Content.Settings.CleanupDays}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delete completed/failed scans older than this (0 = keep forever)</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input type="checkbox" name="scanning_enabled" id="scanning_enabled" {{if .Content.Settings.ScanningEnabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        </div>
+                        <div class="ml-2">
+                            <label for="scanning_enabled" class="block text-sm text-gray-900 dark:text-white">Enable scanning functionality</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Disable if you only need uploads without media server scanning</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input type="checkbox" name="uploads_enabled" id="uploads_enabled" {{if .Content.Settings.UploadsEnabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        </div>
+                        <div class="ml-2">
+                            <label for="uploads_enabled" class="block text-sm text-gray-900 dark:text-white">Enable upload functionality</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Disable if you only need scanning without cloud uploads</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input type="checkbox" name="use_binary_units" id="use_binary_units" {{if .Content.Settings.UseBinaryUnits}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        </div>
+                        <div class="ml-2">
+                            <label for="use_binary_units" class="block text-sm text-gray-900 dark:text-white">Use binary units for speeds</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Display speeds as MiB/s (1024-based) instead of MB/s (1000-based)</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input type="checkbox" name="use_bits_for_bitrate" id="use_bits_for_bitrate" {{if .Content.Settings.UseBitsForBitrate}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        </div>
+                        <div class="ml-2">
+                            <label for="use_bits_for_bitrate" class="block text-sm text-gray-900 dark:text-white">Use bits for streaming bitrates</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Display streaming bitrates as Mbps (bits) instead of MiB/s (bytes). Matches Tautulli/Plex format.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <button type="submit" class="inline-flex justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                        Save Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Data Management -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Data Management</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">Clear Upload History</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Delete all upload history records. This cannot be undone.</p>
+                </div>
+                <form method="POST" action="/settings/clear-upload-history" onsubmit="return confirm('Are you sure you want to delete all upload history? This cannot be undone.');">
+                    <button type="submit" class="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-600 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50">
+                        Clear History
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "processor"}}
+    <!-- Processor Settings -->
+    <div class="space-y-6">
+        <!-- Processor Configuration -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Processor Configuration</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Configure scan batching and processing settings.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <form action="/settings/processor" method="POST" class="space-y-6">
+                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum Age (seconds)</label>
+                            <input type="text" inputmode="numeric" name="minimum_age_seconds" value="{{.Content.Settings.MinimumAgeSeconds}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Minimum wait before processing. For files, also checks stability (size unchanged).</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Batch Interval (seconds)</label>
+                            <input type="text" inputmode="numeric" name="batch_interval_seconds" value="{{.Content.Settings.BatchIntervalSeconds}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How often to process batched scans</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Not Found Retries</label>
+                            <input type="text" inputmode="numeric" name="path_not_found_retries" value="{{.Content.Settings.PathNotFoundRetries}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Retries when path doesn't exist. Set to 0 to fail immediately.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Not Found Delay (seconds)</label>
+                            <input type="text" inputmode="numeric" name="path_not_found_delay_seconds" value="{{.Content.Settings.PathNotFoundDelaySeconds}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fixed delay between retry attempts</p>
+                        </div>
+                    </div>
+
+                    <!-- Anchor Settings -->
+                    <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                        <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">File Anchor Settings</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Anchor checking ensures remote mounts are available before processing.</p>
+
+                        <div class="space-y-4">
+                            <div class="flex items-center">
+                                <input type="checkbox" name="anchor_enabled" id="anchor_enabled" {{if .Content.Settings.AnchorEnabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                                <label for="anchor_enabled" class="ml-2 block text-sm text-gray-900 dark:text-white">Enable file anchor checking</label>
+                            </div>
+
+                            <!-- Default Anchor Files -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Default Anchor Files (optional)</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">At least one of these files must exist for paths without specific override</p>
+                                <div id="default-anchor-files" class="space-y-2">
+                                    {{range .Content.Settings.AnchorFiles}}
+                                    <div class="flex items-center gap-2 anchor-file-row">
+                                        <input type="text" name="anchor_files[]" value="{{.}}" placeholder=".ready" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                        <button type="button" onclick="this.closest('.anchor-file-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+                                    {{end}}
+                                </div>
+                                <button type="button" onclick="addDefaultAnchorFile()" class="mt-2 inline-flex items-center text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                    Add Anchor File
+                                </button>
+                            </div>
+
+                            <!-- Path-specific anchor files -->
+                            <div class="mt-6">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Path-Specific Anchor Files</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Configure different anchor files for specific paths (useful for different container/host mappings)</p>
+
+                                <div id="path-anchors" class="space-y-3">
+                                    {{range .Content.Settings.PathAnchorFiles}}
+                                    <div class="flex items-center gap-3 path-anchor-row">
+                                        <input type="text" name="path_anchor_path[]" value="{{.Path}}" placeholder="/mnt/media/movies" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                        <input type="text" name="path_anchor_file[]" value="{{.AnchorFile}}" placeholder=".plex_ready" class="w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                        <button type="button" onclick="this.closest('.path-anchor-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+                                    {{end}}
+                                </div>
+
+                                <button type="button" onclick="addPathAnchor()" class="mt-3 inline-flex items-center text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                    Add Path Override
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                    function addDefaultAnchorFile() {
+                        const container = document.getElementById('default-anchor-files');
+                        const row = document.createElement('div');
+                        row.className = 'flex items-center gap-2 anchor-file-row';
+                        row.innerHTML = `
+                            <input type="text" name="anchor_files[]" placeholder=".ready" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <button type="button" onclick="this.closest('.anchor-file-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        `;
+                        container.appendChild(row);
+                    }
+
+                    function addPathAnchor() {
+                        const container = document.getElementById('path-anchors');
+                        const row = document.createElement('div');
+                        row.className = 'flex items-center gap-3 path-anchor-row';
+                        row.innerHTML = `
+                            <input type="text" name="path_anchor_path[]" placeholder="/mnt/media/movies" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <input type="text" name="path_anchor_file[]" placeholder=".plex_ready" class="w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <button type="button" onclick="this.closest('.path-anchor-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        `;
+                        container.appendChild(row);
+                    }
+                    </script>
+
+                    <div>
+                        <button type="submit" class="inline-flex justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                            Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "throttle"}}
+    <!-- Throttle Settings -->
+    <div class="space-y-6">
+        <!-- Configuration -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Throttle Configuration</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <form action="/settings/throttle" method="POST" class="space-y-6">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="enabled" id="throttle_enabled" {{if .Content.ThrottleConfig.Enabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="throttle_enabled" class="ml-2 block text-sm text-gray-900 dark:text-white">Enable bandwidth throttling</label>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Bandwidth</label>
+                            <div class="mt-1 flex rounded-md shadow-sm">
+                                <input type="text" inputmode="decimal" name="max_bandwidth_value" value="{{.Content.MaxBandwidthValue}}" placeholder="0" class="block w-full rounded-l-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                <select name="max_bandwidth_unit" class="rounded-r-md border-l-0 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                    {{if .Content.UseBitsForBitrate}}
+                                    <option value="Kbit" {{if eq .Content.MaxBandwidthUnit "Kbit"}}selected{{end}}>Kbps</option>
+                                    <option value="Mbit" {{if or (eq .Content.MaxBandwidthUnit "Mbit") (eq .Content.MaxBandwidthUnit "")}}selected{{end}}>Mbps</option>
+                                    <option value="Gbit" {{if eq .Content.MaxBandwidthUnit "Gbit"}}selected{{end}}>Gbps</option>
+                                    {{else}}
+                                    <option value="B" {{if eq .Content.MaxBandwidthUnit "B"}}selected{{end}}>B/s</option>
+                                    <option value="K" {{if eq .Content.MaxBandwidthUnit "K"}}selected{{end}}>{{if .Content.UseBinaryUnits}}KiB/s{{else}}KB/s{{end}}</option>
+                                    <option value="M" {{if or (eq .Content.MaxBandwidthUnit "M") (eq .Content.MaxBandwidthUnit "")}}selected{{end}}>{{if .Content.UseBinaryUnits}}MiB/s{{else}}MB/s{{end}}</option>
+                                    <option value="G" {{if eq .Content.MaxBandwidthUnit "G"}}selected{{end}}>{{if .Content.UseBinaryUnits}}GiB/s{{else}}GB/s{{end}}</option>
+                                    {{end}}
+                                </select>
+                            </div>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum upload bandwidth. 0 = unlimited.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Per-Stream Bandwidth</label>
+                            <div class="mt-1 flex rounded-md shadow-sm">
+                                <input type="text" inputmode="decimal" name="stream_bandwidth_value" value="{{.Content.StreamBandwidthValue}}" placeholder="25" class="block w-full rounded-l-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                <select name="stream_bandwidth_unit" class="rounded-r-md border-l-0 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                    {{if .Content.UseBitsForBitrate}}
+                                    <option value="Kbit" {{if eq .Content.StreamBandwidthUnit "Kbit"}}selected{{end}}>Kbps</option>
+                                    <option value="Mbit" {{if or (eq .Content.StreamBandwidthUnit "Mbit") (eq .Content.StreamBandwidthUnit "")}}selected{{end}}>Mbps</option>
+                                    <option value="Gbit" {{if eq .Content.StreamBandwidthUnit "Gbit"}}selected{{end}}>Gbps</option>
+                                    {{else}}
+                                    <option value="B" {{if eq .Content.StreamBandwidthUnit "B"}}selected{{end}}>B/s</option>
+                                    <option value="K" {{if eq .Content.StreamBandwidthUnit "K"}}selected{{end}}>{{if .Content.UseBinaryUnits}}KiB/s{{else}}KB/s{{end}}</option>
+                                    <option value="M" {{if or (eq .Content.StreamBandwidthUnit "M") (eq .Content.StreamBandwidthUnit "")}}selected{{end}}>{{if .Content.UseBinaryUnits}}MiB/s{{else}}MB/s{{end}}</option>
+                                    <option value="G" {{if eq .Content.StreamBandwidthUnit "G"}}selected{{end}}>{{if .Content.UseBinaryUnits}}GiB/s{{else}}GB/s{{end}}</option>
+                                    {{end}}
+                                </select>
+                            </div>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Bandwidth to reserve per active stream</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum Bandwidth</label>
+                            <div class="mt-1 flex rounded-md shadow-sm">
+                                <input type="text" inputmode="decimal" name="min_bandwidth_value" value="{{.Content.MinBandwidthValue}}" placeholder="1" class="block w-full rounded-l-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                <select name="min_bandwidth_unit" class="rounded-r-md border-l-0 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                    {{if .Content.UseBitsForBitrate}}
+                                    <option value="Kbit" {{if eq .Content.MinBandwidthUnit "Kbit"}}selected{{end}}>Kbps</option>
+                                    <option value="Mbit" {{if or (eq .Content.MinBandwidthUnit "Mbit") (eq .Content.MinBandwidthUnit "")}}selected{{end}}>Mbps</option>
+                                    <option value="Gbit" {{if eq .Content.MinBandwidthUnit "Gbit"}}selected{{end}}>Gbps</option>
+                                    {{else}}
+                                    <option value="B" {{if eq .Content.MinBandwidthUnit "B"}}selected{{end}}>B/s</option>
+                                    <option value="K" {{if eq .Content.MinBandwidthUnit "K"}}selected{{end}}>{{if .Content.UseBinaryUnits}}KiB/s{{else}}KB/s{{end}}</option>
+                                    <option value="M" {{if or (eq .Content.MinBandwidthUnit "M") (eq .Content.MinBandwidthUnit "")}}selected{{end}}>{{if .Content.UseBinaryUnits}}MiB/s{{else}}MB/s{{end}}</option>
+                                    <option value="G" {{if eq .Content.MinBandwidthUnit "G"}}selected{{end}}>{{if .Content.UseBinaryUnits}}GiB/s{{else}}GB/s{{end}}</option>
+                                    {{end}}
+                                </select>
+                            </div>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Minimum bandwidth even with active streams</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Don't Queue New Uploads Below</label>
+                            <div class="mt-1 flex rounded-md shadow-sm">
+                                <input type="text" inputmode="decimal" name="skip_uploads_value" value="{{.Content.SkipUploadsBelowValue}}" placeholder="0" class="block w-full rounded-l-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                <select name="skip_uploads_unit" class="rounded-r-md border-l-0 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                    {{if .Content.UseBitsForBitrate}}
+                                    <option value="Kbit" {{if eq .Content.SkipUploadsBelowUnit "Kbit"}}selected{{end}}>Kbps</option>
+                                    <option value="Mbit" {{if or (eq .Content.SkipUploadsBelowUnit "Mbit") (eq .Content.SkipUploadsBelowUnit "")}}selected{{end}}>Mbps</option>
+                                    <option value="Gbit" {{if eq .Content.SkipUploadsBelowUnit "Gbit"}}selected{{end}}>Gbps</option>
+                                    {{else}}
+                                    <option value="B" {{if eq .Content.SkipUploadsBelowUnit "B"}}selected{{end}}>B/s</option>
+                                    <option value="K" {{if eq .Content.SkipUploadsBelowUnit "K"}}selected{{end}}>{{if .Content.UseBinaryUnits}}KiB/s{{else}}KB/s{{end}}</option>
+                                    <option value="M" {{if or (eq .Content.SkipUploadsBelowUnit "M") (eq .Content.SkipUploadsBelowUnit "")}}selected{{end}}>{{if .Content.UseBinaryUnits}}MiB/s{{else}}MB/s{{end}}</option>
+                                    <option value="G" {{if eq .Content.SkipUploadsBelowUnit "G"}}selected{{end}}>{{if .Content.UseBinaryUnits}}GiB/s{{else}}GB/s{{end}}</option>
+                                    {{end}}
+                                </select>
+                            </div>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Don't queue new uploads when bandwidth falls below this. Existing uploads continue. 0 = disabled.</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <button type="submit" class="inline-flex justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                            Save Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "notifications"}}
+    {{if .Content.EditProvider}}
+    <!-- Edit/New Provider Form -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">
+                    {{if .Content.IsNew}}New Notification Provider{{else}}Edit Provider: {{.Content.Provider.Name}}{{end}}
+                </h3>
+                <a href="/settings/notifications" class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                    &larr; Back to list
+                </a>
+            </div>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="{{if .Content.IsNew}}/settings/notifications{{else}}/settings/notifications/{{.Content.Provider.ID}}{{end}}" method="POST" class="space-y-6">
+                {{if not .Content.IsNew}}<input type="hidden" name="_method" value="PUT">{{end}}
+
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                        <input type="text" name="name" value="{{.Content.Provider.Name}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                        <select name="type" {{if not .Content.IsNew}}disabled{{end}} onchange="toggleProviderFields(this.value)" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <option value="discord" {{if eq .Content.Provider.Type "discord"}}selected{{end}}>Discord</option>
+                            <option value="webhook" {{if eq .Content.Provider.Type "webhook"}}selected{{end}}>Webhook</option>
+                        </select>
+                        {{if not .Content.IsNew}}<input type="hidden" name="type" value="{{.Content.Provider.Type}}">{{end}}
+                    </div>
+                </div>
+
+                <div class="flex items-center">
+                    <input type="checkbox" name="enabled" id="provider_enabled" {{if .Content.Provider.Enabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                    <label for="provider_enabled" class="ml-2 block text-sm text-gray-900 dark:text-white">Enabled</label>
+                </div>
+
+                <!-- Discord-specific fields -->
+                <div id="discord-fields" class="{{if ne .Content.Provider.Type "discord"}}hidden{{end}}">
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">Discord Configuration</h4>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Webhook URL</label>
+                            <input type="url" name="webhook_url" value="{{index .Content.Provider.Config "webhook_url"}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="https://discord.com/api/webhooks/...">
+                        </div>
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Bot Username (optional)</label>
+                                <input type="text" name="username" value="{{index .Content.Provider.Config "username"}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="Autoplow">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Avatar URL (optional)</label>
+                                <input type="url" name="avatar_url" value="{{index .Content.Provider.Config "avatar_url"}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
+                <!-- Webhook-specific fields -->
+                <div id="webhook-fields" class="{{if ne .Content.Provider.Type "webhook"}}hidden{{end}}">
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">Webhook Configuration</h4>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">URL</label>
+                            <input type="url" name="url" value="{{index .Content.Provider.Config "url"}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="https://example.com/webhook">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">The URL to send notifications to</p>
+                        </div>
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">HTTP Method</label>
+                                <select name="method" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                    <option value="POST" {{if eq (index .Content.Provider.Config "method") "POST"}}selected{{end}}>POST</option>
+                                    <option value="PUT" {{if eq (index .Content.Provider.Config "method") "PUT"}}selected{{end}}>PUT</option>
+                                    <option value="PATCH" {{if eq (index .Content.Provider.Config "method") "PATCH"}}selected{{end}}>PATCH</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Content-Type</label>
+                                <input type="text" name="content_type" value="{{or (index .Content.Provider.Config "content_type") "application/json"}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="application/json">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Custom Headers (optional)</label>
+                            <textarea name="headers" rows="3" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono text-xs" placeholder="Authorization: Bearer your-token&#10;X-Custom-Header: value">{{index .Content.Provider.Config "headers"}}</textarea>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">One header per line in format: Header-Name: value</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Request Body Template</label>
+                            <textarea name="body" rows="8" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono text-xs" placeholder="{ &quot;event&quot;: &quot;{{"{{"}}.Type{{"}}"}}&quot;, &quot;title&quot;: &quot;{{"{{"}}.Title{{"}}"}}&quot;, ... }">{{index .Content.Provider.Config "body"}}</textarea>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave empty to use the default JSON format. See available variables below.</p>
+                        </div>
+
+                        <!-- Available Variables -->
+                        <details class="mt-4">
+                            <summary class="cursor-pointer text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                                Available Template Variables
+                            </summary>
+                            <div class="mt-3 bg-gray-50 dark:bg-gray-700 rounded-md p-4">
+                                <table class="min-w-full text-xs">
+                                    <thead>
+                                        <tr>
+                                            <th class="text-left font-medium text-gray-700 dark:text-gray-300 pb-2">Variable</th>
+                                            <th class="text-left font-medium text-gray-700 dark:text-gray-300 pb-2">Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="text-gray-600 dark:text-gray-400">
+                                        <tr><td class="py-1 font-mono">{{"{{"}}.Type{{"}}"}}</td><td class="py-1 pl-4">Event type (scan_queued, scan_completed, upload_failed, etc.)</td></tr>
+                                        <tr><td class="py-1 font-mono">{{"{{"}}.Title{{"}}"}}</td><td class="py-1 pl-4">Event title</td></tr>
+                                        <tr><td class="py-1 font-mono">{{"{{"}}.Message{{"}}"}}</td><td class="py-1 pl-4">Event description</td></tr>
+                                        <tr><td class="py-1 font-mono">{{"{{"}}.Timestamp{{"}}"}}</td><td class="py-1 pl-4">ISO 8601 timestamp</td></tr>
+                                        <tr><td class="py-1 font-mono">{{"{{"}}.FieldsJSON{{"}}"}}</td><td class="py-1 pl-4">Additional fields as JSON object</td></tr>
+                                        <tr><td class="py-1 font-mono">{{"{{"}}.Fields.key{{"}}"}}</td><td class="py-1 pl-4">Access specific field by key name</td></tr>
+                                    </tbody>
+                                </table>
+                                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                    <p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Example body for Slack:</p>
+                                    <pre class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 p-2 rounded overflow-x-auto">{
+  "text": "{{"{{"}}.Title{{"}}"}}: {{"{{"}}.Message{{"}}"}}"
+}</pre>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+                </div>
+
+                <script>
+                function toggleProviderFields(type) {
+                    var discordFields = document.getElementById('discord-fields');
+                    var webhookFields = document.getElementById('webhook-fields');
+                    if (discordFields) {
+                        discordFields.classList.toggle('hidden', type !== 'discord');
+                    }
+                    if (webhookFields) {
+                        webhookFields.classList.toggle('hidden', type !== 'webhook');
+                    }
+                }
+                // Initialize on page load based on current selection
+                document.addEventListener('DOMContentLoaded', function() {
+                    var typeSelect = document.querySelector('select[name="type"]');
+                    if (typeSelect && !typeSelect.disabled) {
+                        toggleProviderFields(typeSelect.value);
+                    }
+                });
+                </script>
+
+                {{if not .Content.IsNew}}
+                <!-- Event Subscriptions -->
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">Event Subscriptions</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Select which events should trigger notifications</p>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {{range .Content.EventTypes}}
+                        <div class="flex items-center">
+                            <input type="checkbox" name="event_{{.Type}}" id="event_{{.Type}}" {{if index $.Content.Subscriptions .Type}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                            <label for="event_{{.Type}}" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">{{.Label}}</label>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+
+                <div class="flex items-center justify-between pt-4">
+                    <button type="submit" class="inline-flex justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        {{if .Content.IsNew}}Create Provider{{else}}Save Changes{{end}}
+                    </button>
+                    {{if not .Content.IsNew}}
+                    <button type="button" hx-post="/settings/notifications/{{.Content.Provider.ID}}/test" hx-swap="none" class="inline-flex justify-center rounded-md bg-gray-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-500">
+                        Send Test
+                    </button>
+                    {{end}}
+                </div>
+            </form>
+        </div>
+    </div>
+    {{else}}
+    <!-- Notification Settings List -->
+    <div class="space-y-6">
+        <!-- Stats Card -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Notification Stats (24h)</h3>
+                </div>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <dl class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Sent</dt>
+                        <dd class="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">{{.Content.Stats.Sent}}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Failed</dt>
+                        <dd class="mt-1 text-lg font-semibold text-red-600 dark:text-red-400">{{.Content.Stats.Failed}}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Providers</dt>
+                        <dd class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{len .Content.Providers}}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Recent Logs</dt>
+                        <dd class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{len .Content.Logs}}</dd>
+                    </div>
+                </dl>
+            </div>
+        </div>
+
+        <!-- Providers List -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Notification Providers</h3>
+                    <a href="/settings/notifications/new" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add Provider
+                    </a>
+                </div>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.Providers}}
+                <div class="space-y-4">
+                    {{range .Content.Providers}}
+                    <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div class="flex items-center space-x-4">
+                            <div class="flex-shrink-0">
+                                {{if eq .Type "discord"}}
+                                <svg class="w-8 h-8 text-indigo-500" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                                </svg>
+                                {{else if eq .Type "webhook"}}
+                                <svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                                </svg>
+                                {{else}}
+                                <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                </svg>
+                                {{end}}
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</h4>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">{{.Type}} · {{if .Enabled}}<span class="text-green-600 dark:text-green-400">Enabled</span>{{else}}<span class="text-gray-400">Disabled</span>{{end}}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button hx-post="/settings/notifications/{{.ID}}/test" hx-swap="none" class="inline-flex items-center rounded px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500">
+                                Test
+                            </button>
+                            <a href="/settings/notifications/{{.ID}}" class="inline-flex items-center rounded px-2 py-1 text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900 hover:bg-indigo-200 dark:hover:bg-indigo-800">
+                                Edit
+                            </a>
+                            <button hx-delete="/settings/notifications/{{.ID}}" hx-confirm="Are you sure you want to delete this provider?" hx-swap="none" class="inline-flex items-center rounded px-2 py-1 text-xs font-medium text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <p class="text-sm text-gray-500 dark:text-gray-400">No notification providers configured. Add a provider to start receiving notifications.</p>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Recent Logs -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Recent Notification Log</h3>
+                    {{if .Content.Logs}}
+                    <form action="/settings/notifications/logs/clear" method="POST">
+                        <button type="submit" class="text-xs text-red-600 dark:text-red-400 hover:text-red-500">Clear logs</button>
+                    </form>
+                    {{end}}
+                </div>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.Logs}}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead>
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Time</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Provider</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Event</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                            {{range .Content.Logs}}
+                            <tr>
+                                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{formatTime .CreatedAt}}</td>
+                                <td class="px-3 py-2 text-xs text-gray-900 dark:text-white">{{.Provider}}</td>
+                                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{{.EventType}}</td>
+                                <td class="px-3 py-2 text-xs">
+                                    {{if eq .Status "sent"}}
+                                    <span class="inline-flex items-center rounded-md bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">Sent</span>
+                                    {{else}}
+                                    <span class="inline-flex items-center rounded-md bg-red-100 dark:bg-red-900 px-2 py-0.5 text-xs font-medium text-red-800 dark:text-red-200" title="{{.Error}}">Failed</span>
+                                    {{end}}
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {{else}}
+                <p class="text-sm text-gray-500 dark:text-gray-400">No notification logs yet.</p>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+
+    {{if eq .Content.Tab "rclone"}}
+    <!-- Rclone Settings -->
+    <div class="space-y-6">
+        <!-- Status Card -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Rclone RCD Status</h3>
+                        <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200{{else}}bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200{{end}}">
+                            {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}Managed{{else}}Unmanaged{{end}}
+                        </span>
+                    </div>
+                    <div id="rclone-status" hx-get="/settings/rclone/status" hx-trigger="load, every 10s">
+                        <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:text-gray-300">
+                            Loading...
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <div class="flex flex-wrap gap-3">
+                    {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}
+                    <!-- Managed mode: show start/stop/restart buttons -->
+                    <form action="/settings/rclone/start" method="POST" class="inline">
+                        <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Start
+                        </button>
+                    </form>
+                    <form action="/settings/rclone/stop" method="POST" class="inline">
+                        <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
+                            </svg>
+                            Stop
+                        </button>
+                    </form>
+                    <form action="/settings/rclone/restart" method="POST" class="inline">
+                        <button type="submit" class="inline-flex items-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500">
+                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Restart
+                        </button>
+                    </form>
+                    {{else}}
+                    <!-- Unmanaged mode: show connect/disconnect buttons -->
+                    <form action="/settings/rclone/start" method="POST" class="inline">
+                        <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                            </svg>
+                            Connect
+                        </button>
+                    </form>
+                    <form action="/settings/rclone/stop" method="POST" class="inline">
+                        <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                            </svg>
+                            Disconnect
+                        </button>
+                    </form>
+                    {{end}}
+                    <button type="button" onclick="testRcloneConnection(this)" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Test Connection
+                    </button>
+                </div>
+
+                {{if .Content.RcloneStatus}}
+                <div class="mt-4 grid grid-cols-2 sm:grid-cols-{{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}5{{else}}3{{end}} gap-4">
+                    {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">PID</dt>
+                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .Content.RcloneStatus.pid}}{{.Content.RcloneStatus.pid}}{{else}}-{{end}}</dd>
+                    </div>
+                    {{end}}
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Address</dt>
+                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.Content.RcloneStatus.address}}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Version</dt>
+                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .Content.RcloneStatus.version}}{{.Content.RcloneStatus.version}}{{else}}-{{end}}</dd>
+                    </div>
+                    {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Uptime</dt>
+                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .Content.RcloneStatus.uptime}}{{.Content.RcloneStatus.uptime}}{{else}}-{{end}}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Restart Count</dt>
+                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.Content.RcloneStatus.restart_count}}</dd>
+                    </div>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Transfer Options Card -->
+        {{if .Content.RcloneRunning}}
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Transfer Options</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Configure global transfer settings. Changes take effect for the next batch of transfers.
+                </p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.GlobalOptions.main}}
+                <form method="POST" action="/settings/rclone/options" class="space-y-4">
+                    {{with .Content.GlobalOptions.main}}
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="transfers" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Transfers</label>
+                            <input type="text" inputmode="numeric" name="transfers" id="transfers" value="{{printf "%.0f" .Transfers}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Number of parallel file transfers (--transfers)</p>
+                        </div>
+                        <div>
+                            <label for="checkers" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Checkers</label>
+                            <input type="text" inputmode="numeric" name="checkers" id="checkers" value="{{printf "%.0f" .Checkers}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Number of parallel checkers (--checkers)</p>
+                        </div>
+                        <div>
+                            <label for="buffer_size" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Buffer Size</label>
+                            <input type="text" name="buffer_size" id="buffer_size" value="{{printf "%.0f" .BufferSize}}" placeholder="16777216" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Buffer size in bytes, e.g., 16777216 = 16Mi (--buffer-size)</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            Save Transfer Options
+                        </button>
+                    </div>
+                    {{end}}
+                </form>
+                {{else}}
+                <p class="text-sm text-gray-500 dark:text-gray-400">Transfer options not available. Make sure rclone RCD is running.</p>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        <!-- Configuration Card -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Rclone Configuration</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <form action="/settings/rclone" method="POST" class="space-y-6">
+                    <!-- Managed/Unmanaged Toggle -->
+                    <div class="flex items-center mb-4">
+                        <input type="checkbox" name="managed" id="managed" {{if or (not .Content.RcloneConfig) .Content.RcloneConfig.Managed}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="managed" class="ml-2 block text-sm font-medium text-gray-900 dark:text-white">Managed Mode</label>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2 mb-4">
+                        <strong>Managed:</strong> Autoplow starts and manages the rclone RCD process. <strong>Unmanaged:</strong> Connect to an existing rclone RCD instance.
+                    </p>
+
+                    <!-- Managed Mode Fields -->
+                    <div id="managed-fields" class="space-y-6">
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Binary Path</label>
+                                <input type="text" name="binary_path" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.BinaryPath}}{{else}}rclone{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="/usr/bin/rclone">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Path to the rclone binary</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Config Path</label>
+                                <input type="text" name="config_path" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.ConfigPath}}{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="~/.config/rclone/rclone.conf">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Path to rclone.conf (optional, uses default if empty)</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Restarts</label>
+                                <input type="text" inputmode="numeric" name="max_restarts" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.MaxRestarts}}{{else}}10{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum restart attempts (0 = unlimited)</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-6">
+                            <div class="flex items-center">
+                                <input type="checkbox" name="auto_start" id="auto_start" {{if and .Content.RcloneConfig .Content.RcloneConfig.AutoStart}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                                <label for="auto_start" class="ml-2 block text-sm text-gray-900 dark:text-white">Auto-start on application launch</label>
+                            </div>
+
+                            <div class="flex items-center">
+                                <input type="checkbox" name="restart_on_fail" id="restart_on_fail" {{if or (not .Content.RcloneConfig) .Content.RcloneConfig.RestartOnFail}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                                <label for="restart_on_fail" class="ml-2 block text-sm text-gray-900 dark:text-white">Restart on failure</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Unmanaged Mode Fields -->
+                    <div id="unmanaged-fields" class="space-y-6 hidden">
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">RCD Address</label>
+                                <input type="text" name="address" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.Address}}{{else}}127.0.0.1:5572{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="127.0.0.1:5572">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Address of the external rclone RCD instance</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Credentials (both modes) -->
+                    <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                        <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">Authentication</h4>
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+                                <input type="text" name="username" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.Username}}{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="Auto-generated if empty">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">RCD authentication username</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                                <input type="password" name="password" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.Password}}{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="Auto-generated if empty">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">RCD authentication password</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <button type="submit" class="inline-flex justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                            Save Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        const managedCheckbox = document.getElementById('managed');
+        const managedFields = document.getElementById('managed-fields');
+        const unmanagedFields = document.getElementById('unmanaged-fields');
+
+        function updateManagedFields() {
+            if (managedCheckbox.checked) {
+                managedFields.classList.remove('hidden');
+                unmanagedFields.classList.add('hidden');
+            } else {
+                managedFields.classList.add('hidden');
+                unmanagedFields.classList.remove('hidden');
+            }
+        }
+
+        managedCheckbox.addEventListener('change', updateManagedFields);
+        updateManagedFields();
+    })();
+    </script>
+
+    <script>
+    async function testRcloneConnection(btn) {
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Testing...';
+
+        try {
+            const response = await fetch('/settings/rclone/test', { method: 'POST' });
+            const data = await response.json();
+            showToast(data.success, data.message);
+        } catch (error) {
+            showToast(false, 'Failed to test connection: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+    </script>
+    {{end}}
+</div>
+{{end}}
+
+{{template "base" .}}

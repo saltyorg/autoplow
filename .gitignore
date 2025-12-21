@@ -1,0 +1,36 @@
+# Build outputs
+/build/
+/autoplow
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Documentation (development-only, except README)
+*.md
+!README.md
+
+# Dependencies
+**/node_modules/
+/vendor/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+/test-data/
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Debug files
+*.log
+debug/
+
+# Temporary files
+tmp/
+*.tmp

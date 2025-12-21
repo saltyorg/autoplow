@@ -1,0 +1,193 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/saltyorg/autoplow/internal/processor"
+)
+
+// ProcessorSettings holds the processor configuration for display
+type ProcessorSettings struct {
+	MinimumAgeSeconds        int
+	BatchIntervalSeconds     int
+	PathNotFoundRetries      int
+	PathNotFoundDelaySeconds int
+	AnchorEnabled            bool
+	AnchorFiles              []string         // Default anchor files (at least one must exist)
+	PathAnchorFiles          []PathAnchorFile // Path-specific anchor files
+	UploadsEnabled           bool
+}
+
+// PathAnchorFile represents a path-to-anchor file mapping
+type PathAnchorFile struct {
+	Path       string `json:"path"`
+	AnchorFile string `json:"anchor_file"`
+}
+
+// SettingsProcessorPage renders the processor settings page
+func (h *Handlers) SettingsProcessorPage(w http.ResponseWriter, r *http.Request) {
+	// Get current processor config if available
+	settings := ProcessorSettings{
+		MinimumAgeSeconds:        60,
+		BatchIntervalSeconds:     30,
+		PathNotFoundRetries:      0,
+		PathNotFoundDelaySeconds: 5,
+		AnchorEnabled:            true,
+	}
+
+	// Try to load from database
+	var minAge, batchInterval int
+	var anchorEnabled bool
+	var anchorFiles []string
+
+	if val, _ := h.db.GetSetting("processor.minimum_age_seconds"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			minAge = v
+		}
+	}
+	if val, _ := h.db.GetSetting("processor.batch_interval_seconds"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			batchInterval = v
+		}
+	}
+	if val, _ := h.db.GetSetting("processor.path_not_found_retries"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			settings.PathNotFoundRetries = v
+		}
+	}
+	if val, _ := h.db.GetSetting("processor.path_not_found_delay_seconds"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil && v > 0 {
+			settings.PathNotFoundDelaySeconds = v
+		}
+	}
+	if val, _ := h.db.GetSetting("processor.anchor.enabled"); val != "" {
+		anchorEnabled = val == "true"
+	} else {
+		anchorEnabled = true // default
+	}
+	if val, _ := h.db.GetSetting("processor.anchor.anchor_files"); val != "" {
+		json.Unmarshal([]byte(val), &anchorFiles)
+	}
+
+	// Load path-specific anchor files
+	var pathAnchorFiles []PathAnchorFile
+	if val, _ := h.db.GetSetting("processor.anchor.path_anchor_files"); val != "" {
+		json.Unmarshal([]byte(val), &pathAnchorFiles)
+	}
+
+	// Use loaded values or defaults
+	if minAge > 0 {
+		settings.MinimumAgeSeconds = minAge
+	}
+	if batchInterval > 0 {
+		settings.BatchIntervalSeconds = batchInterval
+	}
+	settings.AnchorEnabled = anchorEnabled
+	settings.AnchorFiles = anchorFiles
+	settings.PathAnchorFiles = pathAnchorFiles
+
+	// Load uploads enabled setting
+	if val, _ := h.db.GetSetting("uploads.enabled"); val != "" {
+		settings.UploadsEnabled = val != "false"
+	} else {
+		settings.UploadsEnabled = true // default
+	}
+
+	h.render(w, r, "settings.html", map[string]any{
+		"Tab":      "processor",
+		"Settings": settings,
+	})
+}
+
+// SettingsProcessorUpdate handles processor settings updates
+func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.flashErr(w, "Invalid form data")
+		h.redirect(w, r, "/settings/processor")
+		return
+	}
+
+	// Parse form values
+	minAge, _ := strconv.Atoi(r.FormValue("minimum_age_seconds"))
+	batchInterval, _ := strconv.Atoi(r.FormValue("batch_interval_seconds"))
+	pathNotFoundRetries, _ := strconv.Atoi(r.FormValue("path_not_found_retries"))
+	pathNotFoundDelaySeconds, _ := strconv.Atoi(r.FormValue("path_not_found_delay_seconds"))
+	anchorEnabled := r.FormValue("anchor_enabled") == "on"
+
+	// Parse default anchor files list
+	anchorFilesRaw := r.Form["anchor_files[]"]
+	var anchorFiles []string
+	for _, f := range anchorFilesRaw {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			anchorFiles = append(anchorFiles, f)
+		}
+	}
+
+	// Parse path-specific anchor files
+	pathAnchorPaths := r.Form["path_anchor_path[]"]
+	pathAnchorFileNames := r.Form["path_anchor_file[]"]
+	var pathAnchorFiles []PathAnchorFile
+	pathAnchorMap := make(map[string]string)
+	for i := 0; i < len(pathAnchorPaths) && i < len(pathAnchorFileNames); i++ {
+		path := strings.TrimSpace(pathAnchorPaths[i])
+		file := strings.TrimSpace(pathAnchorFileNames[i])
+		if path != "" && file != "" {
+			pathAnchorFiles = append(pathAnchorFiles, PathAnchorFile{Path: path, AnchorFile: file})
+			pathAnchorMap[path] = file
+		}
+	}
+
+	// Validate
+	if minAge < 60 {
+		minAge = 60
+	}
+	if batchInterval < 10 {
+		batchInterval = 30
+	}
+	if pathNotFoundRetries < 0 {
+		pathNotFoundRetries = 0
+	}
+	if pathNotFoundDelaySeconds < 1 {
+		pathNotFoundDelaySeconds = 5
+	}
+
+	// Save to database
+	h.db.SetSetting("processor.minimum_age_seconds", strconv.Itoa(minAge))
+	h.db.SetSetting("processor.batch_interval_seconds", strconv.Itoa(batchInterval))
+	h.db.SetSetting("processor.path_not_found_retries", strconv.Itoa(pathNotFoundRetries))
+	h.db.SetSetting("processor.path_not_found_delay_seconds", strconv.Itoa(pathNotFoundDelaySeconds))
+	h.db.SetSetting("processor.anchor.enabled", strconv.FormatBool(anchorEnabled))
+
+	// Save default anchor files as JSON
+	if anchorFilesJSON, err := json.Marshal(anchorFiles); err == nil {
+		h.db.SetSetting("processor.anchor.anchor_files", string(anchorFilesJSON))
+	}
+
+	// Save path-specific anchor files as JSON
+	if pathAnchorJSON, err := json.Marshal(pathAnchorFiles); err == nil {
+		h.db.SetSetting("processor.anchor.path_anchor_files", string(pathAnchorJSON))
+	}
+
+	// Update processor config if available
+	if h.processor != nil {
+		newConfig := processor.Config{
+			MinimumAgeSeconds:        minAge,
+			BatchIntervalSeconds:     batchInterval,
+			PathNotFoundRetries:      pathNotFoundRetries,
+			PathNotFoundDelaySeconds: pathNotFoundDelaySeconds,
+			Anchor: processor.AnchorConfig{
+				Enabled:         anchorEnabled,
+				AnchorFiles:     anchorFiles,
+				PathAnchorFiles: pathAnchorMap,
+			},
+		}
+		h.processor.UpdateConfig(newConfig)
+	}
+
+	h.flash(w, "Processor settings saved")
+	h.redirect(w, r, "/settings/processor")
+}

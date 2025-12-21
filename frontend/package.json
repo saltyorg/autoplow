@@ -1,0 +1,13 @@
+{
+  "name": "autoplow-frontend",
+  "version": "1.0.0",
+  "description": "Frontend build tooling for Autoplow",
+  "scripts": {
+    "dev": "npx @tailwindcss/cli -i ./src/input.css -o ../internal/web/static/css/styles.css --watch",
+    "build": "npx @tailwindcss/cli -i ./src/input.css -o ../internal/web/static/css/styles.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.1.0",
+    "@tailwindcss/cli": "^4.1.0"
+  }
+}
