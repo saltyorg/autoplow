@@ -20,13 +20,13 @@ GOVET=$(GOCMD) vet
 BINARY_NAME=autoplow
 BINARY_PATH=./cmd/autoplow
 BUILD_DIR=build
-VERSION=0.0.0-dev
+VERSION?=0.0.0-dev
 GIT_COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME?=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Build flags
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(GIT_COMMIT) -X main.date=$(BUILD_TIME)"
-BUILD_FLAGS=CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS)
+export CGO_ENABLED=0
 
 .PHONY: all build clean test test-short test-coverage deps update tidy modernize fmt vet lint help run dev version css
 
@@ -43,7 +43,7 @@ build-go:
 	@echo "Commit: $(GIT_COMMIT)"
 	@echo "Build Time: $(BUILD_TIME)"
 	@mkdir -p $(BUILD_DIR)
-	$(BUILD_FLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(BINARY_PATH)
+	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(BINARY_PATH)
 	@echo "$(GREEN)Build complete: $(BUILD_DIR)/$(BINARY_NAME)$(NC)"
 	@ls -lh $(BUILD_DIR)/$(BINARY_NAME)
 
