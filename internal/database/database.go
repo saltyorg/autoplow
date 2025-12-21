@@ -31,10 +31,11 @@ func New(path string) (*DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Set connection pool settings
-	// SQLite with WAL mode supports concurrent reads but serializes writes
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
+	// Set connection pool settings for SQLite
+	// SQLite serializes all writes, so limiting to 1 connection prevents "database is locked" errors
+	// With WAL mode, reads can still happen concurrently with the single write connection
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	log.Debug().Str("path", path).Msg("Database connection established")
 
