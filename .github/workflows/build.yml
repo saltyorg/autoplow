@@ -69,7 +69,6 @@ jobs:
           GIT_COMMIT: ${{ steps.get_git_commit.outputs.short_sha }}
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
         run: make build-go
 
       - name: Rename Binary for Release
