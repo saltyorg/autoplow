@@ -12,9 +12,13 @@
             {{if .ScanningEnabled}}
             <a href="/settings/processor" class="{{if eq .Content.Tab "processor"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Processor</a>
             {{end}}
+            {{if .UploadsEnabled}}
             <a href="/settings/throttle" class="{{if eq .Content.Tab "throttle"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Throttle</a>
+            {{end}}
             <a href="/settings/notifications" class="{{if eq .Content.Tab "notifications"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Notifications</a>
+            {{if .UploadsEnabled}}
             <a href="/settings/rclone" class="{{if eq .Content.Tab "rclone"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Rclone</a>
+            {{end}}
         </nav>
     </div>
 
