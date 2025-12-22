@@ -136,6 +136,8 @@ func (h *Handlers) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	confirmPassword := r.FormValue("confirm_password")
+	featureScanning := r.FormValue("feature_scanning") == "on"
+	featureUploads := r.FormValue("feature_uploads") == "on"
 
 	// Validate
 	if username == "" || password == "" {
@@ -158,6 +160,11 @@ func (h *Handlers) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 		h.redirect(w, r, "/setup")
 		return
 	}
+	if !featureScanning && !featureUploads {
+		h.flashErr(w, "Please select at least one feature to enable")
+		h.redirect(w, r, "/setup")
+		return
+	}
 
 	// Create user
 	user, err := h.authService.CreateUser(username, password)
@@ -171,6 +178,14 @@ func (h *Handlers) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 	// Initialize default settings
 	if err := h.db.InitializeDefaults(); err != nil {
 		log.Error().Err(err).Msg("Failed to initialize default settings")
+	}
+
+	// Apply feature selections
+	if err := h.db.SetSettingJSON("scanning.enabled", featureScanning); err != nil {
+		log.Error().Err(err).Msg("Failed to set scanning.enabled")
+	}
+	if err := h.db.SetSettingJSON("uploads.enabled", featureUploads); err != nil {
+		log.Error().Err(err).Msg("Failed to set uploads.enabled")
 	}
 
 	// Create session and log in

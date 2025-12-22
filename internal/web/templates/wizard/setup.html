@@ -47,17 +47,68 @@
                     </div>
                 </div>
 
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                    <label class="block text-sm font-medium leading-6 text-gray-900 dark:text-gray-200 mb-3">Enable Features</label>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Select at least one feature to enable. You can change these later in settings.</p>
+
+                    <div id="features-error" class="hidden mb-4 rounded-md bg-red-50 dark:bg-red-900/50 p-3">
+                        <p class="text-sm text-red-800 dark:text-red-200">Please select at least one feature to enable.</p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="relative flex items-start">
+                            <div class="flex h-6 items-center">
+                                <input id="feature_scanning" name="feature_scanning" type="checkbox" checked class="feature-checkbox h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-600 dark:bg-gray-700">
+                            </div>
+                            <div class="ml-3">
+                                <label for="feature_scanning" class="text-sm font-medium text-gray-900 dark:text-gray-200">Media Server Scanning</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Monitor media servers (Plex, Jellyfin, Emby) for new content and trigger library scans automatically.</p>
+                            </div>
+                        </div>
+
+                        <div class="relative flex items-start">
+                            <div class="flex h-6 items-center">
+                                <input id="feature_uploads" name="feature_uploads" type="checkbox" checked class="feature-checkbox h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-600 dark:bg-gray-700">
+                            </div>
+                            <div class="ml-3">
+                                <label for="feature_uploads" class="text-sm font-medium text-gray-900 dark:text-gray-200">Cloud Uploads</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Upload media files to cloud storage using rclone. Supports scheduling, throttling, and progress tracking.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div>
                     <button type="submit" class="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Create Account & Continue</button>
                 </div>
             </form>
         </div>
-
-        <div class="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-            <p>You can configure media servers, triggers, and upload settings after logging in.</p>
-        </div>
     </div>
 </div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    const checkboxes = document.querySelectorAll('.feature-checkbox');
+    const errorDiv = document.getElementById('features-error');
+
+    function validateFeatures() {
+        const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+        errorDiv.classList.toggle('hidden', anyChecked);
+        return anyChecked;
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', validateFeatures));
+
+    form.addEventListener('submit', function(e) {
+        if (!validateFeatures()) {
+            e.preventDefault();
+        }
+    });
+});
+</script>
 {{end}}
 
 {{template "base" .}}
