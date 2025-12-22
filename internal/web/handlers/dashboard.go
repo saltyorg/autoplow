@@ -334,9 +334,14 @@ func (h *Handlers) DashboardSessionsPartial(w http.ResponseWriter, r *http.Reque
 
 // DashboardThrottleStatusPartial returns throttle status (for HTMX polling)
 func (h *Handlers) DashboardThrottleStatusPartial(w http.ResponseWriter, r *http.Request) {
+	// Return empty if uploads are disabled (throttle section won't be shown anyway)
+	if val, _ := h.db.GetSetting("uploads.enabled"); val == "false" {
+		w.Header().Set("Content-Type", "text/html")
+		return
+	}
+
 	if h.throttleMgr == nil {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`<div class="text-sm text-gray-500 dark:text-gray-400">Throttle not initialized</div>`))
 		return
 	}
 

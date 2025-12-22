@@ -177,54 +177,62 @@ func run(cmd *cobra.Command, args []string) error {
 	rcloneMgr := rclone.NewManager(rcloneConfig)
 	server.SetRcloneManager(rcloneMgr)
 
-	// Initialize upload manager
-	uploadConfig := uploader.DefaultConfig()
-	uploadMgr := uploader.New(db, rcloneMgr, uploadConfig)
-	server.SetUploadManager(uploadMgr)
-
-	// Connect upload manager to processor
+	// Get processor and SSE broker
 	processor := server.Processor()
-	processor.SetUploadQueuer(uploadMgr)
-
-	// Wire SSE broker to components for real-time updates
 	sseBroker := server.SSEBroker()
 	processor.SetSSEBroker(sseBroker)
-	uploadMgr.SetSSEBroker(sseBroker)
 
-	// Start processor
+	// Start processor (always needed for scanning)
 	processor.Start()
 	defer processor.Stop()
 
-	// Start upload manager
-	uploadMgr.Start()
-	defer uploadMgr.Stop()
+	// Initialize upload subsystem only if uploads are enabled
+	var uploadMgr *uploader.Manager
+	var throttleMgr *throttle.Manager
 
-	// Start rclone manager if auto-start is enabled
-	if rcloneConfig.AutoStart {
-		if err := rcloneMgr.Start(); err != nil {
-			log.Warn().Err(err).Msg("Failed to auto-start rclone RCD")
+	if uploadsEnabled {
+		// Initialize upload manager
+		uploadConfig := uploader.DefaultConfig()
+		uploadMgr = uploader.New(db, rcloneMgr, uploadConfig)
+		server.SetUploadManager(uploadMgr)
+		processor.SetUploadQueuer(uploadMgr)
+		uploadMgr.SetSSEBroker(sseBroker)
+		uploadMgr.Start()
+
+		// Start rclone manager if auto-start is enabled
+		if rcloneConfig.AutoStart {
+			if err := rcloneMgr.Start(); err != nil {
+				log.Warn().Err(err).Msg("Failed to auto-start rclone RCD")
+			}
 		}
+
+		// Initialize throttle manager with config loaded from database
+		throttleConfig := throttle.LoadConfigFromDB(db)
+		throttleMgr = throttle.New(db, server.TargetsManager(), rcloneMgr, throttleConfig)
+		server.SetThrottleManager(throttleMgr)
+		uploadMgr.SetSkipChecker(throttleMgr)
+		throttleMgr.SetSSEBroker(sseBroker)
+		throttleMgr.Start()
+
+		log.Info().Msg("Upload subsystem started")
+	} else {
+		log.Info().Msg("Upload subsystem disabled")
 	}
+
+	// Defer cleanup for upload subsystem
 	defer func() {
+		if throttleMgr != nil {
+			throttleMgr.Stop()
+		}
+		if uploadMgr != nil {
+			uploadMgr.Stop()
+		}
 		if rcloneMgr.IsRunning() {
 			if err := rcloneMgr.Stop(); err != nil {
 				log.Error().Err(err).Msg("Failed to stop rclone RCD")
 			}
 		}
 	}()
-
-	// Initialize throttle manager with config loaded from database
-	throttleConfig := throttle.LoadConfigFromDB(db)
-	throttleMgr := throttle.New(db, server.TargetsManager(), rcloneMgr, throttleConfig)
-	server.SetThrottleManager(throttleMgr)
-
-	// Connect throttle manager to upload manager for bandwidth-based skipping
-	uploadMgr.SetSkipChecker(throttleMgr)
-	throttleMgr.SetSSEBroker(sseBroker)
-
-	// Start throttle manager
-	throttleMgr.Start()
-	defer throttleMgr.Stop()
 
 	// Initialize notification manager
 	notificationMgr := notification.NewManager(db)
@@ -243,8 +251,10 @@ func run(cmd *cobra.Command, args []string) error {
 	} else {
 		defer inotifyWatcher.Stop()
 		server.SetInotifyManager(inotifyWatcher)
-		// Wire upload manager to inotify for direct upload queuing
-		inotifyWatcher.SetUploadManager(uploadMgr)
+		// Wire upload manager to inotify for direct upload queuing (if uploads enabled)
+		if uploadMgr != nil {
+			inotifyWatcher.SetUploadManager(uploadMgr)
+		}
 		if started, err := inotifyWatcher.Start(); err != nil {
 			log.Warn().Err(err).Msg("Failed to start inotify watcher")
 		} else if !started {
@@ -259,8 +269,10 @@ func run(cmd *cobra.Command, args []string) error {
 	pollingWatcher := polling.New(db, processor)
 	defer pollingWatcher.Stop()
 	server.SetPollingManager(pollingWatcher)
-	// Wire upload manager to polling for direct upload queuing
-	pollingWatcher.SetUploadManager(uploadMgr)
+	// Wire upload manager to polling for direct upload queuing (if uploads enabled)
+	if uploadMgr != nil {
+		pollingWatcher.SetUploadManager(uploadMgr)
+	}
 	if started, err := pollingWatcher.Start(); err != nil {
 		log.Warn().Err(err).Msg("Failed to start polling watcher")
 	} else if !started {

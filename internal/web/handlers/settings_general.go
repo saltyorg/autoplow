@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/rs/zerolog/log"
 )
 
 // GeneralSettings holds the general configuration for display
@@ -64,6 +66,12 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get current uploads.enabled state before update
+	wasUploadsEnabled := true
+	if val, _ := h.db.GetSetting("uploads.enabled"); val == "false" {
+		wasUploadsEnabled = false
+	}
+
 	// Parse form values
 	maxRetries, _ := strconv.Atoi(r.FormValue("max_retries"))
 	cleanupDays, _ := strconv.Atoi(r.FormValue("cleanup_days"))
@@ -112,6 +120,29 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		h.flashErr(w, "Failed to save some settings")
 		h.redirect(w, r, "/settings")
 		return
+	}
+
+	// Handle upload subsystem toggle
+	if h.uploadSubsystemToggler != nil {
+		if !wasUploadsEnabled && uploadsEnabled {
+			// Uploads were disabled, now enabled - start subsystem
+			if err := h.uploadSubsystemToggler.StartUploadSubsystem(); err != nil {
+				log.Error().Err(err).Msg("Failed to start upload subsystem")
+				h.flashErr(w, "Settings saved but failed to start upload subsystem")
+				h.redirect(w, r, "/settings")
+				return
+			}
+			log.Info().Msg("Upload subsystem started via settings change")
+		} else if wasUploadsEnabled && !uploadsEnabled {
+			// Uploads were enabled, now disabled - stop subsystem
+			if err := h.uploadSubsystemToggler.StopUploadSubsystem(); err != nil {
+				log.Error().Err(err).Msg("Failed to stop upload subsystem")
+				h.flashErr(w, "Settings saved but failed to stop upload subsystem")
+				h.redirect(w, r, "/settings")
+				return
+			}
+			log.Info().Msg("Upload subsystem stopped via settings change")
+		}
 	}
 
 	h.flash(w, "Settings saved")

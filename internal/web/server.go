@@ -195,6 +195,112 @@ func (s *Server) ThrottleManager() *throttle.Manager {
 	return s.throttleMgr
 }
 
+// StartUploadSubsystem starts the upload subsystem (upload manager, throttle manager, rclone)
+// This is called when uploads are enabled at runtime
+func (s *Server) StartUploadSubsystem() error {
+	// Check if already running
+	if s.uploadMgr != nil && s.uploadMgr.IsRunning() {
+		return nil
+	}
+
+	log.Info().Msg("Starting upload subsystem")
+
+	// Load rclone config
+	rcloneConfig := handlers.LoadRcloneConfigFromDB(s.db)
+	if binaryPath, _ := s.db.GetSetting("rclone.binary_path"); binaryPath == "" || binaryPath == "/usr/bin/rclone" {
+		rcloneConfig.BinaryPath = rclone.FindRcloneBinary()
+	}
+
+	// Create rclone manager if not exists
+	if s.rcloneMgr == nil {
+		s.rcloneMgr = rclone.NewManager(rcloneConfig)
+		if s.handlers != nil {
+			s.handlers.SetRcloneManager(s.rcloneMgr)
+		}
+		s.rcloneMgr.SetOnReady(func() {
+			s.applyRcloneSettings()
+		})
+	}
+
+	// Start rclone if auto-start is enabled
+	if rcloneConfig.AutoStart {
+		if err := s.rcloneMgr.Start(); err != nil {
+			log.Warn().Err(err).Msg("Failed to auto-start rclone RCD")
+		}
+	}
+
+	// Create upload manager if not exists
+	if s.uploadMgr == nil {
+		uploadConfig := uploader.DefaultConfig()
+		s.uploadMgr = uploader.New(s.db, s.rcloneMgr, uploadConfig)
+		if s.handlers != nil {
+			s.handlers.SetUploadManager(s.uploadMgr)
+		}
+		s.processor.SetUploadQueuer(s.uploadMgr)
+		s.uploadMgr.SetSSEBroker(s.sseBroker)
+	}
+	s.uploadMgr.Start()
+
+	// Create throttle manager if not exists
+	if s.throttleMgr == nil {
+		throttleConfig := throttle.LoadConfigFromDB(s.db)
+		s.throttleMgr = throttle.New(s.db, s.targetsMgr, s.rcloneMgr, throttleConfig)
+		if s.handlers != nil {
+			s.handlers.SetThrottleManager(s.throttleMgr)
+		}
+		s.uploadMgr.SetSkipChecker(s.throttleMgr)
+		s.throttleMgr.SetSSEBroker(s.sseBroker)
+	}
+	s.throttleMgr.Start()
+
+	// Wire upload manager to inotify and polling watchers
+	if s.inotifyMgr != nil {
+		s.inotifyMgr.SetUploadManager(s.uploadMgr)
+	}
+	if s.pollingMgr != nil {
+		s.pollingMgr.SetUploadManager(s.uploadMgr)
+	}
+
+	log.Info().Msg("Upload subsystem started")
+	return nil
+}
+
+// StopUploadSubsystem stops the upload subsystem
+// This is called when uploads are disabled at runtime
+func (s *Server) StopUploadSubsystem() error {
+	log.Info().Msg("Stopping upload subsystem")
+
+	// Stop in reverse order: throttle -> upload -> rclone
+
+	if s.throttleMgr != nil {
+		s.throttleMgr.Stop()
+	}
+
+	if s.uploadMgr != nil {
+		s.uploadMgr.Stop()
+	}
+
+	if s.rcloneMgr != nil && s.rcloneMgr.IsRunning() {
+		if err := s.rcloneMgr.Stop(); err != nil {
+			log.Warn().Err(err).Msg("Failed to stop rclone RCD")
+		}
+	}
+
+	// Disconnect upload manager from watchers
+	if s.inotifyMgr != nil {
+		s.inotifyMgr.SetUploadManager(nil)
+	}
+	if s.pollingMgr != nil {
+		s.pollingMgr.SetUploadManager(nil)
+	}
+
+	// Clear upload queuer from processor
+	s.processor.SetUploadQueuer(nil)
+
+	log.Info().Msg("Upload subsystem stopped")
+	return nil
+}
+
 // SetNotificationManager sets the notification manager and updates handlers
 func (s *Server) SetNotificationManager(mgr *notification.Manager) {
 	s.notificationMgr = mgr
@@ -367,6 +473,9 @@ func (s *Server) setupRoutes() {
 	// Create handlers
 	h := handlers.New(s.db, s.templates, s.authService, s.apiKeyService, s.processor)
 	s.handlers = h
+
+	// Set the server as the upload subsystem toggler
+	h.SetUploadSubsystemToggler(s)
 
 	// Set managers if already available
 	if s.rcloneMgr != nil {

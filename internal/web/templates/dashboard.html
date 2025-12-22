@@ -296,12 +296,14 @@
         <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Dashboard</h1>
     </div>
 
+    {{if and .Content .Content.UploadsEnabled}}
     <!-- Throttle Status -->
     <div id="throttle-status-section" hx-get="/dashboard/throttle" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="10s">
         {{if .Content.ThrottleStatus}}
         {{template "throttle_status" .Content.ThrottleStatus}}
         {{end}}
     </div>
+    {{end}}
 
     {{if and .Content .Content.ScanningEnabled}}
     <!-- Scans Section -->

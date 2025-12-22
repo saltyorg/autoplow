@@ -166,6 +166,22 @@ func (m *Manager) Stop() {
 		m.cancel()
 	}
 	m.wg.Wait()
+
+	// Clear state to allow clean restart
+	m.mu.Lock()
+	m.activeSessions = nil
+	m.currentLimit = 0
+	m.skippingUploads = false
+	m.mu.Unlock()
+
+	m.wsWatchersMu.Lock()
+	m.wsWatchers = make(map[int64]context.CancelFunc)
+	m.wsWatchersMu.Unlock()
+
+	m.wsSessionsMu.Lock()
+	m.wsSessions = make(map[int64][]targets.Session)
+	m.wsSessionsMu.Unlock()
+
 	log.Info().Msg("Throttle manager stopped")
 }
 

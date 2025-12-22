@@ -18,20 +18,27 @@ import (
 	"github.com/saltyorg/autoplow/internal/web/middleware"
 )
 
+// UploadSubsystemToggler is an interface for starting/stopping the upload subsystem
+type UploadSubsystemToggler interface {
+	StartUploadSubsystem() error
+	StopUploadSubsystem() error
+}
+
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	db                 *database.DB
-	templates          map[string]*template.Template
-	authService        *auth.AuthService
-	apiKeyService      *auth.APIKeyService
-	triggerAuthService *auth.TriggerAuthService
-	processor          *processor.Processor
-	rcloneMgr          *rclone.Manager
-	uploadMgr          *uploader.Manager
-	throttleMgr        *throttle.Manager
-	notificationMgr    *notification.Manager
-	inotifyMgr         *inotify.Watcher
-	pollingMgr         *polling.Poller
+	db                     *database.DB
+	templates              map[string]*template.Template
+	authService            *auth.AuthService
+	apiKeyService          *auth.APIKeyService
+	triggerAuthService     *auth.TriggerAuthService
+	processor              *processor.Processor
+	rcloneMgr              *rclone.Manager
+	uploadMgr              *uploader.Manager
+	throttleMgr            *throttle.Manager
+	notificationMgr        *notification.Manager
+	inotifyMgr             *inotify.Watcher
+	pollingMgr             *polling.Poller
+	uploadSubsystemToggler UploadSubsystemToggler
 }
 
 // New creates a new Handlers instance
@@ -74,6 +81,11 @@ func (h *Handlers) SetInotifyManager(mgr *inotify.Watcher) {
 // SetPollingManager sets the polling manager
 func (h *Handlers) SetPollingManager(mgr *polling.Poller) {
 	h.pollingMgr = mgr
+}
+
+// SetUploadSubsystemToggler sets the upload subsystem toggler
+func (h *Handlers) SetUploadSubsystemToggler(toggler UploadSubsystemToggler) {
+	h.uploadSubsystemToggler = toggler
 }
 
 // PageData contains common data for all pages

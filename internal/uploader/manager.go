@@ -80,9 +80,11 @@ type Manager struct {
 	dbErrorMu sync.RWMutex
 
 	// Shutdown handling
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	running bool
+	runMu   sync.Mutex
 }
 
 // activeBatch tracks an in-progress batch of uploads
@@ -105,8 +107,6 @@ type Stats struct {
 
 // New creates a new upload manager
 func New(db *database.DB, rcloneMgr *rclone.Manager, config Config) *Manager {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &Manager{
 		db:          db,
 		rcloneMgr:   rcloneMgr,
@@ -114,16 +114,34 @@ func New(db *database.DB, rcloneMgr *rclone.Manager, config Config) *Manager {
 		requests:    make(chan UploadRequest, 100),
 		batchActive: make(chan struct{}, 1),
 		batchReady:  make(chan struct{}, 1),
-		ctx:         ctx,
-		cancel:      cancel,
 	}
 }
 
 // Start starts the upload manager
 func (m *Manager) Start() {
+	m.runMu.Lock()
+	if m.running {
+		m.runMu.Unlock()
+		return
+	}
+
+	// Create fresh context for this run
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	m.running = true
+	m.runMu.Unlock()
+
 	log.Info().
 		Int("batch_interval", m.config.BatchIntervalSeconds).
 		Msg("Starting upload manager")
+
+	// Reset paused state and database error on start
+	m.pausedMu.Lock()
+	m.paused = false
+	m.pausedMu.Unlock()
+
+	m.dbErrorMu.Lock()
+	m.dbError = nil
+	m.dbErrorMu.Unlock()
 
 	// Recover orphaned uploads that were in "uploading" status when app was closed
 	m.recoverOrphanedUploads()
@@ -139,6 +157,13 @@ func (m *Manager) Start() {
 	// Start progress monitor
 	m.wg.Add(1)
 	go m.progressMonitor()
+}
+
+// IsRunning returns whether the upload manager is running
+func (m *Manager) IsRunning() bool {
+	m.runMu.Lock()
+	defer m.runMu.Unlock()
+	return m.running
 }
 
 // recoverOrphanedUploads handles uploads stuck in "uploading" status from a previous session
@@ -196,9 +221,50 @@ func (m *Manager) resumeOrphanedUploads(uploads []*database.Upload) {
 
 // Stop stops the upload manager gracefully
 func (m *Manager) Stop() {
+	m.runMu.Lock()
+	if !m.running {
+		m.runMu.Unlock()
+		return
+	}
+	m.runMu.Unlock()
+
 	log.Info().Msg("Stopping upload manager")
+
+	// Cancel any active batch job and reset uploads to queued
+	m.activeBatchMu.Lock()
+	if m.activeBatch != nil {
+		batch := m.activeBatch
+		log.Info().Int64("batch_job_id", batch.batchJobID).Msg("Cancelling active batch job")
+
+		// Stop the rclone batch job
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := m.rcloneMgr.Client().StopJob(ctx, batch.batchJobID); err != nil {
+			log.Warn().Err(err).Int64("job_id", batch.batchJobID).Msg("Failed to stop batch job")
+		}
+		cancel()
+
+		// Reset in-flight uploads to queued so they'll be retried on restart
+		for _, upload := range batch.uploads {
+			if !batch.completedIDs[upload.ID] {
+				if err := m.db.UpdateUploadStatus(upload.ID, database.UploadStatusQueued); err != nil {
+					log.Warn().Err(err).Int64("id", upload.ID).Msg("Failed to reset upload status")
+				} else {
+					log.Debug().Int64("id", upload.ID).Msg("Reset in-flight upload to queued")
+				}
+			}
+		}
+		m.activeBatch = nil
+	}
+	m.activeBatchMu.Unlock()
+
+	// Signal goroutines to stop
 	m.cancel()
 	m.wg.Wait()
+
+	m.runMu.Lock()
+	m.running = false
+	m.runMu.Unlock()
+
 	log.Info().Msg("Upload manager stopped")
 }
 
