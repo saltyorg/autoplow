@@ -497,4 +497,77 @@ var migrations = []migration{
 			ALTER TABLE scans ADD COLUMN event_type TEXT;
 		`,
 	},
+	{
+		Version: 15,
+		Name:    "matcharr_tables",
+		SQL: `
+			-- Arr instances (Sonarr/Radarr) configuration for matcharr
+			CREATE TABLE matcharr_arrs (
+				id INTEGER PRIMARY KEY,
+				name TEXT NOT NULL,
+				type TEXT NOT NULL,
+				url TEXT NOT NULL,
+				api_key TEXT NOT NULL,
+				enabled BOOLEAN DEFAULT true,
+				path_mappings TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+
+			-- Matcharr run history
+			CREATE TABLE matcharr_runs (
+				id INTEGER PRIMARY KEY,
+				started_at TIMESTAMP NOT NULL,
+				completed_at TIMESTAMP,
+				status TEXT DEFAULT 'running',
+				total_compared INTEGER DEFAULT 0,
+				mismatches_found INTEGER DEFAULT 0,
+				mismatches_fixed INTEGER DEFAULT 0,
+				error TEXT,
+				triggered_by TEXT
+			);
+
+			-- Detected mismatches per run
+			CREATE TABLE matcharr_mismatches (
+				id INTEGER PRIMARY KEY,
+				run_id INTEGER REFERENCES matcharr_runs(id) ON DELETE CASCADE,
+				arr_id INTEGER REFERENCES matcharr_arrs(id) ON DELETE CASCADE,
+				target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
+				arr_type TEXT NOT NULL,
+				arr_name TEXT NOT NULL,
+				target_name TEXT NOT NULL,
+				media_title TEXT NOT NULL,
+				media_path TEXT NOT NULL,
+				arr_id_type TEXT NOT NULL,
+				arr_id_value TEXT NOT NULL,
+				target_id_type TEXT NOT NULL,
+				target_id_value TEXT,
+				target_metadata_id TEXT NOT NULL,
+				status TEXT DEFAULT 'pending',
+				fixed_at TIMESTAMP,
+				error TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+
+			CREATE INDEX idx_matcharr_mismatches_run ON matcharr_mismatches(run_id);
+			CREATE INDEX idx_matcharr_mismatches_status ON matcharr_mismatches(status);
+			CREATE INDEX idx_matcharr_runs_started ON matcharr_runs(started_at);
+		`,
+	},
+	{
+		Version: 16,
+		Name:    "targets_matcharr_enabled",
+		SQL: `
+			-- Add matcharr_enabled column to targets table (opt-in for matcharr comparisons)
+			ALTER TABLE targets ADD COLUMN matcharr_enabled BOOLEAN DEFAULT false;
+		`,
+	},
+	{
+		Version: 17,
+		Name:    "matcharr_runs_logs",
+		SQL: `
+			-- Add logs column to matcharr_runs table for storing detailed comparison logs
+			ALTER TABLE matcharr_runs ADD COLUMN logs TEXT DEFAULT '';
+		`,
+	},
 }

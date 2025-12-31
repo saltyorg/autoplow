@@ -27,7 +27,12 @@
         'session_ended': ['#active-sessions', '#throttle-status-section'],
 
         // Throttle changes
-        'throttle_changed': ['#throttle-status-section']
+        'throttle_changed': ['#throttle-status-section'],
+
+        // Matcharr events trigger matcharr page refreshes
+        'matcharr_run_started': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#quick-actions'],
+        'matcharr_run_completed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-mismatches', '#quick-actions'],
+        'matcharr_run_failed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#quick-actions']
     };
 
     // Debounce refresh requests to avoid hammering the server

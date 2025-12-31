@@ -145,6 +145,12 @@ func (m *Manager) GetTarget(targetID int64) (Target, error) {
 	return target, nil
 }
 
+// GetTargetAny returns a target for the given target ID as an interface{} (any)
+// This allows callers to type-assert to specific interfaces like matcharr.TargetFixer
+func (m *Manager) GetTargetAny(targetID int64) (any, error) {
+	return m.GetTarget(targetID)
+}
+
 // GetTargetForDBTarget returns a target for the given database target
 func (m *Manager) GetTargetForDBTarget(dbTarget *database.Target) (Target, error) {
 	// Check cache

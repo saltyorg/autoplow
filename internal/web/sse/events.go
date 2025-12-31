@@ -33,6 +33,10 @@ const (
 
 	EventThrottleChanged EventType = "throttle_changed"
 	EventHeartbeat       EventType = "heartbeat"
+
+	EventMatcharrRunStarted   EventType = "matcharr_run_started"
+	EventMatcharrRunCompleted EventType = "matcharr_run_completed"
+	EventMatcharrRunFailed    EventType = "matcharr_run_failed"
 )
 
 // Event represents an SSE event to be sent to clients

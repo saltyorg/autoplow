@@ -534,10 +534,10 @@
                     {{end}}
                 </ul>
             </li>
-            {{if .UploadsEnabled}}
             <li>
                 <div class="text-xs font-semibold leading-6 text-gray-400">Tools</div>
                 <ul role="list" class="-mx-2 mt-2 space-y-1">
+                    {{if .UploadsEnabled}}
                     <li>
                         <a href="/rclone" class="group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-400 hover:bg-gray-800 hover:text-white">
                             <svg class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -546,9 +546,19 @@
                             Rclone Explorer
                         </a>
                     </li>
+                    {{end}}
+                    {{if .ScanningEnabled}}
+                    <li>
+                        <a href="/matcharr" class="group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-400 hover:bg-gray-800 hover:text-white">
+                            <svg class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                            </svg>
+                            Matcharr
+                        </a>
+                    </li>
+                    {{end}}
                 </ul>
             </li>
-            {{end}}
         </ul>
     </nav>
 </div>

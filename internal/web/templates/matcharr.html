@@ -1,0 +1,793 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Matcharr</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Compare and fix media metadata between Sonarr/Radarr and your media servers.
+        </p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+            <a href="/matcharr?tab=overview" class="{{if eq .Content.Tab "overview"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Overview
+            </a>
+            <a href="/matcharr?tab=arrs" class="{{if eq .Content.Tab "arrs"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Arr Instances ({{len .Content.Arrs}})
+            </a>
+            <a href="/matcharr?tab=mismatches" class="{{if eq .Content.Tab "mismatches"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Mismatches (<span id="mismatches-count">{{len .Content.PendingMismatches}}</span>)
+            </a>
+            <a href="/matcharr?tab=history" class="{{if eq .Content.Tab "history"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                History
+            </a>
+            <a href="/matcharr?tab=settings" class="{{if eq .Content.Tab "settings"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Settings
+            </a>
+        </nav>
+    </div>
+
+    {{if eq .Content.Tab "overview"}}
+    <!-- Overview Tab -->
+    <div class="space-y-6">
+        <!-- Status Card -->
+        {{template "status_section" .Content}}
+
+        <!-- Last Run Summary -->
+        {{template "last_run_section" .Content}}
+
+        <!-- Quick Actions -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Quick Actions</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if not .Content.CanRun}}
+                <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 p-4 mb-4">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-200">Configuration Required</h3>
+                            <div class="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                                <p>To run a comparison, you need:
+                                    {{if eq .Content.EnabledArrs 0}}<br>- At least one enabled Arr instance (Sonarr/Radarr){{end}}
+                                    {{if eq .Content.MatcharrTargets 0}}<br>- At least one media server target with Matcharr enabled (see Settings tab){{end}}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+                {{template "quick_actions" .Content}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "arrs"}}
+    <!-- Arr Instances Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div>
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Arr Instances</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Configure Sonarr and Radarr instances to compare against your media servers.</p>
+                </div>
+                <button
+                    hx-get="/matcharr/arrs/new"
+                    hx-target="#arr-form-container"
+                    hx-swap="innerHTML"
+                    class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Add Instance
+                </button>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <div id="arr-form-container"></div>
+
+                {{if .Content.Arrs}}
+                <div class="mt-4 overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead>
+                            <tr>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">URL</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                            {{range .Content.Arrs}}
+                            <tr>
+                                <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</td>
+                                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                    {{if eq .Type "sonarr"}}
+                                    <span class="inline-flex items-center rounded-md bg-blue-50 dark:bg-blue-900/50 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-400">Sonarr</span>
+                                    {{else}}
+                                    <span class="inline-flex items-center rounded-md bg-orange-50 dark:bg-orange-900/50 px-2 py-1 text-xs font-medium text-orange-700 dark:text-orange-400">Radarr</span>
+                                    {{end}}
+                                </td>
+                                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono">{{.URL}}</td>
+                                <td class="px-3 py-4 text-sm">
+                                    {{if .Enabled}}
+                                    <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Enabled</span>
+                                    {{else}}
+                                    <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400">Disabled</span>
+                                    {{end}}
+                                </td>
+                                <td class="px-3 py-4 text-sm text-right space-x-2">
+                                    <button
+                                        onclick="testArrConnection({{.ID}}, this)"
+                                        class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">Test</button>
+                                    <button
+                                        hx-get="/matcharr/arrs/{{.ID}}"
+                                        hx-target="#arr-form-container"
+                                        hx-swap="innerHTML"
+                                        class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">Edit</button>
+                                    <button
+                                        hx-delete="/matcharr/arrs/{{.ID}}"
+                                        hx-confirm="Are you sure you want to delete this Arr instance?"
+                                        hx-swap="none"
+                                        class="text-red-600 dark:text-red-400 hover:text-red-500">Delete</button>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {{else}}
+                <div class="text-center py-12">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No Arr instances configured.</p>
+                    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Add a Sonarr or Radarr instance to get started.</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    <script>
+    async function testArrConnection(id, btn) {
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Testing...';
+        try {
+            const response = await fetch('/matcharr/arrs/' + id + '/test', { method: 'POST' });
+            const data = await response.json();
+            showToast(data.success, data.message);
+        } catch (error) {
+            showToast(false, 'Failed to test: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+    async function testArrConnectionRaw(btn) {
+        const form = btn.closest('form');
+        const url = form.querySelector('input[name="url"]').value;
+        const apiKey = form.querySelector('input[name="api_key"]').value;
+        const type = form.querySelector('select[name="type"]').value;
+
+        if (!url || !apiKey) {
+            showToast(false, 'URL and API Key are required');
+            return;
+        }
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Testing...';
+        try {
+            const formData = new FormData();
+            formData.append('url', url);
+            formData.append('api_key', apiKey);
+            formData.append('type', type);
+
+            const response = await fetch('/matcharr/arrs/test', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            showToast(data.success, data.message);
+        } catch (error) {
+            showToast(false, 'Failed to test: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+    </script>
+    {{end}}
+
+    {{if eq .Content.Tab "mismatches"}}
+    <!-- Mismatches Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div>
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Pending Mismatches</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Items with metadata ID mismatches between Arr and media servers.</p>
+                </div>
+                {{if gt (len .Content.PendingMismatches) 0}}
+                <form action="/matcharr/mismatches/fix-all" method="POST">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+                        Fix All ({{len .Content.PendingMismatches}})
+                    </button>
+                </form>
+                {{end}}
+            </div>
+            <div class="px-4 py-5 sm:p-6" id="mismatches-container">
+                {{template "mismatches_table" .Content}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "history"}}
+    <!-- History Tab -->
+    <div class="space-y-6">
+        <!-- Clear All History Button -->
+        {{if or .Content.Runs .Content.FixHistory}}
+        <div class="flex justify-end">
+            <form action="/matcharr/history/clear" method="POST" onsubmit="return confirm('Are you sure you want to clear all history (runs and fixes)? This cannot be undone.');">
+                <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Clear All History
+                </button>
+            </form>
+        </div>
+        {{end}}
+
+        <!-- Run History -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Run History</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{template "runs_table" .Content}}
+            </div>
+        </div>
+
+        <!-- Fix History -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Fix History</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Recent metadata fixes and skipped items.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{template "fix_history_table" .Content}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "settings"}}
+    <!-- Settings Tab -->
+    <div class="space-y-6">
+        <!-- Media Servers Section -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Media Servers</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Enable Matcharr for specific media server targets. Only enabled targets will be included in comparisons.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.Targets}}
+                <div class="space-y-4">
+                    {{range .Content.Targets}}
+                    <div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                        <div class="flex items-center space-x-3">
+                            <div>
+                                {{if eq .Type "plex"}}
+                                <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">Plex</span>
+                                {{else if eq .Type "emby"}}
+                                <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Emby</span>
+                                {{else if eq .Type "jellyfin"}}
+                                <span class="inline-flex items-center rounded-md bg-purple-50 dark:bg-purple-900/50 px-2 py-1 text-xs font-medium text-purple-700 dark:text-purple-400">Jellyfin</span>
+                                {{else}}
+                                <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400">{{.Type}}</span>
+                                {{end}}
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 font-mono">{{.URL}}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center">
+                            <button
+                                hx-post="/matcharr/targets/{{.ID}}/toggle"
+                                hx-swap="none"
+                                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .MatcharrEnabled}}bg-indigo-600{{else}}bg-gray-200 dark:bg-gray-600{{end}}"
+                                role="switch"
+                                aria-checked="{{.MatcharrEnabled}}">
+                                <span class="sr-only">Enable Matcharr</span>
+                                <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .MatcharrEnabled}}translate-x-5{{else}}translate-x-0{{end}}"></span>
+                            </button>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="text-center py-8">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                    </svg>
+                    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No enabled media server targets found.</p>
+                    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Configure targets in the <a href="/targets" class="text-indigo-600 dark:text-indigo-400 hover:underline">Targets</a> section.</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Schedule Settings Section -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Schedule Settings</h3>
+            </div>
+            <form action="/matcharr/settings" method="POST" class="px-4 py-5 sm:p-6 space-y-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <label for="enabled" class="text-sm font-medium text-gray-900 dark:text-white">Enable Scheduler</label>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Run comparisons automatically on a schedule.</p>
+                    </div>
+                    <input type="checkbox" name="enabled" id="enabled" {{if .Content.Status.Enabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                </div>
+
+                <div>
+                    <label for="schedule" class="block text-sm font-medium text-gray-900 dark:text-white">Schedule (Cron Expression)</label>
+                    <input type="text" name="schedule" id="schedule" value="{{.Content.Status.Schedule}}" placeholder="0 3 * * *" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Example: <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">0 3 * * *</code> = daily at 3:00 AM</p>
+                </div>
+
+                <div class="flex items-center justify-between">
+                    <div>
+                        <label for="auto_fix" class="text-sm font-medium text-gray-900 dark:text-white">Auto-Fix on Schedule</label>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Automatically fix mismatches when running on schedule.</p>
+                    </div>
+                    <input type="checkbox" name="auto_fix" id="auto_fix" {{if .Content.Status.AutoFix}}checked{{end}} class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                </div>
+
+                <div>
+                    <label for="delay_between_fixes" class="block text-sm font-medium text-gray-900 dark:text-white">Delay Between Fixes (seconds)</label>
+                    <input type="text" inputmode="numeric" name="delay_between_fixes" id="delay_between_fixes" value="2" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Delay between fix operations to avoid overwhelming the media server.</p>
+                </div>
+
+                <div class="flex justify-end">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        Save Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "arr_form"}}
+<div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+    <form action="{{if .IsNew}}/matcharr/arrs{{else}}/matcharr/arrs/{{.Arr.ID}}{{end}}" method="POST" class="space-y-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-900 dark:text-white">Name</label>
+                <input type="text" name="name" id="name" value="{{.Arr.Name}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label for="type" class="block text-sm font-medium text-gray-900 dark:text-white">Type</label>
+                <select name="type" id="type" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="sonarr" {{if eq .Arr.Type "sonarr"}}selected{{end}}>Sonarr</option>
+                    <option value="radarr" {{if eq .Arr.Type "radarr"}}selected{{end}}>Radarr</option>
+                </select>
+            </div>
+            <div>
+                <label for="url" class="block text-sm font-medium text-gray-900 dark:text-white">URL</label>
+                <input type="url" name="url" id="url" value="{{.Arr.URL}}" placeholder="http://localhost:8989" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div>
+                <label for="api_key" class="block text-sm font-medium text-gray-900 dark:text-white">API Key</label>
+                <input type="text" name="api_key" id="api_key" value="{{.Arr.APIKey}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono">
+            </div>
+        </div>
+
+        <div class="flex items-center">
+            <input type="checkbox" name="enabled" id="enabled" {{if .Arr.Enabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+            <label for="enabled" class="ml-2 text-sm text-gray-900 dark:text-white">Enabled</label>
+        </div>
+
+        <!-- Path Mappings -->
+        <div class="border-t border-gray-200 dark:border-gray-600 pt-4">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white">Path Mappings</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map paths from Arr to how they appear on the media server.</p>
+                </div>
+                <button type="button" id="add-arr-path-mapping-{{if .IsNew}}new{{else}}{{.Arr.ID}}{{end}}" class="inline-flex items-center rounded-md bg-white dark:bg-gray-600 px-2.5 py-1.5 text-xs font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500">
+                    Add Mapping
+                </button>
+            </div>
+            <div id="arr-path-mappings-container-{{if .IsNew}}new{{else}}{{.Arr.ID}}{{end}}" class="space-y-2">
+                {{range $i, $mapping := .Arr.PathMappings}}
+                <div class="arr-path-mapping-row flex items-center gap-3">
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_arr[]" value="{{$mapping.ArrPath}}" placeholder="Arr path (e.g., /data/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <span class="text-gray-500 dark:text-gray-400">→</span>
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_server[]" value="{{$mapping.ServerPath}}" placeholder="Server path (e.g., /mnt/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-arr-path-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        <script>
+        (function() {
+            const formId = '{{if .IsNew}}new{{else}}{{.Arr.ID}}{{end}}';
+            const container = document.getElementById('arr-path-mappings-container-' + formId);
+            const addBtn = document.getElementById('add-arr-path-mapping-' + formId);
+
+            function createPathMappingRow(arrPath = '', serverPath = '') {
+                const row = document.createElement('div');
+                row.className = 'arr-path-mapping-row flex items-center gap-3';
+                row.innerHTML = `
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_arr[]" value="${arrPath}" placeholder="Arr path (e.g., /data/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <span class="text-gray-500 dark:text-gray-400">→</span>
+                    <div class="flex-1">
+                        <input type="text" name="path_mapping_server[]" value="${serverPath}" placeholder="Server path (e.g., /mnt/media)"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <button type="button" class="remove-arr-path-mapping text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                `;
+                return row;
+            }
+
+            if (addBtn) {
+                addBtn.addEventListener('click', function() {
+                    container.appendChild(createPathMappingRow());
+                });
+            }
+
+            if (container) {
+                container.addEventListener('click', function(e) {
+                    if (e.target.closest('.remove-arr-path-mapping')) {
+                        e.target.closest('.arr-path-mapping-row').remove();
+                    }
+                });
+            }
+        })();
+        </script>
+
+        <div class="flex justify-end gap-2">
+            <button type="button" onclick="document.getElementById('arr-form-container').innerHTML=''" class="rounded-md bg-white dark:bg-gray-600 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500">
+                Cancel
+            </button>
+            <button type="button" onclick="testArrConnectionRaw(this)" class="rounded-md bg-gray-100 dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600">
+                Test Connection
+            </button>
+            <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                {{if .IsNew}}Create{{else}}Update{{end}}
+            </button>
+        </div>
+    </form>
+</div>
+{{end}}
+
+{{define "mismatches_table"}}
+{{if .PendingMismatches}}
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead>
+            <tr>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Type</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Expected</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actual</th>
+                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {{range .PendingMismatches}}
+            <tr id="mismatch-{{.ID}}" class="{{if eq .Status "failed"}}bg-red-50 dark:bg-red-900/20{{end}}">
+                <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.MediaTitle}}</td>
+                <td class="px-3 py-4 text-sm">
+                    {{if eq .Status "pending"}}
+                    <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">Pending</span>
+                    {{else if eq .Status "failed"}}
+                    <span class="inline-flex items-center rounded-md bg-red-50 dark:bg-red-900/50 px-2 py-1 text-xs font-medium text-red-700 dark:text-red-400" title="{{.Error}}">Failed</span>
+                    {{end}}
+                </td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.ArrName}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.TargetName}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 uppercase">{{.ArrIDType}}</td>
+                <td class="px-3 py-4 text-sm font-mono text-green-600 dark:text-green-400">{{.ArrIDValue}}</td>
+                <td class="px-3 py-4 text-sm font-mono text-red-600 dark:text-red-400">{{if .TargetIDValue}}{{.TargetIDValue}}{{else}}<em class="text-gray-400">empty</em>{{end}}</td>
+                <td class="px-3 py-4 text-sm text-right space-x-2">
+                    <button
+                        hx-post="/matcharr/mismatches/{{.ID}}/fix"
+                        hx-target="#mismatch-{{.ID}}"
+                        hx-swap="outerHTML"
+                        class="text-green-600 dark:text-green-400 hover:text-green-500">{{if eq .Status "failed"}}Retry{{else}}Fix{{end}}</button>
+                    <button
+                        hx-post="/matcharr/mismatches/{{.ID}}/skip"
+                        hx-target="#mismatch-{{.ID}}"
+                        hx-swap="outerHTML"
+                        class="text-gray-600 dark:text-gray-400 hover:text-gray-500">Skip</button>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-12">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No pending mismatches.</p>
+    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Run a comparison to check for mismatches.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "runs_table"}}
+{{if .Runs}}
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead>
+            <tr>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Started</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Duration</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Triggered By</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Compared</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mismatches</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fixed</th>
+                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {{range .Runs}}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="px-3 py-4 text-sm text-gray-900 dark:text-white">{{formatTime .StartedAt}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{runDuration .StartedAt .CompletedAt}}</td>
+                <td class="px-3 py-4 text-sm">
+                    {{if eq .Status "completed"}}
+                    <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Completed</span>
+                    {{else if eq .Status "running"}}
+                    <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">Running</span>
+                    {{else}}
+                    <span class="inline-flex items-center rounded-md bg-red-50 dark:bg-red-900/50 px-2 py-1 text-xs font-medium text-red-700 dark:text-red-400">Failed</span>
+                    {{end}}
+                </td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 capitalize">{{.TriggeredBy}}</td>
+                <td class="px-3 py-4 text-sm text-gray-900 dark:text-white">{{.TotalCompared}}</td>
+                <td class="px-3 py-4 text-sm {{if gt .MismatchesFound 0}}text-yellow-600 dark:text-yellow-400{{else}}text-gray-500 dark:text-gray-400{{end}}">{{.MismatchesFound}}</td>
+                <td class="px-3 py-4 text-sm text-green-600 dark:text-green-400">{{.MismatchesFixed}}</td>
+                <td class="px-3 py-4 text-sm text-right">
+                    <a href="/matcharr/runs/{{.ID}}" class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                        View Logs
+                    </a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-12">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No runs yet.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "fix_history_table"}}
+{{if .FixHistory}}
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead>
+            <tr>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Type</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fixed To</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">When</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {{range .FixHistory}}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.MediaTitle}}</td>
+                <td class="px-3 py-4 text-sm">
+                    {{if eq .Status "fixed"}}
+                    <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Fixed</span>
+                    {{else if eq .Status "skipped"}}
+                    <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400">Skipped</span>
+                    {{else if eq .Status "failed"}}
+                    <span class="inline-flex items-center rounded-md bg-red-50 dark:bg-red-900/50 px-2 py-1 text-xs font-medium text-red-700 dark:text-red-400" title="{{.Error}}">Failed</span>
+                    {{end}}
+                </td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.ArrName}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.TargetName}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 uppercase">{{.ArrIDType}}</td>
+                <td class="px-3 py-4 text-sm font-mono text-green-600 dark:text-green-400">{{.ArrIDValue}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{if .FixedAt}}{{formatTimePtr .FixedAt}}{{else}}{{formatTime .CreatedAt}}{{end}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-12">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No fix history yet.</p>
+    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Fixed or skipped mismatches will appear here.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "status_section"}}
+<div id="matcharr-status" hx-get="/matcharr/status" hx-trigger="sse-refresh{{if .Status.IsComparing}}, every 2s{{end}}" hx-swap="outerHTML">
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Status</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Scheduler</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        {{if .Status.Enabled}}
+                        <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Enabled</span>
+                        {{else}}
+                        <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400">Disabled</span>
+                        {{end}}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Schedule</dt>
+                    <dd class="mt-1 text-sm font-mono text-gray-900 dark:text-white">{{if .Status.Schedule}}{{.Status.Schedule}}{{else}}<em class="text-gray-400">Not set</em>{{end}}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        {{if .Status.IsComparing}}
+                        <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">
+                            <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Running
+                        </span>
+                        {{else}}
+                        <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Idle</span>
+                        {{end}}
+                    </dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+</div>
+{{if .IsPartial}}
+<!-- OOB swap to update the mismatches tab badge count -->
+<span id="mismatches-count" hx-swap-oob="true">{{.PendingMismatchesCount}}</span>
+{{end}}
+{{end}}
+
+{{define "quick_actions"}}
+<div id="quick-actions" class="flex flex-wrap gap-4" hx-get="/matcharr/quick-actions" hx-trigger="sse-refresh" hx-swap="outerHTML">
+    <button hx-post="/matcharr/run" hx-swap="none" class="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 {{if .Status.IsComparing}}bg-gray-400 cursor-not-allowed{{else}}bg-indigo-600 hover:bg-indigo-500 focus-visible:outline-indigo-600{{end}}" {{if .Status.IsComparing}}disabled{{end}}>
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        {{if .Status.IsComparing}}Running...{{else}}Run Comparison{{end}}
+    </button>
+    {{if gt (len .PendingMismatches) 0}}
+    <form action="/matcharr/mismatches/fix-all" method="POST">
+        <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            Fix All ({{len .PendingMismatches}})
+        </button>
+    </form>
+    {{end}}
+</div>
+{{end}}
+
+{{define "last_run_section"}}
+<div id="matcharr-last-run" hx-get="/matcharr/last-run" hx-trigger="sse-refresh{{if and .LatestRun (eq .LatestRun.Status "running")}}, every 2s{{end}}" hx-swap="outerHTML">
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Last Run</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            {{if .LatestRun}}
+            <dl class="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Started</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{formatTime .LatestRun.StartedAt}}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Duration</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{runDuration .LatestRun.StartedAt .LatestRun.CompletedAt}}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="mt-1 text-sm">
+                        {{if eq .LatestRun.Status "completed"}}
+                        <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Completed</span>
+                        {{else if eq .LatestRun.Status "running"}}
+                        <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">Running</span>
+                        {{else}}
+                        <span class="inline-flex items-center rounded-md bg-red-50 dark:bg-red-900/50 px-2 py-1 text-xs font-medium text-red-700 dark:text-red-400">Failed</span>
+                        {{end}}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Items Compared</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.LatestRun.TotalCompared}}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Mismatches Found</dt>
+                    <dd class="mt-1 text-sm {{if gt .LatestRun.MismatchesFound 0}}text-yellow-600 dark:text-yellow-400{{else}}text-gray-900 dark:text-white{{end}}">{{.LatestRun.MismatchesFound}}</dd>
+                </div>
+            </dl>
+            {{if .LatestRun.Error}}
+            <div class="mt-4 rounded-md bg-red-50 dark:bg-red-900/50 p-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-red-800 dark:text-red-200">Error</h3>
+                        <div class="mt-2 text-sm text-red-700 dark:text-red-300 font-mono">{{.LatestRun.Error}}</div>
+                    </div>
+                </div>
+            </div>
+            {{end}}
+            {{else}}
+            <p class="text-sm text-gray-500 dark:text-gray-400">No runs yet. Click "Run Comparison" to start.</p>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{template "base" .}}

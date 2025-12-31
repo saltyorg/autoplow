@@ -16,6 +16,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/inotify"
+	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/rclone"
@@ -277,6 +278,15 @@ func run(cmd *cobra.Command, args []string) error {
 		log.Warn().Err(err).Msg("Failed to start polling watcher")
 	} else if !started {
 		log.Debug().Msg("Polling watcher not started (no triggers configured)")
+	}
+
+	// Initialize matcharr manager for media server ID matching
+	matcharrMgr := matcharr.NewManager(db, server.TargetsManager())
+	defer func() { _ = matcharrMgr.Stop() }()
+	matcharrMgr.SetSSEBroker(sseBroker)
+	server.SetMatcharrManager(matcharrMgr)
+	if err := matcharrMgr.Start(); err != nil {
+		log.Warn().Err(err).Msg("Failed to start matcharr manager")
 	}
 
 	// Setup graceful shutdown

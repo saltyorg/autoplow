@@ -9,6 +9,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/inotify"
+	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/processor"
@@ -38,6 +39,7 @@ type Handlers struct {
 	notificationMgr        *notification.Manager
 	inotifyMgr             *inotify.Watcher
 	pollingMgr             *polling.Poller
+	matcharrMgr            *matcharr.Manager
 	uploadSubsystemToggler UploadSubsystemToggler
 }
 
@@ -86,6 +88,11 @@ func (h *Handlers) SetPollingManager(mgr *polling.Poller) {
 // SetUploadSubsystemToggler sets the upload subsystem toggler
 func (h *Handlers) SetUploadSubsystemToggler(toggler UploadSubsystemToggler) {
 	h.uploadSubsystemToggler = toggler
+}
+
+// SetMatcharrManager sets the matcharr manager
+func (h *Handlers) SetMatcharrManager(mgr *matcharr.Manager) {
+	h.matcharrMgr = mgr
 }
 
 // PageData contains common data for all pages

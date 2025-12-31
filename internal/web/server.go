@@ -20,6 +20,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/inotify"
+	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/processor"
@@ -57,6 +58,7 @@ type Server struct {
 	notificationMgr *notification.Manager
 	inotifyMgr      *inotify.Watcher
 	pollingMgr      *polling.Poller
+	matcharrMgr     *matcharr.Manager
 	handlers        *handlers.Handlers
 }
 
@@ -331,15 +333,44 @@ func (s *Server) SetPollingManager(mgr *polling.Poller) {
 	}
 }
 
+// SetMatcharrManager sets the matcharr manager and updates handlers
+func (s *Server) SetMatcharrManager(mgr *matcharr.Manager) {
+	s.matcharrMgr = mgr
+	if s.handlers != nil {
+		s.handlers.SetMatcharrManager(mgr)
+	}
+}
+
+// MatcharrManager returns the matcharr manager
+func (s *Server) MatcharrManager() *matcharr.Manager {
+	return s.matcharrMgr
+}
+
 // templateFuncMap returns the common template functions
 func templateFuncMap() template.FuncMap {
 	return template.FuncMap{
 		"formatTime": func(t time.Time) string {
 			return t.Format("2006-01-02 15:04:05")
 		},
+		"formatTimePtr": func(t *time.Time) string {
+			if t == nil {
+				return ""
+			}
+			return t.Format("2006-01-02 15:04:05")
+		},
 		"formatBytes": formatBytes,
 		"formatSpeed": formatSpeed,
 		"formatDuration": func(d time.Duration) string {
+			return d.Round(time.Second).String()
+		},
+		"runDuration": func(start time.Time, end *time.Time) string {
+			if end == nil {
+				return "-"
+			}
+			d := end.Sub(start)
+			if d < time.Second {
+				return d.Round(time.Millisecond).String()
+			}
 			return d.Round(time.Second).String()
 		},
 		"formatETA": func(seconds *int64) string {
@@ -428,6 +459,8 @@ func (s *Server) loadTemplates() {
 		"logs.html",
 		"wizard/setup.html",
 		"rclone_options.html",
+		"matcharr.html",
+		"matcharr_run.html",
 	}
 
 	for _, page := range pageTemplates {
@@ -664,6 +697,32 @@ func (s *Server) setupRoutes() {
 			r.Get("/api/providers", h.RcloneProvidersAPI)
 			r.Get("/providers/{provider}", h.RcloneProviderOptionsPartial)
 			r.Get("/options/{category}", h.RcloneGlobalOptionsPartial)
+		})
+
+		// Matcharr - Media Server ID Matching
+		r.Route("/matcharr", func(r chi.Router) {
+			r.Get("/", h.MatcharrPage)
+			r.Get("/arrs/new", h.MatcharrArrNew)
+			r.Post("/arrs", h.MatcharrArrCreate)
+			r.Post("/arrs/test", h.MatcharrArrTestRaw)
+			r.Get("/arrs/{id}", h.MatcharrArrEdit)
+			r.Post("/arrs/{id}", h.MatcharrArrUpdate)
+			r.Delete("/arrs/{id}", h.MatcharrArrDelete)
+			r.Post("/arrs/{id}/test", h.MatcharrArrTest)
+			r.Post("/run", h.MatcharrRunNow)
+			r.Get("/run/status", h.MatcharrRunStatus)
+			r.Get("/mismatches", h.MatcharrMismatchesPartial)
+			r.Post("/mismatches/{id}/fix", h.MatcharrFixOne)
+			r.Post("/mismatches/{id}/skip", h.MatcharrSkipMismatch)
+			r.Post("/mismatches/fix-all", h.MatcharrFixAll)
+			r.Post("/settings", h.MatcharrSettingsUpdate)
+			r.Get("/runs", h.MatcharrRunsPartial)
+			r.Get("/runs/{id}", h.MatcharrRunDetails)
+			r.Get("/status", h.MatcharrStatusPartial)
+			r.Get("/last-run", h.MatcharrLastRunPartial)
+			r.Get("/quick-actions", h.MatcharrQuickActionsPartial)
+			r.Post("/targets/{id}/toggle", h.MatcharrToggleTarget)
+			r.Post("/history/clear", h.MatcharrClearHistory)
 		})
 	})
 }
