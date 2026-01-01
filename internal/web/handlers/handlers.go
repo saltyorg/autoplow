@@ -11,6 +11,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/inotify"
 	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
+	"github.com/saltyorg/autoplow/internal/plexautolang"
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/processor"
 	"github.com/saltyorg/autoplow/internal/rclone"
@@ -40,6 +41,7 @@ type Handlers struct {
 	inotifyMgr             *inotify.Watcher
 	pollingMgr             *polling.Poller
 	matcharrMgr            *matcharr.Manager
+	plexAutoLangMgr        *plexautolang.Manager
 	uploadSubsystemToggler UploadSubsystemToggler
 }
 
@@ -93,6 +95,11 @@ func (h *Handlers) SetUploadSubsystemToggler(toggler UploadSubsystemToggler) {
 // SetMatcharrManager sets the matcharr manager
 func (h *Handlers) SetMatcharrManager(mgr *matcharr.Manager) {
 	h.matcharrMgr = mgr
+}
+
+// SetPlexAutoLangManager sets the Plex Auto Languages manager
+func (h *Handlers) SetPlexAutoLangManager(mgr *plexautolang.Manager) {
+	h.plexAutoLangMgr = mgr
 }
 
 // PageData contains common data for all pages

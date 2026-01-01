@@ -1,0 +1,460 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Plex Auto Languages</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Automatically apply audio and subtitle track preferences across TV shows.
+        </p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+            <a href="/plex-auto-languages?tab=overview" class="{{if eq .Content.Tab "overview"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Overview
+            </a>
+            <a href="/plex-auto-languages?tab=servers" class="{{if eq .Content.Tab "servers"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Plex Servers ({{len .Content.EnabledTargets}})
+            </a>
+            <a href="/plex-auto-languages?tab=preferences" class="{{if eq .Content.Tab "preferences"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Preferences
+            </a>
+            <a href="/plex-auto-languages?tab=history" class="{{if eq .Content.Tab "history"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                History
+            </a>
+            <a href="/plex-auto-languages?tab=settings" class="{{if eq .Content.Tab "settings"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Settings
+            </a>
+        </nav>
+    </div>
+
+    {{if eq .Content.Tab "overview"}}
+    <!-- Overview Tab -->
+    <div class="space-y-6">
+        <div id="pal-status" hx-get="/plex-auto-languages/status/partial" hx-trigger="sse-refresh" hx-swap="innerHTML">
+            {{template "status_section" .Content}}
+        </div>
+
+        <!-- How It Works -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">How It Works</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="text-center">
+                        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900">
+                            <svg class="h-6 w-6 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                            </svg>
+                        </div>
+                        <h4 class="mt-4 text-sm font-medium text-gray-900 dark:text-white">1. Watch Content</h4>
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Play an episode and select your preferred audio/subtitle tracks.</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900">
+                            <svg class="h-6 w-6 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </div>
+                        <h4 class="mt-4 text-sm font-medium text-gray-900 dark:text-white">2. Preferences Saved</h4>
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Your track preferences are automatically saved for each show.</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900">
+                            <svg class="h-6 w-6 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <h4 class="mt-4 text-sm font-medium text-gray-900 dark:text-white">3. Applied Automatically</h4>
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Same preferences are applied to all other episodes in the show.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Recent Activity</h3>
+            </div>
+            <div id="pal-recent-activity" class="px-4 py-5 sm:p-6" hx-get="/plex-auto-languages/recent-activity/partial" hx-trigger="sse-refresh" hx-swap="innerHTML">
+                {{template "recent_activity" .Content}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "servers"}}
+    <!-- Plex Servers Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Plex Servers</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Enable Plex Auto Languages for your Plex servers.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.PlexTargets}}
+                <div class="space-y-4">
+                    {{range .Content.PlexTargets}}
+                    <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                <svg class="h-8 w-8 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">{{.URL}}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            {{if .PlexAutoLanguagesEnabled}}
+                            <span class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
+                                Enabled
+                            </span>
+                            {{else}}
+                            <span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-600 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:text-gray-200">
+                                Disabled
+                            </span>
+                            {{end}}
+                            <button
+                                hx-post="/plex-auto-languages/targets/{{.ID}}/toggle"
+                                hx-swap="none"
+                                class="{{if .PlexAutoLanguagesEnabled}}bg-green-600 hover:bg-green-500{{else}}bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500{{end}} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2">
+                                <span class="{{if .PlexAutoLanguagesEnabled}}translate-x-5{{else}}translate-x-0{{end}} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                            </button>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="text-center py-6">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-semibold text-gray-900 dark:text-white">No Plex servers</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Add a Plex server in the Targets section first.</p>
+                    <div class="mt-6">
+                        <a href="/targets" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                            Go to Targets
+                        </a>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "preferences"}}
+    <!-- Preferences Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Saved Preferences</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Track preferences saved for each user and show.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.EnabledTargets}}
+                <div class="space-y-6">
+                    {{range .Content.EnabledTargets}}
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">{{.Name}}</h4>
+                        <div id="pal-preferences" class="pal-preferences-target" hx-get="/plex-auto-languages/targets/{{.ID}}/preferences/partial" hx-trigger="load, sse-refresh" hx-swap="innerHTML">
+                            <div class="animate-pulse flex space-x-4">
+                                <div class="flex-1 space-y-4 py-1">
+                                    <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                                    <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">Enable Plex Auto Languages for a server to see preferences.</p>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "history"}}
+    <!-- History Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div>
+                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Track Change History</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">History of automatic track changes.</p>
+                </div>
+                {{if .Content.History}}
+                <form method="POST" action="/plex-auto-languages/history/clear" onsubmit="return confirm('Are you sure you want to clear all history?');">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+                        Clear History
+                    </button>
+                </form>
+                {{end}}
+            </div>
+            <div id="pal-history" class="px-4 py-5 sm:p-6" hx-get="/plex-auto-languages/history/partial" hx-trigger="sse-refresh" hx-swap="innerHTML">
+                {{template "history_table" .Content}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "settings"}}
+    <!-- Settings Tab -->
+    <div class="space-y-6">
+        {{if .Content.EnabledTargets}}
+        {{range .Content.EnabledTargets}}
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">{{.Name}} Settings</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6" hx-get="/plex-auto-languages/targets/{{.ID}}/config/partial" hx-trigger="load" hx-swap="innerHTML">
+                <div class="animate-pulse space-y-4">
+                    <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/4"></div>
+                    <div class="h-10 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                </div>
+            </div>
+        </div>
+        {{end}}
+        {{else}}
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:p-6 text-center">
+                <p class="text-sm text-gray-500 dark:text-gray-400">Enable Plex Auto Languages for a server in the Plex Servers tab to configure settings.</p>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "status_section"}}
+<div class="bg-white dark:bg-gray-800 shadow rounded-lg" id="status-section">
+    <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Status</h3>
+    </div>
+    <div class="px-4 py-5 sm:p-6">
+        <dl class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div class="overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-700 px-4 py-5 sm:p-6">
+                <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
+                <dd class="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-white">
+                    {{if .IsRunning}}
+                    <span class="inline-flex items-center">
+                        <span class="mr-2 h-2 w-2 rounded-full bg-green-500"></span>
+                        Running
+                    </span>
+                    {{else}}
+                    <span class="inline-flex items-center">
+                        <span class="mr-2 h-2 w-2 rounded-full bg-gray-400"></span>
+                        Stopped
+                    </span>
+                    {{end}}
+                </dd>
+            </div>
+            <div class="overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-700 px-4 py-5 sm:p-6">
+                <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Enabled Servers</dt>
+                <dd class="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-white">{{len .EnabledTargets}}</dd>
+            </div>
+            <div class="overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-700 px-4 py-5 sm:p-6">
+                <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Preferences</dt>
+                <dd class="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-white">
+                    {{$total := 0}}
+                    {{range $k, $v := .PreferencesCount}}{{$total = add $total $v}}{{end}}
+                    {{$total}}
+                </dd>
+            </div>
+        </dl>
+    </div>
+</div>
+{{end}}
+
+{{define "preferences_table"}}
+{{if .Preferences}}
+<div class="overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+            <tr>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Show</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">User</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Audio</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Subtitle</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Updated</th>
+                <th scope="col" class="relative py-3 pl-3 pr-4 sm:pr-0">
+                    <span class="sr-only">Actions</span>
+                </th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+            {{range .Preferences}}
+            <tr id="pref-{{.ID}}">
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.ShowTitle}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.PlexUserID}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.AudioDisplayTitle}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                    {{if .SubtitleDisplayTitle}}{{.SubtitleDisplayTitle}}{{else}}None{{end}}
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{formatTime .UpdatedAt}}</td>
+                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
+                    <button
+                        hx-delete="/plex-auto-languages/preferences/{{.ID}}"
+                        hx-target="#pref-{{.ID}}"
+                        hx-swap="outerHTML"
+                        hx-confirm="Are you sure you want to delete this preference?"
+                        class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        Delete
+                    </button>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No preferences saved yet.</p>
+{{end}}
+{{end}}
+
+{{define "history_table"}}
+{{if .History}}
+<div class="overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+            <tr>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Time</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">User</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Show</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Episode</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Changes</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Episodes Updated</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+            {{range .History}}
+            <tr>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{formatTime .CreatedAt}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.PlexUsername}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.ShowTitle}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.EpisodeTitle}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                    {{if .AudioChanged}}<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-2 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200 mr-1">Audio: {{.AudioTo}}</span>{{end}}
+                    {{if .SubtitleChanged}}<span class="inline-flex items-center rounded-full bg-purple-100 dark:bg-purple-900 px-2 py-0.5 text-xs font-medium text-purple-800 dark:text-purple-200">Sub: {{.SubtitleTo}}</span>{{end}}
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.EpisodesUpdated}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No history yet.</p>
+{{end}}
+{{end}}
+
+{{define "target_config_form"}}
+<form method="POST" action="/plex-auto-languages/targets/{{.Target.ID}}/config" class="space-y-6">
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div>
+            <label for="update_level" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Update Level</label>
+            <select id="update_level" name="update_level" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <option value="show" {{if eq .Config.UpdateLevel "show"}}selected{{end}}>Entire Show</option>
+                <option value="season" {{if eq .Config.UpdateLevel "season"}}selected{{end}}>Current Season Only</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Whether to update all episodes or just the current season.</p>
+        </div>
+
+        <div>
+            <label for="update_strategy" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Update Strategy</label>
+            <select id="update_strategy" name="update_strategy" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <option value="all" {{if eq .Config.UpdateStrategy "all"}}selected{{end}}>All Episodes</option>
+                <option value="next" {{if eq .Config.UpdateStrategy "next"}}selected{{end}}>Future Episodes Only</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Whether to update all episodes or only future ones.</p>
+        </div>
+    </div>
+
+    <div class="space-y-4">
+        <h4 class="text-sm font-medium text-gray-900 dark:text-white">Triggers</h4>
+
+        <div class="flex items-center">
+            <input type="checkbox" id="trigger_on_play" name="trigger_on_play" {{if .Config.TriggerOnPlay}}checked{{end}} class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+            <label for="trigger_on_play" class="ml-3 block text-sm text-gray-700 dark:text-gray-300">
+                Trigger on playback stop
+                <span class="block text-xs text-gray-500 dark:text-gray-400">Detect track changes when a user stops watching an episode.</span>
+            </label>
+        </div>
+
+        <div class="flex items-center">
+            <input type="checkbox" id="trigger_on_scan" name="trigger_on_scan" {{if .Config.TriggerOnScan}}checked{{end}} class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+            <label for="trigger_on_scan" class="ml-3 block text-sm text-gray-700 dark:text-gray-300">
+                Trigger on new episodes
+                <span class="block text-xs text-gray-500 dark:text-gray-400">Apply preferences to newly added episodes.</span>
+            </label>
+        </div>
+
+        <div class="flex items-center">
+            <input type="checkbox" id="trigger_on_activity" name="trigger_on_activity" {{if .Config.TriggerOnActivity}}checked{{end}} class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+            <label for="trigger_on_activity" class="ml-3 block text-sm text-gray-700 dark:text-gray-300">
+                Trigger on library activity
+                <span class="block text-xs text-gray-500 dark:text-gray-400">Process activity notifications (experimental).</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="flex justify-end">
+        <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+            Save Settings
+        </button>
+    </div>
+</form>
+{{end}}
+
+{{define "recent_activity"}}
+{{if .History}}
+{{$historyLen := len .History}}
+{{$maxItems := 5}}
+{{$displayCount := $historyLen}}{{if gt $historyLen $maxItems}}{{$displayCount = $maxItems}}{{end}}
+<div class="flow-root">
+    <ul role="list" class="-mb-8">
+        {{range $i, $h := .History}}
+        {{if lt $i 5}}
+        <li>
+            <div class="relative pb-8">
+                {{if lt (add $i 1) $displayCount}}<span class="absolute left-4 top-4 -ml-px h-full w-0.5 bg-gray-200 dark:bg-gray-700" aria-hidden="true"></span>{{end}}
+                <div class="relative flex space-x-3">
+                    <div>
+                        <span class="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center ring-8 ring-white dark:ring-gray-800">
+                            <svg class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
+                        <div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">
+                                <span class="font-medium text-gray-900 dark:text-white">{{$h.PlexUsername}}</span> changed tracks for
+                                <span class="font-medium text-gray-900 dark:text-white">{{$h.ShowTitle}}</span>
+                                ({{$h.EpisodesUpdated}} episodes updated)
+                            </p>
+                        </div>
+                        <div class="whitespace-nowrap text-right text-sm text-gray-500 dark:text-gray-400">
+                            <time>{{formatTime $h.CreatedAt}}</time>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </li>
+        {{end}}
+        {{end}}
+    </ul>
+</div>
+{{else}}
+<p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No activity yet. Start watching content to see track changes here.</p>
+{{end}}
+{{end}}

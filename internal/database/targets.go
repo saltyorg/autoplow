@@ -22,17 +22,18 @@ const (
 
 // Target represents a media server target for scan notifications
 type Target struct {
-	ID              int64        `json:"id"`
-	Name            string       `json:"name"`
-	Type            TargetType   `json:"type"`
-	URL             string       `json:"url"`
-	Token           string       `json:"token,omitempty"`
-	APIKey          string       `json:"api_key,omitempty"`
-	Enabled         bool         `json:"enabled"`
-	MatcharrEnabled bool         `json:"matcharr_enabled"`
-	Config          TargetConfig `json:"config"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	ID                       int64        `json:"id"`
+	Name                     string       `json:"name"`
+	Type                     TargetType   `json:"type"`
+	URL                      string       `json:"url"`
+	Token                    string       `json:"token,omitempty"`
+	APIKey                   string       `json:"api_key,omitempty"`
+	Enabled                  bool         `json:"enabled"`
+	MatcharrEnabled          bool         `json:"matcharr_enabled"`
+	PlexAutoLanguagesEnabled bool         `json:"plex_auto_languages_enabled"`
+	Config                   TargetConfig `json:"config"`
+	CreatedAt                time.Time    `json:"created_at"`
+	UpdatedAt                time.Time    `json:"updated_at"`
 }
 
 // TargetPathMapping represents a path mapping rule for media server scans
@@ -207,9 +208,9 @@ func (db *DB) CreateTarget(t *Target) error {
 	}
 
 	result, err := db.Exec(`
-		INSERT INTO targets (name, type, url, token, api_key, enabled, matcharr_enabled, config)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, configJSON)
+		INSERT INTO targets (name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, t.PlexAutoLanguagesEnabled, configJSON)
 	if err != nil {
 		return fmt.Errorf("failed to create target: %w", err)
 	}
@@ -228,13 +229,14 @@ func (db *DB) GetTarget(id int64) (*Target, error) {
 	t := &Target{}
 	var configJSON string
 	var matcharrEnabled sql.NullBool
+	var plexAutoLanguagesEnabled sql.NullBool
 
 	err := db.QueryRow(`
-		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, config, created_at, updated_at
+		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets WHERE id = ?
 	`, id).Scan(
 		&t.ID, &t.Name, &t.Type, &t.URL, &t.Token, &t.APIKey,
-		&t.Enabled, &matcharrEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
+		&t.Enabled, &matcharrEnabled, &plexAutoLanguagesEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -244,6 +246,7 @@ func (db *DB) GetTarget(id int64) (*Target, error) {
 	}
 
 	t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
+	t.PlexAutoLanguagesEnabled = plexAutoLanguagesEnabled.Valid && plexAutoLanguagesEnabled.Bool
 
 	if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
@@ -260,7 +263,7 @@ func (db *DB) GetTarget(id int64) (*Target, error) {
 // ListTargets returns all targets
 func (db *DB) ListTargets() ([]*Target, error) {
 	rows, err := db.Query(`
-		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, config, created_at, updated_at
+		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets ORDER BY name
 	`)
 	if err != nil {
@@ -273,15 +276,17 @@ func (db *DB) ListTargets() ([]*Target, error) {
 		t := &Target{}
 		var configJSON string
 		var matcharrEnabled sql.NullBool
+		var plexAutoLanguagesEnabled sql.NullBool
 
 		if err := rows.Scan(
 			&t.ID, &t.Name, &t.Type, &t.URL, &t.Token, &t.APIKey,
-			&t.Enabled, &matcharrEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
+			&t.Enabled, &matcharrEnabled, &plexAutoLanguagesEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan target: %w", err)
 		}
 
 		t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
+		t.PlexAutoLanguagesEnabled = plexAutoLanguagesEnabled.Valid && plexAutoLanguagesEnabled.Bool
 
 		if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
@@ -301,7 +306,7 @@ func (db *DB) ListTargets() ([]*Target, error) {
 // ListEnabledTargets returns all enabled targets
 func (db *DB) ListEnabledTargets() ([]*Target, error) {
 	rows, err := db.Query(`
-		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, config, created_at, updated_at
+		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets WHERE enabled = true ORDER BY name
 	`)
 	if err != nil {
@@ -314,15 +319,17 @@ func (db *DB) ListEnabledTargets() ([]*Target, error) {
 		t := &Target{}
 		var configJSON string
 		var matcharrEnabled sql.NullBool
+		var plexAutoLanguagesEnabled sql.NullBool
 
 		if err := rows.Scan(
 			&t.ID, &t.Name, &t.Type, &t.URL, &t.Token, &t.APIKey,
-			&t.Enabled, &matcharrEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
+			&t.Enabled, &matcharrEnabled, &plexAutoLanguagesEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan target: %w", err)
 		}
 
 		t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
+		t.PlexAutoLanguagesEnabled = plexAutoLanguagesEnabled.Valid && plexAutoLanguagesEnabled.Bool
 
 		if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
@@ -342,7 +349,7 @@ func (db *DB) ListEnabledTargets() ([]*Target, error) {
 // ListMatcharrEnabledTargets returns all targets that are both enabled and have matcharr enabled
 func (db *DB) ListMatcharrEnabledTargets() ([]*Target, error) {
 	rows, err := db.Query(`
-		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, config, created_at, updated_at
+		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets WHERE enabled = true AND matcharr_enabled = true ORDER BY name
 	`)
 	if err != nil {
@@ -355,21 +362,65 @@ func (db *DB) ListMatcharrEnabledTargets() ([]*Target, error) {
 		t := &Target{}
 		var configJSON string
 		var matcharrEnabled sql.NullBool
+		var plexAutoLanguagesEnabled sql.NullBool
 
 		if err := rows.Scan(
 			&t.ID, &t.Name, &t.Type, &t.URL, &t.Token, &t.APIKey,
-			&t.Enabled, &matcharrEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
+			&t.Enabled, &matcharrEnabled, &plexAutoLanguagesEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan target: %w", err)
 		}
 
 		t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
+		t.PlexAutoLanguagesEnabled = plexAutoLanguagesEnabled.Valid && plexAutoLanguagesEnabled.Bool
 
 		if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
 		// Compile advanced filter regex patterns
+		if err := t.Config.CompileAdvancedFilters(); err != nil {
+			return nil, fmt.Errorf("failed to compile advanced filters for target %d: %w", t.ID, err)
+		}
+
+		targets = append(targets, t)
+	}
+
+	return targets, nil
+}
+
+// ListPlexAutoLanguagesEnabledTargets returns all Plex targets with plex_auto_languages enabled
+func (db *DB) ListPlexAutoLanguagesEnabledTargets() ([]*Target, error) {
+	rows, err := db.Query(`
+		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
+		FROM targets WHERE enabled = true AND plex_auto_languages_enabled = true AND type = ? ORDER BY name
+	`, TargetTypePlex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list plex auto languages enabled targets: %w", err)
+	}
+	defer rows.Close()
+
+	var targets []*Target
+	for rows.Next() {
+		t := &Target{}
+		var configJSON string
+		var matcharrEnabled sql.NullBool
+		var plexAutoLanguagesEnabled sql.NullBool
+
+		if err := rows.Scan(
+			&t.ID, &t.Name, &t.Type, &t.URL, &t.Token, &t.APIKey,
+			&t.Enabled, &matcharrEnabled, &plexAutoLanguagesEnabled, &configJSON, &t.CreatedAt, &t.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan target: %w", err)
+		}
+
+		t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
+		t.PlexAutoLanguagesEnabled = plexAutoLanguagesEnabled.Valid && plexAutoLanguagesEnabled.Bool
+
+		if err := unmarshalFromString(configJSON, &t.Config); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		}
+
 		if err := t.Config.CompileAdvancedFilters(); err != nil {
 			return nil, fmt.Errorf("failed to compile advanced filters for target %d: %w", t.ID, err)
 		}
@@ -390,9 +441,9 @@ func (db *DB) UpdateTarget(t *Target) error {
 	result, err := db.Exec(`
 		UPDATE targets SET
 			name = ?, type = ?, url = ?, token = ?, api_key = ?,
-			enabled = ?, matcharr_enabled = ?, config = ?, updated_at = CURRENT_TIMESTAMP
+			enabled = ?, matcharr_enabled = ?, plex_auto_languages_enabled = ?, config = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, configJSON, t.ID)
+	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, t.PlexAutoLanguagesEnabled, configJSON, t.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update target: %w", err)
 	}

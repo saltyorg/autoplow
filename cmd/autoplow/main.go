@@ -18,8 +18,10 @@ import (
 	"github.com/saltyorg/autoplow/internal/inotify"
 	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
+	"github.com/saltyorg/autoplow/internal/plexautolang"
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/rclone"
+	"github.com/saltyorg/autoplow/internal/targets"
 	"github.com/saltyorg/autoplow/internal/throttle"
 	"github.com/saltyorg/autoplow/internal/uploader"
 	"github.com/saltyorg/autoplow/internal/web"
@@ -289,6 +291,16 @@ func run(cmd *cobra.Command, args []string) error {
 		log.Warn().Err(err).Msg("Failed to start matcharr manager")
 	}
 
+	// Initialize Plex Auto Languages manager for automatic track selection
+	plexAutoLangGetter := &plexAutoLangTargetGetter{mgr: server.TargetsManager()}
+	plexAutoLangMgr := plexautolang.NewManager(db, plexAutoLangGetter)
+	defer func() { _ = plexAutoLangMgr.Stop() }()
+	plexAutoLangMgr.SetSSEBroker(sseBroker)
+	server.SetPlexAutoLangManager(plexAutoLangMgr)
+	if err := plexAutoLangMgr.Start(); err != nil {
+		log.Warn().Err(err).Msg("Failed to start Plex Auto Languages manager")
+	}
+
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -315,6 +327,24 @@ func run(cmd *cobra.Command, args []string) error {
 
 	log.Info().Msg("Autoplow stopped")
 	return nil
+}
+
+// plexAutoLangTargetGetter adapts targets.Manager to plexautolang.TargetGetter
+type plexAutoLangTargetGetter struct {
+	mgr *targets.Manager
+}
+
+// GetPlexTarget returns a PlexTarget as a PlexTargetInterface
+func (g *plexAutoLangTargetGetter) GetPlexTarget(targetID int64) (plexautolang.PlexTargetInterface, error) {
+	target, err := g.mgr.GetTargetAny(targetID)
+	if err != nil {
+		return nil, err
+	}
+	plexTarget, ok := target.(plexautolang.PlexTargetInterface)
+	if !ok {
+		return nil, fmt.Errorf("target %d is not a Plex target", targetID)
+	}
+	return plexTarget, nil
 }
 
 func setupLogging(verbosity int) {

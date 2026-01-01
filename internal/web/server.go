@@ -22,6 +22,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/inotify"
 	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
+	"github.com/saltyorg/autoplow/internal/plexautolang"
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/processor"
 	"github.com/saltyorg/autoplow/internal/rclone"
@@ -59,6 +60,7 @@ type Server struct {
 	inotifyMgr      *inotify.Watcher
 	pollingMgr      *polling.Poller
 	matcharrMgr     *matcharr.Manager
+	plexAutoLangMgr *plexautolang.Manager
 	handlers        *handlers.Handlers
 }
 
@@ -346,6 +348,19 @@ func (s *Server) MatcharrManager() *matcharr.Manager {
 	return s.matcharrMgr
 }
 
+// SetPlexAutoLangManager sets the Plex Auto Languages manager and updates handlers
+func (s *Server) SetPlexAutoLangManager(mgr *plexautolang.Manager) {
+	s.plexAutoLangMgr = mgr
+	if s.handlers != nil {
+		s.handlers.SetPlexAutoLangManager(mgr)
+	}
+}
+
+// PlexAutoLangManager returns the Plex Auto Languages manager
+func (s *Server) PlexAutoLangManager() *plexautolang.Manager {
+	return s.plexAutoLangMgr
+}
+
 // templateFuncMap returns the common template functions
 func templateFuncMap() template.FuncMap {
 	return template.FuncMap{
@@ -461,6 +476,7 @@ func (s *Server) loadTemplates() {
 		"rclone_options.html",
 		"matcharr.html",
 		"matcharr_run.html",
+		"plexautolang.html",
 	}
 
 	for _, page := range pageTemplates {
@@ -723,6 +739,24 @@ func (s *Server) setupRoutes() {
 			r.Get("/quick-actions", h.MatcharrQuickActionsPartial)
 			r.Post("/targets/{id}/toggle", h.MatcharrToggleTarget)
 			r.Post("/history/clear", h.MatcharrClearHistory)
+		})
+
+		// Plex Auto Languages - Automatic audio/subtitle track selection
+		r.Route("/plex-auto-languages", func(r chi.Router) {
+			r.Get("/", h.PlexAutoLangPage)
+			r.Get("/status", h.PlexAutoLangStatus)
+			r.Get("/status/partial", h.PlexAutoLangStatusPartial)
+			r.Get("/recent-activity/partial", h.PlexAutoLangRecentActivityPartial)
+			r.Post("/targets/{id}/toggle", h.PlexAutoLangToggleTarget)
+			r.Get("/targets/{id}/config", h.PlexAutoLangConfigGet)
+			r.Post("/targets/{id}/config", h.PlexAutoLangConfigUpdate)
+			r.Get("/targets/{id}/config/partial", h.PlexAutoLangTargetConfigPartial)
+			r.Get("/targets/{id}/preferences", h.PlexAutoLangPreferences)
+			r.Get("/targets/{id}/preferences/partial", h.PlexAutoLangPreferencesPartial)
+			r.Delete("/preferences/{id}", h.PlexAutoLangDeletePreference)
+			r.Get("/history", h.PlexAutoLangHistory)
+			r.Get("/history/partial", h.PlexAutoLangHistoryPartial)
+			r.Post("/history/clear", h.PlexAutoLangClearHistory)
 		})
 	})
 }

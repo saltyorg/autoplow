@@ -46,12 +46,22 @@ var plexAnalysisActivityTypes = map[string]bool{
 	"media.generate.credits":        true,
 }
 
+// PlexNotificationCallback is called when WebSocket notifications are received
+type PlexNotificationCallback func(notification PlexWebSocketNotification)
+
+// PlexWebSocketNotification is the parsed WebSocket notification (exported for callbacks)
+type PlexWebSocketNotification = plexWebSocketNotification
+
 // PlexTarget implements the Target interface for Plex Media Server
 type PlexTarget struct {
 	dbTarget    *database.Target
 	client      *http.Client
 	subscribers sync.Map // map[string]*plexActivityTracker - for waiting uploaders
 	activeItems sync.Map // map[string]*plexItemActivity - global tracking for all items
+
+	// Notification callbacks for external observers (e.g., Plex Auto Languages)
+	notificationCallbacks []PlexNotificationCallback
+	callbacksMu           sync.RWMutex
 }
 
 // NewPlexTarget creates a new Plex target
@@ -77,6 +87,34 @@ func (s *PlexTarget) Type() database.TargetType {
 // SupportsSessionMonitoring returns true as Plex supports session monitoring
 func (s *PlexTarget) SupportsSessionMonitoring() bool {
 	return true
+}
+
+// RegisterNotificationCallback adds a callback for WebSocket notifications
+// Callbacks are invoked for all notification types (playing, timeline, activity, status)
+func (s *PlexTarget) RegisterNotificationCallback(cb PlexNotificationCallback) {
+	s.callbacksMu.Lock()
+	defer s.callbacksMu.Unlock()
+	s.notificationCallbacks = append(s.notificationCallbacks, cb)
+}
+
+// RegisterNotificationCallbackAny adds a callback that receives notifications as any type.
+// This is useful for external packages that can't import the notification type directly
+// due to circular import restrictions.
+func (s *PlexTarget) RegisterNotificationCallbackAny(cb func(notification any)) {
+	s.RegisterNotificationCallback(func(notification PlexWebSocketNotification) {
+		cb(notification)
+	})
+}
+
+// dispatchNotification sends the notification to all registered callbacks
+func (s *PlexTarget) dispatchNotification(notification plexWebSocketNotification) {
+	s.callbacksMu.RLock()
+	callbacks := s.notificationCallbacks
+	s.callbacksMu.RUnlock()
+
+	for _, cb := range callbacks {
+		cb(notification)
+	}
 }
 
 // Scan triggers a library scan for the given path
@@ -981,6 +1019,9 @@ func (s *PlexTarget) watchSessionsOnce(ctx context.Context, callback func(sessio
 					Msg("Failed to parse WebSocket message")
 				continue
 			}
+
+			// Dispatch notification to all registered callbacks (e.g., Plex Auto Languages)
+			s.dispatchNotification(notification)
 
 			// Log raw message for activity notifications, parsed for others
 			if notification.NotificationContainer.Type == "activity" {

@@ -570,4 +570,87 @@ var migrations = []migration{
 			ALTER TABLE matcharr_runs ADD COLUMN logs TEXT DEFAULT '';
 		`,
 	},
+	{
+		Version: 18,
+		Name:    "plex_auto_languages",
+		SQL: `
+			-- Add plex_auto_languages_enabled column to targets table (opt-in for Plex Auto Languages)
+			ALTER TABLE targets ADD COLUMN plex_auto_languages_enabled BOOLEAN DEFAULT false;
+
+			-- User preferences per show (one row per user+show combination)
+			CREATE TABLE plex_auto_languages_preferences (
+				id INTEGER PRIMARY KEY,
+				target_id INTEGER NOT NULL,
+				plex_user_id TEXT NOT NULL,
+				show_rating_key TEXT NOT NULL,
+				show_title TEXT,
+				-- Audio preference
+				audio_language_code TEXT,
+				audio_codec TEXT,
+				audio_channels INTEGER,
+				audio_channel_layout TEXT,
+				audio_title TEXT,
+				audio_display_title TEXT,
+				audio_visual_impaired BOOLEAN DEFAULT FALSE,
+				-- Subtitle preference (NULL if no subtitles selected)
+				subtitle_language_code TEXT,
+				subtitle_forced BOOLEAN DEFAULT FALSE,
+				subtitle_hearing_impaired BOOLEAN DEFAULT FALSE,
+				subtitle_codec TEXT,
+				subtitle_title TEXT,
+				subtitle_display_title TEXT,
+				-- Metadata
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+				UNIQUE(target_id, plex_user_id, show_rating_key)
+			);
+
+			-- Track change history for activity log
+			CREATE TABLE plex_auto_languages_history (
+				id INTEGER PRIMARY KEY,
+				target_id INTEGER NOT NULL,
+				plex_user_id TEXT,
+				plex_username TEXT,
+				show_title TEXT,
+				show_rating_key TEXT,
+				episode_title TEXT,
+				episode_rating_key TEXT,
+				event_type TEXT NOT NULL,
+				-- What changed
+				audio_changed BOOLEAN DEFAULT FALSE,
+				audio_from TEXT,
+				audio_to TEXT,
+				subtitle_changed BOOLEAN DEFAULT FALSE,
+				subtitle_from TEXT,
+				subtitle_to TEXT,
+				-- Summary
+				episodes_updated INTEGER DEFAULT 0,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE
+			);
+
+			-- Configuration per target
+			CREATE TABLE plex_auto_languages_config (
+				target_id INTEGER PRIMARY KEY,
+				enabled BOOLEAN DEFAULT FALSE,
+				update_level TEXT DEFAULT 'show',
+				update_strategy TEXT DEFAULT 'next',
+				trigger_on_play BOOLEAN DEFAULT TRUE,
+				trigger_on_scan BOOLEAN DEFAULT TRUE,
+				trigger_on_activity BOOLEAN DEFAULT FALSE,
+				ignore_labels TEXT DEFAULT '[]',
+				ignore_libraries TEXT DEFAULT '[]',
+				schedule TEXT DEFAULT '',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE
+			);
+
+			-- Indexes for efficient lookups
+			CREATE INDEX idx_pal_preferences_target_user ON plex_auto_languages_preferences(target_id, plex_user_id);
+			CREATE INDEX idx_pal_preferences_show ON plex_auto_languages_preferences(target_id, show_rating_key);
+			CREATE INDEX idx_pal_history_target ON plex_auto_languages_history(target_id, created_at DESC);
+		`,
+	},
 }

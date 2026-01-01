@@ -37,6 +37,8 @@ const (
 	EventMatcharrRunStarted   EventType = "matcharr_run_started"
 	EventMatcharrRunCompleted EventType = "matcharr_run_completed"
 	EventMatcharrRunFailed    EventType = "matcharr_run_failed"
+
+	EventPlexAutoLanguagesTrackChanged EventType = "plex_auto_languages_track_changed"
 )
 
 // Event represents an SSE event to be sent to clients
