@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -91,7 +90,7 @@ type MatcharrMismatch struct {
 
 // CreateMatcharrArr creates a new Arr instance
 func (db *DB) CreateMatcharrArr(arr *MatcharrArr) error {
-	pathMappingsJSON, err := json.Marshal(arr.PathMappings)
+	pathMappingsJSON, err := marshalToString(arr.PathMappings)
 	if err != nil {
 		return fmt.Errorf("failed to marshal path mappings: %w", err)
 	}
@@ -99,7 +98,7 @@ func (db *DB) CreateMatcharrArr(arr *MatcharrArr) error {
 	result, err := db.Exec(`
 		INSERT INTO matcharr_arrs (name, type, url, api_key, enabled, path_mappings, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, string(pathMappingsJSON))
+	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, pathMappingsJSON)
 	if err != nil {
 		return fmt.Errorf("failed to create matcharr arr: %w", err)
 	}
@@ -135,10 +134,8 @@ func (db *DB) GetMatcharrArr(id int64) (*MatcharrArr, error) {
 
 	arr.Enabled = enabled != 0
 
-	if pathMappingsJSON != "" {
-		if err := json.Unmarshal([]byte(pathMappingsJSON), &arr.PathMappings); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal path mappings: %w", err)
-		}
+	if err := unmarshalFromString(pathMappingsJSON, &arr.PathMappings); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal path mappings: %w", err)
 	}
 
 	return &arr, nil
@@ -170,10 +167,8 @@ func (db *DB) ListMatcharrArrs() ([]*MatcharrArr, error) {
 
 		arr.Enabled = enabled != 0
 
-		if pathMappingsJSON != "" {
-			if err := json.Unmarshal([]byte(pathMappingsJSON), &arr.PathMappings); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal path mappings: %w", err)
-			}
+		if err := unmarshalFromString(pathMappingsJSON, &arr.PathMappings); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal path mappings: %w", err)
 		}
 
 		arrs = append(arrs, &arr)
@@ -208,10 +203,8 @@ func (db *DB) ListEnabledMatcharrArrs() ([]*MatcharrArr, error) {
 
 		arr.Enabled = enabled != 0
 
-		if pathMappingsJSON != "" {
-			if err := json.Unmarshal([]byte(pathMappingsJSON), &arr.PathMappings); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal path mappings: %w", err)
-			}
+		if err := unmarshalFromString(pathMappingsJSON, &arr.PathMappings); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal path mappings: %w", err)
 		}
 
 		arrs = append(arrs, &arr)
@@ -222,7 +215,7 @@ func (db *DB) ListEnabledMatcharrArrs() ([]*MatcharrArr, error) {
 
 // UpdateMatcharrArr updates an Arr instance
 func (db *DB) UpdateMatcharrArr(arr *MatcharrArr) error {
-	pathMappingsJSON, err := json.Marshal(arr.PathMappings)
+	pathMappingsJSON, err := marshalToString(arr.PathMappings)
 	if err != nil {
 		return fmt.Errorf("failed to marshal path mappings: %w", err)
 	}
@@ -231,7 +224,7 @@ func (db *DB) UpdateMatcharrArr(arr *MatcharrArr) error {
 		UPDATE matcharr_arrs
 		SET name = ?, type = ?, url = ?, api_key = ?, enabled = ?, path_mappings = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, string(pathMappingsJSON), arr.ID)
+	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, pathMappingsJSON, arr.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update matcharr arr: %w", err)
 	}

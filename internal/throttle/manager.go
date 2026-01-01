@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/rclone"
 	"github.com/saltyorg/autoplow/internal/targets"
@@ -74,38 +74,17 @@ const (
 
 // LoadConfigFromDB loads throttle configuration from the database
 func LoadConfigFromDB(db *database.DB) Config {
-	config := DefaultConfig()
+	defaults := DefaultConfig()
+	loader := config.NewLoader(db)
 
-	if val, _ := db.GetSetting(throttleEnabledKey); val != "" {
-		config.Enabled = val == "true"
+	return Config{
+		PollInterval:     loader.DurationSeconds(throttlePollIntervalKey, int(defaults.PollInterval.Seconds())),
+		MaxBandwidth:     loader.Int64(throttleMaxBandwidthKey, defaults.MaxBandwidth),
+		StreamBandwidth:  loader.Int64(throttleStreamBandwidthKey, defaults.StreamBandwidth),
+		MinBandwidth:     loader.Int64(throttleMinBandwidthKey, defaults.MinBandwidth),
+		SkipUploadsBelow: loader.Int64(throttleSkipUploadsBelowKey, defaults.SkipUploadsBelow),
+		Enabled:          loader.Bool(throttleEnabledKey, defaults.Enabled),
 	}
-	if val, _ := db.GetSetting(throttleMaxBandwidthKey); val != "" {
-		if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-			config.MaxBandwidth = v
-		}
-	}
-	if val, _ := db.GetSetting(throttleStreamBandwidthKey); val != "" {
-		if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-			config.StreamBandwidth = v
-		}
-	}
-	if val, _ := db.GetSetting(throttleMinBandwidthKey); val != "" {
-		if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-			config.MinBandwidth = v
-		}
-	}
-	if val, _ := db.GetSetting(throttleSkipUploadsBelowKey); val != "" {
-		if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-			config.SkipUploadsBelow = v
-		}
-	}
-	if val, _ := db.GetSetting(throttlePollIntervalKey); val != "" {
-		if secs, err := strconv.Atoi(val); err == nil && secs > 0 {
-			config.PollInterval = time.Duration(secs) * time.Second
-		}
-	}
-
-	return config
 }
 
 // Manager handles bandwidth throttling based on active media sessions

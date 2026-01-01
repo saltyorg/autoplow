@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -262,14 +261,9 @@ type UploadHistory struct {
 
 // CreateRemote creates a new remote
 func (db *DB) CreateRemote(remote *Remote) error {
-	var optionsJSON *string
-	if len(remote.TransferOptions) > 0 {
-		data, err := json.Marshal(remote.TransferOptions)
-		if err != nil {
-			return fmt.Errorf("failed to marshal transfer options: %w", err)
-		}
-		s := string(data)
-		optionsJSON = &s
+	optionsJSON, err := marshalToPtr(remote.TransferOptions)
+	if err != nil {
+		return fmt.Errorf("failed to marshal transfer options: %w", err)
 	}
 
 	result, err := db.Exec(`
@@ -306,10 +300,8 @@ func (db *DB) GetRemote(id int64) (*Remote, error) {
 		return nil, fmt.Errorf("failed to get remote: %w", err)
 	}
 
-	if optionsJSON.Valid && optionsJSON.String != "" {
-		if err := json.Unmarshal([]byte(optionsJSON.String), &remote.TransferOptions); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal transfer options: %w", err)
-		}
+	if err := unmarshalFromNullString(optionsJSON, &remote.TransferOptions); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transfer options: %w", err)
 	}
 
 	return remote, nil
@@ -333,10 +325,8 @@ func (db *DB) ListRemotes() ([]*Remote, error) {
 		if err := rows.Scan(&remote.ID, &remote.Name, &remote.RcloneRemote, &remote.Enabled, &optionsJSON, &remote.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan remote: %w", err)
 		}
-		if optionsJSON.Valid && optionsJSON.String != "" {
-			if err := json.Unmarshal([]byte(optionsJSON.String), &remote.TransferOptions); err != nil {
-				log.Warn().Err(err).Int64("remote_id", remote.ID).Msg("Failed to unmarshal remote transfer options")
-			}
+		if err := unmarshalFromNullString(optionsJSON, &remote.TransferOptions); err != nil {
+			log.Warn().Err(err).Int64("remote_id", remote.ID).Msg("Failed to unmarshal remote transfer options")
 		}
 		remotes = append(remotes, remote)
 	}
@@ -362,10 +352,8 @@ func (db *DB) ListEnabledRemotes() ([]*Remote, error) {
 		if err := rows.Scan(&remote.ID, &remote.Name, &remote.RcloneRemote, &remote.Enabled, &optionsJSON, &remote.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan remote: %w", err)
 		}
-		if optionsJSON.Valid && optionsJSON.String != "" {
-			if err := json.Unmarshal([]byte(optionsJSON.String), &remote.TransferOptions); err != nil {
-				log.Warn().Err(err).Int64("remote_id", remote.ID).Msg("Failed to unmarshal remote transfer options")
-			}
+		if err := unmarshalFromNullString(optionsJSON, &remote.TransferOptions); err != nil {
+			log.Warn().Err(err).Int64("remote_id", remote.ID).Msg("Failed to unmarshal remote transfer options")
 		}
 		remotes = append(remotes, remote)
 	}
@@ -375,30 +363,19 @@ func (db *DB) ListEnabledRemotes() ([]*Remote, error) {
 
 // UpdateRemote updates an existing remote
 func (db *DB) UpdateRemote(remote *Remote) error {
-	var optionsJSON *string
-	if len(remote.TransferOptions) > 0 {
-		data, err := json.Marshal(remote.TransferOptions)
-		if err != nil {
-			return fmt.Errorf("failed to marshal transfer options: %w", err)
-		}
-		s := string(data)
-		optionsJSON = &s
+	optionsJSON, err := marshalToPtr(remote.TransferOptions)
+	if err != nil {
+		return fmt.Errorf("failed to marshal transfer options: %w", err)
 	}
 
-	result, err := db.Exec(`
+	if err := db.execAndVerifyAffected(`
 		UPDATE remotes SET name = ?, rclone_remote = ?, enabled = ?, transfer_options = ?
 		WHERE id = ?
-	`, remote.Name, remote.RcloneRemote, remote.Enabled, optionsJSON, remote.ID)
-	if err != nil {
+	`, remote.Name, remote.RcloneRemote, remote.Enabled, optionsJSON, remote.ID); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("remote not found")
+		}
 		return fmt.Errorf("failed to update remote: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("remote not found")
 	}
 
 	return nil
@@ -406,19 +383,12 @@ func (db *DB) UpdateRemote(remote *Remote) error {
 
 // DeleteRemote deletes a remote by ID
 func (db *DB) DeleteRemote(id int64) error {
-	result, err := db.Exec("DELETE FROM remotes WHERE id = ?", id)
-	if err != nil {
+	if err := db.execAndVerifyAffected("DELETE FROM remotes WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("remote not found")
+		}
 		return fmt.Errorf("failed to delete remote: %w", err)
 	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("remote not found")
-	}
-
 	return nil
 }
 
@@ -437,28 +407,23 @@ func (db *DB) CountRemotes() (int, error) {
 // CreateDestination creates a new destination
 func (db *DB) CreateDestination(dest *Destination) error {
 	// Marshal exclude paths, extensions, and triggers to JSON
-	excludePathsJSON, err := json.Marshal(dest.ExcludePaths)
+	excludePathsJSON, err := marshalToString(dest.ExcludePaths)
 	if err != nil {
 		return fmt.Errorf("failed to marshal exclude paths: %w", err)
 	}
-	excludeExtensionsJSON, err := json.Marshal(dest.ExcludeExtensions)
+	excludeExtensionsJSON, err := marshalToString(dest.ExcludeExtensions)
 	if err != nil {
 		return fmt.Errorf("failed to marshal exclude extensions: %w", err)
 	}
-	includedTriggersJSON, err := json.Marshal(dest.IncludedTriggers)
+	includedTriggersJSON, err := marshalToString(dest.IncludedTriggers)
 	if err != nil {
 		return fmt.Errorf("failed to marshal included triggers: %w", err)
 	}
 
 	// Marshal advanced filters to JSON (may be nil)
-	var advancedFiltersJSON *string
-	if dest.AdvancedFilters != nil {
-		data, err := json.Marshal(dest.AdvancedFilters)
-		if err != nil {
-			return fmt.Errorf("failed to marshal advanced filters: %w", err)
-		}
-		s := string(data)
-		advancedFiltersJSON = &s
+	advancedFiltersJSON, err := marshalToPtr(dest.AdvancedFilters)
+	if err != nil {
+		return fmt.Errorf("failed to marshal advanced filters: %w", err)
 	}
 
 	// Default transfer type to move if not set
@@ -516,24 +481,18 @@ func (db *DB) GetDestination(id int64) (*Destination, error) {
 	}
 
 	// Unmarshal JSON arrays
-	if excludePathsJSON.Valid && excludePathsJSON.String != "" {
-		if err := json.Unmarshal([]byte(excludePathsJSON.String), &dest.ExcludePaths); err != nil {
-			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude paths")
-		}
+	if err := unmarshalFromNullString(excludePathsJSON, &dest.ExcludePaths); err != nil {
+		log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude paths")
 	}
-	if excludeExtensionsJSON.Valid && excludeExtensionsJSON.String != "" {
-		if err := json.Unmarshal([]byte(excludeExtensionsJSON.String), &dest.ExcludeExtensions); err != nil {
-			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude extensions")
-		}
+	if err := unmarshalFromNullString(excludeExtensionsJSON, &dest.ExcludeExtensions); err != nil {
+		log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude extensions")
 	}
-	if includedTriggersJSON.Valid && includedTriggersJSON.String != "" {
-		if err := json.Unmarshal([]byte(includedTriggersJSON.String), &dest.IncludedTriggers); err != nil {
-			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination included triggers")
-		}
+	if err := unmarshalFromNullString(includedTriggersJSON, &dest.IncludedTriggers); err != nil {
+		log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination included triggers")
 	}
 	if advancedFiltersJSON.Valid && advancedFiltersJSON.String != "" {
 		dest.AdvancedFilters = &DestinationAdvancedFilters{}
-		if err := json.Unmarshal([]byte(advancedFiltersJSON.String), dest.AdvancedFilters); err != nil {
+		if err := unmarshalFromNullString(advancedFiltersJSON, dest.AdvancedFilters); err != nil {
 			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination advanced filters")
 		}
 	}
@@ -588,24 +547,18 @@ func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
 		}
 
 		// Unmarshal JSON arrays
-		if excludePathsJSON.Valid && excludePathsJSON.String != "" {
-			if err := json.Unmarshal([]byte(excludePathsJSON.String), &dest.ExcludePaths); err != nil {
-				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude paths")
-			}
+		if err := unmarshalFromNullString(excludePathsJSON, &dest.ExcludePaths); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude paths")
 		}
-		if excludeExtensionsJSON.Valid && excludeExtensionsJSON.String != "" {
-			if err := json.Unmarshal([]byte(excludeExtensionsJSON.String), &dest.ExcludeExtensions); err != nil {
-				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude extensions")
-			}
+		if err := unmarshalFromNullString(excludeExtensionsJSON, &dest.ExcludeExtensions); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination exclude extensions")
 		}
-		if includedTriggersJSON.Valid && includedTriggersJSON.String != "" {
-			if err := json.Unmarshal([]byte(includedTriggersJSON.String), &dest.IncludedTriggers); err != nil {
-				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination included triggers")
-			}
+		if err := unmarshalFromNullString(includedTriggersJSON, &dest.IncludedTriggers); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination included triggers")
 		}
 		if advancedFiltersJSON.Valid && advancedFiltersJSON.String != "" {
 			dest.AdvancedFilters = &DestinationAdvancedFilters{}
-			if err := json.Unmarshal([]byte(advancedFiltersJSON.String), dest.AdvancedFilters); err != nil {
+			if err := unmarshalFromNullString(advancedFiltersJSON, dest.AdvancedFilters); err != nil {
 				log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to unmarshal destination advanced filters")
 			}
 		}
@@ -653,24 +606,18 @@ func (db *DB) scanDestination(scanner interface {
 	}
 
 	// Unmarshal JSON arrays
-	if excludePathsJSON.Valid && excludePathsJSON.String != "" {
-		if err := json.Unmarshal([]byte(excludePathsJSON.String), &d.ExcludePaths); err != nil {
-			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination exclude paths")
-		}
+	if err := unmarshalFromNullString(excludePathsJSON, &d.ExcludePaths); err != nil {
+		log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination exclude paths")
 	}
-	if excludeExtensionsJSON.Valid && excludeExtensionsJSON.String != "" {
-		if err := json.Unmarshal([]byte(excludeExtensionsJSON.String), &d.ExcludeExtensions); err != nil {
-			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination exclude extensions")
-		}
+	if err := unmarshalFromNullString(excludeExtensionsJSON, &d.ExcludeExtensions); err != nil {
+		log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination exclude extensions")
 	}
-	if includedTriggersJSON.Valid && includedTriggersJSON.String != "" {
-		if err := json.Unmarshal([]byte(includedTriggersJSON.String), &d.IncludedTriggers); err != nil {
-			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination included triggers")
-		}
+	if err := unmarshalFromNullString(includedTriggersJSON, &d.IncludedTriggers); err != nil {
+		log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination included triggers")
 	}
 	if advancedFiltersJSON.Valid && advancedFiltersJSON.String != "" {
 		d.AdvancedFilters = &DestinationAdvancedFilters{}
-		if err := json.Unmarshal([]byte(advancedFiltersJSON.String), d.AdvancedFilters); err != nil {
+		if err := unmarshalFromNullString(advancedFiltersJSON, d.AdvancedFilters); err != nil {
 			log.Warn().Err(err).Int64("destination_id", d.ID).Msg("Failed to unmarshal destination advanced filters")
 		}
 	}
@@ -752,28 +699,23 @@ func (db *DB) ListEnabledDestinations() ([]*Destination, error) {
 // UpdateDestination updates an existing destination
 func (db *DB) UpdateDestination(dest *Destination) error {
 	// Marshal exclude paths, extensions, and triggers to JSON
-	excludePathsJSON, err := json.Marshal(dest.ExcludePaths)
+	excludePathsJSON, err := marshalToString(dest.ExcludePaths)
 	if err != nil {
 		return fmt.Errorf("failed to marshal exclude paths: %w", err)
 	}
-	excludeExtensionsJSON, err := json.Marshal(dest.ExcludeExtensions)
+	excludeExtensionsJSON, err := marshalToString(dest.ExcludeExtensions)
 	if err != nil {
 		return fmt.Errorf("failed to marshal exclude extensions: %w", err)
 	}
-	includedTriggersJSON, err := json.Marshal(dest.IncludedTriggers)
+	includedTriggersJSON, err := marshalToString(dest.IncludedTriggers)
 	if err != nil {
 		return fmt.Errorf("failed to marshal included triggers: %w", err)
 	}
 
 	// Marshal advanced filters to JSON (may be nil)
-	var advancedFiltersJSON *string
-	if dest.AdvancedFilters != nil {
-		data, err := json.Marshal(dest.AdvancedFilters)
-		if err != nil {
-			return fmt.Errorf("failed to marshal advanced filters: %w", err)
-		}
-		s := string(data)
-		advancedFiltersJSON = &s
+	advancedFiltersJSON, err := marshalToPtr(dest.AdvancedFilters)
+	if err != nil {
+		return fmt.Errorf("failed to marshal advanced filters: %w", err)
 	}
 
 	// Default transfer type to move if not set
@@ -786,7 +728,7 @@ func (db *DB) UpdateDestination(dest *Destination) error {
 			exclude_paths = ?, exclude_extensions = ?, included_triggers = ?, advanced_filters = ?
 		WHERE id = ?
 	`, dest.LocalPath, dest.UploadMode, dest.ModeValue, dest.TransferType, dest.Enabled,
-		string(excludePathsJSON), string(excludeExtensionsJSON), string(includedTriggersJSON), advancedFiltersJSON, dest.ID)
+		excludePathsJSON, excludeExtensionsJSON, includedTriggersJSON, advancedFiltersJSON, dest.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update destination: %w", err)
 	}
@@ -804,19 +746,12 @@ func (db *DB) UpdateDestination(dest *Destination) error {
 
 // DeleteDestination deletes a destination by ID
 func (db *DB) DeleteDestination(id int64) error {
-	result, err := db.Exec("DELETE FROM destinations WHERE id = ?", id)
-	if err != nil {
+	if err := db.execAndVerifyAffected("DELETE FROM destinations WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("destination not found")
+		}
 		return fmt.Errorf("failed to delete destination: %w", err)
 	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("destination not found")
-	}
-
 	return nil
 }
 
@@ -894,21 +829,14 @@ func (db *DB) UpdateDestinationRemote(dr *DestinationRemote) error {
 
 // RemoveDestinationRemote removes a remote mapping from a destination
 func (db *DB) RemoveDestinationRemote(destinationID, remoteID int64) error {
-	result, err := db.Exec(`
+	if err := db.execAndVerifyAffected(`
 		DELETE FROM destination_remotes WHERE destination_id = ? AND remote_id = ?
-	`, destinationID, remoteID)
-	if err != nil {
+	`, destinationID, remoteID); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("destination remote not found")
+		}
 		return fmt.Errorf("failed to remove destination remote: %w", err)
 	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("destination remote not found")
-	}
-
 	return nil
 }
 
@@ -988,24 +916,12 @@ func (db *DB) GetUpload(id int64) (*Upload, error) {
 		return nil, fmt.Errorf("failed to get upload: %w", err)
 	}
 
-	if scanID.Valid {
-		upload.ScanID = &scanID.Int64
-	}
-	if sizeBytes.Valid {
-		upload.SizeBytes = &sizeBytes.Int64
-	}
-	if startedAt.Valid {
-		upload.StartedAt = &startedAt.Time
-	}
-	if completedAt.Valid {
-		upload.CompletedAt = &completedAt.Time
-	}
-	if rcloneJobID.Valid {
-		upload.RcloneJobID = &rcloneJobID.Int64
-	}
-	if lastError.Valid {
-		upload.LastError = lastError.String
-	}
+	upload.ScanID = nullInt64ToPtr(scanID)
+	upload.SizeBytes = nullInt64ToPtr(sizeBytes)
+	upload.StartedAt = nullTimeToPtr(startedAt)
+	upload.CompletedAt = nullTimeToPtr(completedAt)
+	upload.RcloneJobID = nullInt64ToPtr(rcloneJobID)
+	upload.LastError = nullStringValue(lastError)
 
 	return upload, nil
 }
@@ -1025,24 +941,12 @@ func (db *DB) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
 			return nil, fmt.Errorf("failed to scan upload: %w", err)
 		}
 
-		if scanID.Valid {
-			upload.ScanID = &scanID.Int64
-		}
-		if sizeBytes.Valid {
-			upload.SizeBytes = &sizeBytes.Int64
-		}
-		if startedAt.Valid {
-			upload.StartedAt = &startedAt.Time
-		}
-		if completedAt.Valid {
-			upload.CompletedAt = &completedAt.Time
-		}
-		if rcloneJobID.Valid {
-			upload.RcloneJobID = &rcloneJobID.Int64
-		}
-		if lastError.Valid {
-			upload.LastError = lastError.String
-		}
+		upload.ScanID = nullInt64ToPtr(scanID)
+		upload.SizeBytes = nullInt64ToPtr(sizeBytes)
+		upload.StartedAt = nullTimeToPtr(startedAt)
+		upload.CompletedAt = nullTimeToPtr(completedAt)
+		upload.RcloneJobID = nullInt64ToPtr(rcloneJobID)
+		upload.LastError = nullStringValue(lastError)
 
 		uploads = append(uploads, upload)
 	}
@@ -1263,24 +1167,12 @@ func (db *DB) FindDuplicateUpload(localPath, remoteName string) (*Upload, error)
 		return nil, fmt.Errorf("failed to find duplicate upload: %w", err)
 	}
 
-	if scanID.Valid {
-		upload.ScanID = &scanID.Int64
-	}
-	if sizeBytes.Valid {
-		upload.SizeBytes = &sizeBytes.Int64
-	}
-	if startedAt.Valid {
-		upload.StartedAt = &startedAt.Time
-	}
-	if completedAt.Valid {
-		upload.CompletedAt = &completedAt.Time
-	}
-	if rcloneJobID.Valid {
-		upload.RcloneJobID = &rcloneJobID.Int64
-	}
-	if lastError.Valid {
-		upload.LastError = lastError.String
-	}
+	upload.ScanID = nullInt64ToPtr(scanID)
+	upload.SizeBytes = nullInt64ToPtr(sizeBytes)
+	upload.StartedAt = nullTimeToPtr(startedAt)
+	upload.CompletedAt = nullTimeToPtr(completedAt)
+	upload.RcloneJobID = nullInt64ToPtr(rcloneJobID)
+	upload.LastError = nullStringValue(lastError)
 
 	return upload, nil
 }
@@ -1368,12 +1260,8 @@ func (db *DB) ListUploadHistory(limit, offset int) ([]*UploadHistory, error) {
 			return nil, fmt.Errorf("failed to scan upload history: %w", err)
 		}
 
-		if uploadID.Valid {
-			history.UploadID = &uploadID.Int64
-		}
-		if sizeBytes.Valid {
-			history.SizeBytes = &sizeBytes.Int64
-		}
+		history.UploadID = nullInt64ToPtr(uploadID)
+		history.SizeBytes = nullInt64ToPtr(sizeBytes)
 
 		histories = append(histories, history)
 	}

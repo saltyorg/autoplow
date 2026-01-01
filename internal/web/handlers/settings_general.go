@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/rs/zerolog/log"
+	"github.com/saltyorg/autoplow/internal/config"
 )
 
 // GeneralSettings holds the general configuration for display
@@ -19,37 +20,15 @@ type GeneralSettings struct {
 
 // SettingsPage renders the general settings page
 func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
-	settings := GeneralSettings{
-		MaxRetries:        3,
-		CleanupDays:       7,
-		ScanningEnabled:   true, // Default to enabled
-		UploadsEnabled:    true, // Default to enabled
-		UseBinaryUnits:    true, // Default to binary (MiB/s)
-		UseBitsForBitrate: true, // Default to bits (Mbps) for streaming bitrates
-	}
+	loader := config.NewLoader(h.db)
 
-	// Load from database
-	if val, _ := h.db.GetSetting("processor.max_retries"); val != "" {
-		if v, err := strconv.Atoi(val); err == nil {
-			settings.MaxRetries = v
-		}
-	}
-	if val, _ := h.db.GetSetting("processor.cleanup_days"); val != "" {
-		if v, err := strconv.Atoi(val); err == nil {
-			settings.CleanupDays = v
-		}
-	}
-	if val, _ := h.db.GetSetting("scanning.enabled"); val != "" {
-		settings.ScanningEnabled = val != "false" // Default true unless explicitly false
-	}
-	if val, _ := h.db.GetSetting("uploads.enabled"); val != "" {
-		settings.UploadsEnabled = val != "false" // Default true unless explicitly false
-	}
-	if val, _ := h.db.GetSetting("display.use_binary_units"); val != "" {
-		settings.UseBinaryUnits = val != "false" // Default true unless explicitly false
-	}
-	if val, _ := h.db.GetSetting("display.use_bits_for_bitrate"); val != "" {
-		settings.UseBitsForBitrate = val != "false" // Default true unless explicitly false
+	settings := GeneralSettings{
+		MaxRetries:        loader.Int("processor.max_retries", 3),
+		CleanupDays:       loader.Int("processor.cleanup_days", 7),
+		ScanningEnabled:   loader.BoolDefaultTrue("scanning.enabled"),
+		UploadsEnabled:    loader.BoolDefaultTrue("uploads.enabled"),
+		UseBinaryUnits:    loader.BoolDefaultTrue("display.use_binary_units"),
+		UseBitsForBitrate: loader.BoolDefaultTrue("display.use_bits_for_bitrate"),
 	}
 
 	h.render(w, r, "settings.html", map[string]any{
@@ -67,10 +46,8 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current uploads.enabled state before update
-	wasUploadsEnabled := true
-	if val, _ := h.db.GetSetting("uploads.enabled"); val == "false" {
-		wasUploadsEnabled = false
-	}
+	loader := config.NewLoader(h.db)
+	wasUploadsEnabled := loader.BoolDefaultTrue("uploads.enabled")
 
 	// Parse form values
 	maxRetries, _ := strconv.Atoi(r.FormValue("max_retries"))

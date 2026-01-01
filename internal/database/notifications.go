@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -40,7 +39,7 @@ type NotificationLog struct {
 
 // CreateNotificationProvider creates a new notification provider
 func (db *DB) CreateNotificationProvider(p *NotificationProvider) error {
-	configJSON, err := json.Marshal(p.Config)
+	configJSON, err := marshalToString(p.Config)
 	if err != nil {
 		return err
 	}
@@ -48,7 +47,7 @@ func (db *DB) CreateNotificationProvider(p *NotificationProvider) error {
 	result, err := db.Exec(`
 		INSERT INTO notification_providers (name, type, enabled, config)
 		VALUES (?, ?, ?, ?)
-	`, p.Name, p.Type, p.Enabled, string(configJSON))
+	`, p.Name, p.Type, p.Enabled, configJSON)
 	if err != nil {
 		return err
 	}
@@ -75,7 +74,7 @@ func (db *DB) GetNotificationProvider(id int64) (*NotificationProvider, error) {
 		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(configJSON), &p.Config); err != nil {
+	if err := unmarshalFromString(configJSON, &p.Config); err != nil {
 		p.Config = make(map[string]string)
 	}
 
@@ -96,7 +95,7 @@ func (db *DB) GetNotificationProviderByName(name string) (*NotificationProvider,
 		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(configJSON), &p.Config); err != nil {
+	if err := unmarshalFromString(configJSON, &p.Config); err != nil {
 		p.Config = make(map[string]string)
 	}
 
@@ -105,7 +104,7 @@ func (db *DB) GetNotificationProviderByName(name string) (*NotificationProvider,
 
 // UpdateNotificationProvider updates a notification provider
 func (db *DB) UpdateNotificationProvider(p *NotificationProvider) error {
-	configJSON, err := json.Marshal(p.Config)
+	configJSON, err := marshalToString(p.Config)
 	if err != nil {
 		return err
 	}
@@ -114,7 +113,7 @@ func (db *DB) UpdateNotificationProvider(p *NotificationProvider) error {
 		UPDATE notification_providers
 		SET name = ?, type = ?, enabled = ?, config = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, p.Name, p.Type, p.Enabled, string(configJSON), p.ID)
+	`, p.Name, p.Type, p.Enabled, configJSON, p.ID)
 	return err
 }
 
@@ -145,7 +144,7 @@ func (db *DB) ListNotificationProviders() ([]*NotificationProvider, error) {
 			return nil, err
 		}
 
-		if err := json.Unmarshal([]byte(configJSON), &p.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &p.Config); err != nil {
 			p.Config = make(map[string]string)
 		}
 
@@ -177,7 +176,7 @@ func (db *DB) ListEnabledNotificationProviders() ([]*NotificationProvider, error
 			return nil, err
 		}
 
-		if err := json.Unmarshal([]byte(configJSON), &p.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &p.Config); err != nil {
 			p.Config = make(map[string]string)
 		}
 

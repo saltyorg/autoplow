@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/processor"
 )
 
@@ -31,75 +32,29 @@ type PathAnchorFile struct {
 
 // SettingsProcessorPage renders the processor settings page
 func (h *Handlers) SettingsProcessorPage(w http.ResponseWriter, r *http.Request) {
-	// Get current processor config if available
+	loader := config.NewLoader(h.db)
+
 	settings := ProcessorSettings{
-		MinimumAgeSeconds:        60,
-		BatchIntervalSeconds:     30,
-		PathNotFoundRetries:      0,
-		PathNotFoundDelaySeconds: 5,
-		AnchorEnabled:            true,
+		MinimumAgeSeconds:        loader.Int("processor.minimum_age_seconds", 60),
+		BatchIntervalSeconds:     loader.Int("processor.batch_interval_seconds", 30),
+		PathNotFoundRetries:      loader.Int("processor.path_not_found_retries", 0),
+		PathNotFoundDelaySeconds: loader.Int("processor.path_not_found_delay_seconds", 5),
+		AnchorEnabled:            loader.BoolDefaultTrue("processor.anchor.enabled"),
+		UploadsEnabled:           loader.BoolDefaultTrue("uploads.enabled"),
 	}
 
-	// Try to load from database
-	var minAge, batchInterval int
-	var anchorEnabled bool
-	var anchorFiles []string
-
-	if val, _ := h.db.GetSetting("processor.minimum_age_seconds"); val != "" {
-		if v, err := strconv.Atoi(val); err == nil {
-			minAge = v
-		}
-	}
-	if val, _ := h.db.GetSetting("processor.batch_interval_seconds"); val != "" {
-		if v, err := strconv.Atoi(val); err == nil {
-			batchInterval = v
-		}
-	}
-	if val, _ := h.db.GetSetting("processor.path_not_found_retries"); val != "" {
-		if v, err := strconv.Atoi(val); err == nil {
-			settings.PathNotFoundRetries = v
-		}
-	}
-	if val, _ := h.db.GetSetting("processor.path_not_found_delay_seconds"); val != "" {
-		if v, err := strconv.Atoi(val); err == nil && v > 0 {
-			settings.PathNotFoundDelaySeconds = v
-		}
-	}
-	if val, _ := h.db.GetSetting("processor.anchor.enabled"); val != "" {
-		anchorEnabled = val == "true"
-	} else {
-		anchorEnabled = true // default
-	}
+	// Load anchor files (JSON array)
 	if val, _ := h.db.GetSetting("processor.anchor.anchor_files"); val != "" {
-		if err := json.Unmarshal([]byte(val), &anchorFiles); err != nil {
+		if err := json.Unmarshal([]byte(val), &settings.AnchorFiles); err != nil {
 			log.Error().Err(err).Msg("Failed to parse anchor_files setting")
 		}
 	}
 
-	// Load path-specific anchor files
-	var pathAnchorFiles []PathAnchorFile
+	// Load path-specific anchor files (JSON array)
 	if val, _ := h.db.GetSetting("processor.anchor.path_anchor_files"); val != "" {
-		if err := json.Unmarshal([]byte(val), &pathAnchorFiles); err != nil {
+		if err := json.Unmarshal([]byte(val), &settings.PathAnchorFiles); err != nil {
 			log.Error().Err(err).Msg("Failed to parse path_anchor_files setting")
 		}
-	}
-
-	// Use loaded values or defaults
-	if minAge > 0 {
-		settings.MinimumAgeSeconds = minAge
-	}
-	if batchInterval > 0 {
-		settings.BatchIntervalSeconds = batchInterval
-	}
-	settings.AnchorEnabled = anchorEnabled
-	settings.AnchorFiles = anchorFiles
-	settings.PathAnchorFiles = pathAnchorFiles
-
-	// Load uploads enabled setting
-	if val, _ := h.db.GetSetting("uploads.enabled"); val != "" {
-		settings.UploadsEnabled = val != "false"
-	} else {
-		settings.UploadsEnabled = true // default
 	}
 
 	h.render(w, r, "settings.html", map[string]any{

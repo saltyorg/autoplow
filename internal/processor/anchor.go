@@ -91,13 +91,3 @@ func (ac *AnchorChecker) IsReady(path string) (bool, string) {
 
 	return false, fmt.Sprintf("no anchor file found (checked: %s)", strings.Join(anchorFiles, ", "))
 }
-
-// CheckAnchorFile checks if a specific anchor file exists
-func CheckAnchorFile(basePath, anchorFile string) bool {
-	if anchorFile == "" {
-		return true
-	}
-	anchorPath := filepath.Join(basePath, anchorFile)
-	_, err := os.Stat(anchorPath)
-	return err == nil
-}

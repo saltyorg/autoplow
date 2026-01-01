@@ -83,3 +83,20 @@ func (db *DB) Transaction(fn func(*sql.Tx) error) error {
 
 	return nil
 }
+
+// execAndVerifyAffected executes a query and returns an error if no rows were affected.
+// This is useful for UPDATE and DELETE operations where at least one row should be modified.
+func (db *DB) execAndVerifyAffected(query string, args ...interface{}) error {
+	result, err := db.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}

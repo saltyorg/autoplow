@@ -72,27 +72,13 @@ func (db *DB) GetScan(id int64) (*Scan, error) {
 		return nil, fmt.Errorf("failed to get scan: %w", err)
 	}
 
-	if triggerID.Valid {
-		scan.TriggerID = &triggerID.Int64
-	}
-	if targetID.Valid {
-		scan.TargetID = &targetID.Int64
-	}
-	if startedAt.Valid {
-		scan.StartedAt = &startedAt.Time
-	}
-	if completedAt.Valid {
-		scan.CompletedAt = &completedAt.Time
-	}
-	if nextRetryAt.Valid {
-		scan.NextRetryAt = &nextRetryAt.Time
-	}
-	if lastError.Valid {
-		scan.LastError = lastError.String
-	}
-	if eventType.Valid {
-		scan.EventType = eventType.String
-	}
+	scan.TriggerID = nullInt64ToPtr(triggerID)
+	scan.TargetID = nullInt64ToPtr(targetID)
+	scan.StartedAt = nullTimeToPtr(startedAt)
+	scan.CompletedAt = nullTimeToPtr(completedAt)
+	scan.NextRetryAt = nullTimeToPtr(nextRetryAt)
+	scan.LastError = nullStringValue(lastError)
+	scan.EventType = nullStringValue(eventType)
 
 	return scan, nil
 }
@@ -161,27 +147,13 @@ func (db *DB) scanRowsToScans(rows *sql.Rows) ([]*Scan, error) {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 
-		if triggerID.Valid {
-			scan.TriggerID = &triggerID.Int64
-		}
-		if targetID.Valid {
-			scan.TargetID = &targetID.Int64
-		}
-		if startedAt.Valid {
-			scan.StartedAt = &startedAt.Time
-		}
-		if completedAt.Valid {
-			scan.CompletedAt = &completedAt.Time
-		}
-		if nextRetryAt.Valid {
-			scan.NextRetryAt = &nextRetryAt.Time
-		}
-		if lastError.Valid {
-			scan.LastError = lastError.String
-		}
-		if eventType.Valid {
-			scan.EventType = eventType.String
-		}
+		scan.TriggerID = nullInt64ToPtr(triggerID)
+		scan.TargetID = nullInt64ToPtr(targetID)
+		scan.StartedAt = nullTimeToPtr(startedAt)
+		scan.CompletedAt = nullTimeToPtr(completedAt)
+		scan.NextRetryAt = nullTimeToPtr(nextRetryAt)
+		scan.LastError = nullStringValue(lastError)
+		scan.EventType = nullStringValue(eventType)
 
 		scans = append(scans, scan)
 	}
@@ -305,27 +277,13 @@ func (db *DB) FindDuplicatePendingScan(path string) (*Scan, error) {
 		return nil, fmt.Errorf("failed to find duplicate scan: %w", err)
 	}
 
-	if triggerID.Valid {
-		scan.TriggerID = &triggerID.Int64
-	}
-	if targetID.Valid {
-		scan.TargetID = &targetID.Int64
-	}
-	if startedAt.Valid {
-		scan.StartedAt = &startedAt.Time
-	}
-	if completedAt.Valid {
-		scan.CompletedAt = &completedAt.Time
-	}
-	if nextRetryAt.Valid {
-		scan.NextRetryAt = &nextRetryAt.Time
-	}
-	if lastError.Valid {
-		scan.LastError = lastError.String
-	}
-	if eventType.Valid {
-		scan.EventType = eventType.String
-	}
+	scan.TriggerID = nullInt64ToPtr(triggerID)
+	scan.TargetID = nullInt64ToPtr(targetID)
+	scan.StartedAt = nullTimeToPtr(startedAt)
+	scan.CompletedAt = nullTimeToPtr(completedAt)
+	scan.NextRetryAt = nullTimeToPtr(nextRetryAt)
+	scan.LastError = nullStringValue(lastError)
+	scan.EventType = nullStringValue(eventType)
 
 	return scan, nil
 }

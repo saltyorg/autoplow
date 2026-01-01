@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -330,7 +329,7 @@ func (t *Trigger) WebhookURL(baseURL string) string {
 
 // CreateTrigger creates a new trigger
 func (db *DB) CreateTrigger(trigger *Trigger) error {
-	configJSON, err := json.Marshal(trigger.Config)
+	configJSON, err := marshalToString(trigger.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -355,7 +354,7 @@ func (db *DB) CreateTrigger(trigger *Trigger) error {
 	result, err := db.Exec(`
 		INSERT INTO triggers (name, type, auth_type, api_key, username, password_hash, priority, enabled, config, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, trigger.Name, trigger.Type, trigger.AuthType, apiKey, username, passwordHash, trigger.Priority, trigger.Enabled, string(configJSON), time.Now(), time.Now())
+	`, trigger.Name, trigger.Type, trigger.AuthType, apiKey, username, passwordHash, trigger.Priority, trigger.Enabled, configJSON, time.Now(), time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to create trigger: %w", err)
 	}
@@ -403,7 +402,7 @@ func (db *DB) GetTrigger(id int64) (*Trigger, error) {
 		trigger.Password = passwordHash.String
 	}
 
-	if err := json.Unmarshal([]byte(configJSON), &trigger.Config); err != nil {
+	if err := unmarshalFromString(configJSON, &trigger.Config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
@@ -449,7 +448,7 @@ func (db *DB) GetTriggerByAPIKey(apiKey string) (*Trigger, error) {
 		trigger.Password = passwordHash.String
 	}
 
-	if err := json.Unmarshal([]byte(configJSON), &trigger.Config); err != nil {
+	if err := unmarshalFromString(configJSON, &trigger.Config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
@@ -499,7 +498,7 @@ func (db *DB) ListTriggers() ([]*Trigger, error) {
 			trigger.Password = passwordHash.String
 		}
 
-		if err := json.Unmarshal([]byte(configJSON), &trigger.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &trigger.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
@@ -552,7 +551,7 @@ func (db *DB) ListTriggersByType(triggerType TriggerType) ([]*Trigger, error) {
 			trigger.Password = passwordHash.String
 		}
 
-		if err := json.Unmarshal([]byte(configJSON), &trigger.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &trigger.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
@@ -569,7 +568,7 @@ func (db *DB) ListTriggersByType(triggerType TriggerType) ([]*Trigger, error) {
 
 // UpdateTrigger updates an existing trigger
 func (db *DB) UpdateTrigger(trigger *Trigger) error {
-	configJSON, err := json.Marshal(trigger.Config)
+	configJSON, err := marshalToString(trigger.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -577,7 +576,7 @@ func (db *DB) UpdateTrigger(trigger *Trigger) error {
 	result, err := db.Exec(`
 		UPDATE triggers SET name = ?, type = ?, priority = ?, enabled = ?, config = ?, updated_at = ?
 		WHERE id = ?
-	`, trigger.Name, trigger.Type, trigger.Priority, trigger.Enabled, string(configJSON), time.Now(), trigger.ID)
+	`, trigger.Name, trigger.Type, trigger.Priority, trigger.Enabled, configJSON, time.Now(), trigger.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update trigger: %w", err)
 	}
@@ -646,19 +645,12 @@ func (db *DB) UpdateTriggerAuth(id int64, authType AuthType, apiKey, username, p
 
 // DeleteTrigger deletes a trigger by ID
 func (db *DB) DeleteTrigger(id int64) error {
-	result, err := db.Exec("DELETE FROM triggers WHERE id = ?", id)
-	if err != nil {
+	if err := db.execAndVerifyAffected("DELETE FROM triggers WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("trigger not found")
+		}
 		return fmt.Errorf("failed to delete trigger: %w", err)
 	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("trigger not found")
-	}
-
 	return nil
 }
 
@@ -721,7 +713,7 @@ func (db *DB) ListLocalTriggers() ([]*Trigger, error) {
 			trigger.Password = passwordHash.String
 		}
 
-		if err := json.Unmarshal([]byte(configJSON), &trigger.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &trigger.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 

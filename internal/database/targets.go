@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -202,7 +201,7 @@ func (c *TargetConfig) ShouldExcludeTrigger(triggerName string) bool {
 
 // CreateTarget creates a new media server target
 func (db *DB) CreateTarget(t *Target) error {
-	configJSON, err := json.Marshal(t.Config)
+	configJSON, err := marshalToString(t.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -210,7 +209,7 @@ func (db *DB) CreateTarget(t *Target) error {
 	result, err := db.Exec(`
 		INSERT INTO targets (name, type, url, token, api_key, enabled, matcharr_enabled, config)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, string(configJSON))
+	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, configJSON)
 	if err != nil {
 		return fmt.Errorf("failed to create target: %w", err)
 	}
@@ -246,7 +245,7 @@ func (db *DB) GetTarget(id int64) (*Target, error) {
 
 	t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
 
-	if err := json.Unmarshal([]byte(configJSON), &t.Config); err != nil {
+	if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
@@ -284,7 +283,7 @@ func (db *DB) ListTargets() ([]*Target, error) {
 
 		t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
 
-		if err := json.Unmarshal([]byte(configJSON), &t.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
@@ -325,7 +324,7 @@ func (db *DB) ListEnabledTargets() ([]*Target, error) {
 
 		t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
 
-		if err := json.Unmarshal([]byte(configJSON), &t.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
@@ -366,7 +365,7 @@ func (db *DB) ListMatcharrEnabledTargets() ([]*Target, error) {
 
 		t.MatcharrEnabled = matcharrEnabled.Valid && matcharrEnabled.Bool
 
-		if err := json.Unmarshal([]byte(configJSON), &t.Config); err != nil {
+		if err := unmarshalFromString(configJSON, &t.Config); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
@@ -383,7 +382,7 @@ func (db *DB) ListMatcharrEnabledTargets() ([]*Target, error) {
 
 // UpdateTarget updates an existing target
 func (db *DB) UpdateTarget(t *Target) error {
-	configJSON, err := json.Marshal(t.Config)
+	configJSON, err := marshalToString(t.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -393,7 +392,7 @@ func (db *DB) UpdateTarget(t *Target) error {
 			name = ?, type = ?, url = ?, token = ?, api_key = ?,
 			enabled = ?, matcharr_enabled = ?, config = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, string(configJSON), t.ID)
+	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, configJSON, t.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update target: %w", err)
 	}
@@ -411,19 +410,12 @@ func (db *DB) UpdateTarget(t *Target) error {
 
 // DeleteTarget deletes a target by ID
 func (db *DB) DeleteTarget(id int64) error {
-	result, err := db.Exec("DELETE FROM targets WHERE id = ?", id)
-	if err != nil {
+	if err := db.execAndVerifyAffected("DELETE FROM targets WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("target not found: %d", id)
+		}
 		return fmt.Errorf("failed to delete target: %w", err)
 	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("target not found: %d", id)
-	}
-
 	return nil
 }
 

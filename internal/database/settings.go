@@ -73,6 +73,20 @@ func (db *DB) GetAllSettings() (map[string]string, error) {
 	return settings, rows.Err()
 }
 
+// GetSettingsBatch retrieves multiple settings at once and returns a map
+// Keys not found in the database will not be included in the result
+func (db *DB) GetSettingsBatch(keys ...string) (map[string]string, error) {
+	result := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if val, err := db.GetSetting(key); err != nil {
+			return nil, err
+		} else if val != "" {
+			result[key] = val
+		}
+	}
+	return result, nil
+}
+
 // DeleteSetting removes a setting
 func (db *DB) DeleteSetting(key string) error {
 	_, err := db.Exec("DELETE FROM settings WHERE key = ?", key)

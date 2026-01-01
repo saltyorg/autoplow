@@ -1,9 +1,7 @@
 package notification
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -141,29 +139,7 @@ func (d *DiscordProvider) getColorForEvent(eventType EventType) int {
 
 // sendWebhook sends a webhook payload to Discord
 func (d *DiscordProvider) sendWebhook(ctx context.Context, payload discordWebhookPayload) error {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", d.config.WebhookURL, bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("discord returned status %d", resp.StatusCode)
-	}
-
-	return nil
+	return sendJSONRequest(ctx, d.client, "POST", d.config.WebhookURL, payload)
 }
 
 // Discord webhook payload structures

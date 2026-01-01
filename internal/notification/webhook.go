@@ -158,14 +158,7 @@ func (w *WebhookProvider) renderBody(event Event) (string, error) {
 
 // sendRequest sends the HTTP request to the webhook URL
 func (w *WebhookProvider) sendRequest(ctx context.Context, body string) error {
-	var reqBody *bytes.Reader
-	if body != "" {
-		reqBody = bytes.NewReader([]byte(body))
-	} else {
-		reqBody = bytes.NewReader(nil)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, w.config.Method, w.config.URL, reqBody)
+	req, err := http.NewRequestWithContext(ctx, w.config.Method, w.config.URL, bytes.NewReader([]byte(body)))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -178,17 +171,7 @@ func (w *WebhookProvider) sendRequest(ctx context.Context, body string) error {
 		req.Header.Set(key, value)
 	}
 
-	resp, err := w.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
-	}
-
-	return nil
+	return doRequest(w.client, req)
 }
 
 // DefaultWebhookBody returns the default webhook body template
