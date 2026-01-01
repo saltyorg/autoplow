@@ -161,9 +161,5 @@ func mapPath(path string, mappings []database.MatcharrPathMapping) string {
 
 // normalizePath normalizes a path for comparison
 func normalizePath(path string) string {
-	// Trim trailing slashes
-	path = strings.TrimRight(path, "/")
-	// Convert backslashes to forward slashes for cross-platform compatibility
-	path = strings.ReplaceAll(path, "\\", "/")
-	return path
+	return strings.TrimRight(path, "/")
 }
