@@ -16,6 +16,9 @@
             <a href="/matcharr?tab=arrs" class="{{if eq .Content.Tab "arrs"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 Arr Instances ({{len .Content.Arrs}})
             </a>
+            <a href="/matcharr?tab=servers" class="{{if eq .Content.Tab "servers"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Media Servers ({{.Content.MatcharrTargets}})
+            </a>
             <a href="/matcharr?tab=mismatches" class="{{if eq .Content.Tab "mismatches"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 Mismatches (<span id="mismatches-count">{{len .Content.PendingMismatches}}</span>)
             </a>
@@ -208,6 +211,72 @@
     </script>
     {{end}}
 
+    {{if eq .Content.Tab "servers"}}
+    <!-- Media Servers Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Media Servers</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Enable Matcharr for specific media server targets. Only enabled targets will be included in comparisons.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{if .Content.Targets}}
+                <div class="overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead>
+                            <tr>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">URL</th>
+                                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                            {{range .Content.Targets}}
+                            <tr>
+                                <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</td>
+                                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                    {{if eq .Type "plex"}}
+                                    <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">Plex</span>
+                                    {{else if eq .Type "emby"}}
+                                    <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Emby</span>
+                                    {{else if eq .Type "jellyfin"}}
+                                    <span class="inline-flex items-center rounded-md bg-purple-50 dark:bg-purple-900/50 px-2 py-1 text-xs font-medium text-purple-700 dark:text-purple-400">Jellyfin</span>
+                                    {{else}}
+                                    <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400">{{.Type}}</span>
+                                    {{end}}
+                                </td>
+                                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono">{{.URL}}</td>
+                                <td class="px-3 py-4 text-sm text-right">
+                                    <button
+                                        hx-post="/matcharr/targets/{{.ID}}/toggle"
+                                        hx-swap="none"
+                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .MatcharrEnabled}}bg-indigo-600{{else}}bg-gray-200 dark:bg-gray-600{{end}}"
+                                        role="switch"
+                                        aria-checked="{{.MatcharrEnabled}}">
+                                        <span class="sr-only">Enable Matcharr</span>
+                                        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .MatcharrEnabled}}translate-x-5{{else}}translate-x-0{{end}}"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {{else}}
+                <div class="text-center py-12">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                    </svg>
+                    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No enabled media server targets found.</p>
+                    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Configure targets in the <a href="/targets" class="text-indigo-600 dark:text-indigo-400 hover:underline">Targets</a> section.</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
     {{if eq .Content.Tab "mismatches"}}
     <!-- Mismatches Tab -->
     <div class="space-y-6">
@@ -275,60 +344,6 @@
     {{if eq .Content.Tab "settings"}}
     <!-- Settings Tab -->
     <div class="space-y-6">
-        <!-- Media Servers Section -->
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Media Servers</h3>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Enable Matcharr for specific media server targets. Only enabled targets will be included in comparisons.</p>
-            </div>
-            <div class="px-4 py-5 sm:p-6">
-                {{if .Content.Targets}}
-                <div class="space-y-4">
-                    {{range .Content.Targets}}
-                    <div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                        <div class="flex items-center space-x-3">
-                            <div>
-                                {{if eq .Type "plex"}}
-                                <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">Plex</span>
-                                {{else if eq .Type "emby"}}
-                                <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/50 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Emby</span>
-                                {{else if eq .Type "jellyfin"}}
-                                <span class="inline-flex items-center rounded-md bg-purple-50 dark:bg-purple-900/50 px-2 py-1 text-xs font-medium text-purple-700 dark:text-purple-400">Jellyfin</span>
-                                {{else}}
-                                <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400">{{.Type}}</span>
-                                {{end}}
-                            </div>
-                            <div>
-                                <p class="text-sm font-medium text-gray-900 dark:text-white">{{.Name}}</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 font-mono">{{.URL}}</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center">
-                            <button
-                                hx-post="/matcharr/targets/{{.ID}}/toggle"
-                                hx-swap="none"
-                                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .MatcharrEnabled}}bg-indigo-600{{else}}bg-gray-200 dark:bg-gray-600{{end}}"
-                                role="switch"
-                                aria-checked="{{.MatcharrEnabled}}">
-                                <span class="sr-only">Enable Matcharr</span>
-                                <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .MatcharrEnabled}}translate-x-5{{else}}translate-x-0{{end}}"></span>
-                            </button>
-                        </div>
-                    </div>
-                    {{end}}
-                </div>
-                {{else}}
-                <div class="text-center py-8">
-                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
-                    </svg>
-                    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No enabled media server targets found.</p>
-                    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Configure targets in the <a href="/targets" class="text-indigo-600 dark:text-indigo-400 hover:underline">Targets</a> section.</p>
-                </div>
-                {{end}}
-            </div>
-        </div>
-
         <!-- Schedule Settings Section -->
         <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
             <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
