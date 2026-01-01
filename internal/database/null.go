@@ -32,13 +32,13 @@ func nullStringValue(n sql.NullString) string {
 
 // marshalToPtr marshals a value to JSON and returns a pointer to the string
 // Returns nil if the value is nil or empty
-func marshalToPtr(v interface{}) (*string, error) {
+func marshalToPtr(v any) (*string, error) {
 	if v == nil {
 		return nil, nil
 	}
 
 	// Check for empty maps
-	if m, ok := v.(map[string]interface{}); ok && len(m) == 0 {
+	if m, ok := v.(map[string]any); ok && len(m) == 0 {
 		return nil, nil
 	}
 	if m, ok := v.(map[string]any); ok && len(m) == 0 {
@@ -55,7 +55,7 @@ func marshalToPtr(v interface{}) (*string, error) {
 
 // unmarshalFromNullString unmarshals JSON from a sql.NullString into a value
 // If the string is not valid or empty, does nothing and returns nil
-func unmarshalFromNullString(data sql.NullString, v interface{}) error {
+func unmarshalFromNullString(data sql.NullString, v any) error {
 	if !data.Valid || data.String == "" {
 		return nil
 	}
@@ -64,7 +64,7 @@ func unmarshalFromNullString(data sql.NullString, v interface{}) error {
 
 // marshalToString marshals a value to a JSON string
 // Useful when the column is NOT NULL and requires a string value
-func marshalToString(v interface{}) (string, error) {
+func marshalToString(v any) (string, error) {
 	if v == nil {
 		return "null", nil
 	}
@@ -77,7 +77,7 @@ func marshalToString(v interface{}) (string, error) {
 
 // unmarshalFromString unmarshals JSON from a string into a value
 // Useful when the column is NOT NULL
-func unmarshalFromString(data string, v interface{}) error {
+func unmarshalFromString(data string, v any) error {
 	if data == "" {
 		return nil
 	}

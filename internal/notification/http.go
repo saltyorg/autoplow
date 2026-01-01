@@ -10,7 +10,7 @@ import (
 
 // sendJSONRequest marshals payload to JSON and sends it to the given URL.
 // Returns an error if the request fails or returns a non-2xx status.
-func sendJSONRequest(ctx context.Context, client *http.Client, method, url string, payload interface{}) error {
+func sendJSONRequest(ctx context.Context, client *http.Client, method, url string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
