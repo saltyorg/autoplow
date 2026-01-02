@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -22,11 +23,36 @@ import (
 
 // plexActivityTracker tracks all activities for an item during scan completion (used by waiting uploaders)
 type plexActivityTracker struct {
-	itemName     string
-	activeUUIDs  map[string]string // uuid -> activity type
-	mu           sync.Mutex
-	lastActivity time.Time
-	scanStarted  bool
+	title          string            // media title - show name or movie name (required match)
+	seasonPatterns []string          // season patterns like "Season 02", "S02" (any must match for TV)
+	activeUUIDs    map[string]string // uuid -> activity type
+	mu             sync.Mutex
+	lastActivity   time.Time
+	scanStarted    bool
+}
+
+// matchesItem checks if the Plex item name matches our title and season
+// The title must match, plus at least one season pattern (if any are set)
+func (t *plexActivityTracker) matchesItem(itemName string) bool {
+	itemLower := strings.ToLower(itemName)
+
+	// Title must be present
+	if !strings.Contains(itemLower, strings.ToLower(t.title)) {
+		return false
+	}
+
+	// If no season patterns, title match is enough (e.g., movie or show-level scan)
+	if len(t.seasonPatterns) == 0 {
+		return true
+	}
+
+	// At least one season pattern must match
+	for _, pattern := range t.seasonPatterns {
+		if strings.Contains(itemLower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
 }
 
 // plexItemActivity tracks activity state for an item globally (not tied to waiting uploaders)
@@ -1171,7 +1197,8 @@ func (s *PlexTarget) updateGlobalTracker(itemName, uuid, actType, event string) 
 func (s *PlexTarget) notifyWaitingSubscribers(itemName, uuid, actType, event string) {
 	s.subscribers.Range(func(key, value any) bool {
 		tracker := value.(*plexActivityTracker)
-		if tracker.itemName == itemName {
+		// Check if any of our match patterns appear in the Plex item name
+		if tracker.matchesItem(itemName) {
 			tracker.mu.Lock()
 			tracker.lastActivity = time.Now()
 
@@ -1240,13 +1267,16 @@ func (s *PlexTarget) runIdleChecker(ctx context.Context) {
 // there's been no activity for the configured idle threshold (default 10 seconds).
 // Returns nil if scan completed, or the context error if timeout/cancelled.
 func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, timeout time.Duration) error {
-	// Extract item name from path (last component)
-	itemName := filepath.Base(path)
-	if itemName == "" || itemName == "." || itemName == "/" {
+	// Build match info from path
+	// For path like "/mnt/local/Media/TV/TV/Absentia (2017) (tvdb-330500)/Season 02":
+	// - showName: "Absentia"
+	// - seasonPatterns: ["Season 02", "S02", "S2"]
+	matchInfo := buildPlexMatchInfo(path)
+	if matchInfo == nil {
 		log.Debug().
 			Str("target", s.Name()).
 			Str("path", path).
-			Msg("Cannot extract item name from path, skipping scan completion wait")
+			Msg("Cannot extract match info from path, skipping scan completion wait")
 		return nil
 	}
 
@@ -1257,18 +1287,20 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 	}
 
 	// Create tracker
-	subID := fmt.Sprintf("%s-%d", itemName, time.Now().UnixNano())
+	subID := fmt.Sprintf("%s-%d", matchInfo.title, time.Now().UnixNano())
 	tracker := &plexActivityTracker{
-		itemName:     itemName,
-		activeUUIDs:  make(map[string]string),
-		lastActivity: time.Now(),
+		title:          matchInfo.title,
+		seasonPatterns: matchInfo.seasonPatterns,
+		activeUUIDs:    make(map[string]string),
+		lastActivity:   time.Now(),
 	}
 	s.subscribers.Store(subID, tracker)
 	defer s.subscribers.Delete(subID)
 
 	log.Debug().
 		Str("target", s.Name()).
-		Str("item", itemName).
+		Str("title", matchInfo.title).
+		Strs("season_patterns", matchInfo.seasonPatterns).
 		Str("timeout", timeout.String()).
 		Str("idle_threshold", idleThreshold.String()).
 		Msg("Waiting for all Plex activities to complete")
@@ -1292,7 +1324,7 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 			if started && activeCount == 0 && idle > idleThreshold {
 				log.Debug().
 					Str("target", s.Name()).
-					Str("item", itemName).
+					Str("title", matchInfo.title).
 					Dur("idle", idle).
 					Msg("All Plex activities completed (idle)")
 				return nil
@@ -1303,13 +1335,78 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 			tracker.mu.Unlock()
 			log.Warn().
 				Str("target", s.Name()).
-				Str("item", itemName).
+				Str("title", matchInfo.title).
 				Int("remaining_activities", remaining).
 				Msg("Plex activity wait timed out")
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+	}
+}
+
+// plexMatchInfo holds parsed match information from a scan path
+type plexMatchInfo struct {
+	title          string   // media title (show name or movie name)
+	seasonPatterns []string // season patterns for TV, empty for movies
+}
+
+// buildPlexMatchInfo extracts match info from a path for Plex activity matching
+// Handles both TV shows and movies:
+//   - TV: "/Media/TV/Absentia (2017) (tvdb-330500)/Season 02" -> title="Absentia", seasonPatterns=["Season 02", "S02"]
+//   - Movie: "/Media/Movies/Inception (2010)" -> title="Inception", seasonPatterns=[]
+func buildPlexMatchInfo(path string) *plexMatchInfo {
+	folderName := filepath.Base(path)
+	if folderName == "" || folderName == "." || folderName == "/" {
+		return nil
+	}
+
+	// Check if this is a season folder (TV show structure)
+	isSeasonFolder := regexp.MustCompile(`(?i)^Season\s*\d+$`).MatchString(folderName)
+
+	if isSeasonFolder {
+		// TV show: folderName is "Season XX", parent is show folder
+		parentPath := filepath.Dir(path)
+		showFolder := filepath.Base(parentPath)
+		if showFolder == "" || showFolder == "." || showFolder == "/" {
+			return nil
+		}
+
+		// Extract show name from "Absentia (2017) (tvdb-330500)" -> "Absentia"
+		showName := regexp.MustCompile(`^([^(]+)`).FindString(showFolder)
+		showName = strings.TrimSpace(showName)
+		if showName == "" {
+			return nil
+		}
+
+		info := &plexMatchInfo{
+			title:          showName,
+			seasonPatterns: []string{folderName},
+		}
+
+		// Add abbreviated season format: "Season 02" -> "S02", "S2"
+		if seasonMatch := regexp.MustCompile(`(?i)^Season\s*(\d+)$`).FindStringSubmatch(folderName); len(seasonMatch) == 2 {
+			seasonNum := seasonMatch[1]
+			info.seasonPatterns = append(info.seasonPatterns, fmt.Sprintf("S%s", seasonNum))
+			if trimmed := strings.TrimLeft(seasonNum, "0"); trimmed != "" && trimmed != seasonNum {
+				info.seasonPatterns = append(info.seasonPatterns, fmt.Sprintf("S%s", trimmed))
+			}
+		}
+
+		return info
+	}
+
+	// Movie or show folder: extract title from the folder name itself
+	// "Inception (2010)" -> "Inception"
+	title := regexp.MustCompile(`^([^(]+)`).FindString(folderName)
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil
+	}
+
+	return &plexMatchInfo{
+		title:          title,
+		seasonPatterns: nil, // No season patterns for movies
 	}
 }
 
