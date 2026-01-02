@@ -597,14 +597,67 @@ func (m *Manager) startWebSocketWatcher(dbTarget *database.Target, watcher Sessi
 	}()
 }
 
-// dispatchSessions invokes all registered session callbacks
+// dispatchSessions stores sessions to database and invokes all registered session callbacks
 func (m *Manager) dispatchSessions(targetID int64, targetName string, sessions []Session) {
+	// Get target info for database storage
+	dbTarget, err := m.db.GetTarget(targetID)
+	if err != nil {
+		log.Warn().Err(err).Int64("target_id", targetID).Msg("Failed to get target for session storage")
+	} else if dbTarget != nil {
+		// Store sessions to database
+		m.storeSessions(dbTarget, sessions)
+	}
+
+	// Invoke callbacks (e.g., throttle manager for bandwidth calculations)
 	m.sessionCbMu.RLock()
 	callbacks := m.sessionCallbacks
 	m.sessionCbMu.RUnlock()
 
 	for _, cb := range callbacks {
 		cb(targetID, targetName, sessions)
+	}
+}
+
+// storeSessions stores session data to the database
+func (m *Manager) storeSessions(dbTarget *database.Target, sessions []Session) {
+	serverID := fmt.Sprintf("%d", dbTarget.ID)
+
+	// Build set of current session IDs for this target
+	currentIDs := make(map[string]bool)
+
+	// Upsert all sessions
+	for _, s := range sessions {
+		sessionID := fmt.Sprintf("%s-%s-%s", dbTarget.Type, serverID, s.ID)
+		currentIDs[sessionID] = true
+
+		dbSession := &database.ActiveSession{
+			ID:          sessionID,
+			ServerType:  string(dbTarget.Type),
+			ServerID:    serverID,
+			Username:    s.Username,
+			MediaTitle:  s.MediaTitle,
+			MediaType:   s.MediaType,
+			Format:      s.Format,
+			Bitrate:     s.Bitrate,
+			Transcoding: s.Transcoding,
+			Player:      s.Player,
+		}
+
+		if err := m.db.UpsertActiveSession(dbSession); err != nil {
+			log.Error().Err(err).Str("session_id", sessionID).Msg("Failed to upsert session")
+		}
+	}
+
+	// Delete sessions for this target that are no longer active
+	if dbSessions, err := m.db.ListActiveSessions(); err == nil {
+		for _, dbSession := range dbSessions {
+			// Only delete sessions belonging to this target
+			if dbSession.ServerID == serverID && !currentIDs[dbSession.ID] {
+				if err := m.db.DeleteActiveSession(dbSession.ID); err != nil {
+					log.Error().Err(err).Str("session_id", dbSession.ID).Msg("Failed to delete inactive session")
+				}
+			}
+		}
 	}
 }
 

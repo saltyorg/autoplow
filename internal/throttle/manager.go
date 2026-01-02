@@ -537,26 +537,33 @@ func (m *Manager) aggregateAndUpdateSessions() {
 		}
 	}
 
-	// Upsert all sessions to database
-	for _, session := range allSessions {
-		if err := m.db.UpsertActiveSession(session); err != nil {
-			log.Error().Err(err).Str("session_id", session.ID).Msg("Failed to upsert session")
+	// Note: Database storage is handled by targets.Manager for WebSocket sessions.
+	// For polling-mode sessions, we store them here since they're polled locally.
+	for _, dbTarget := range dbTargets {
+		if m.isTargetUsingWebSocket(dbTarget) {
+			continue // WebSocket sessions are stored by targets.Manager
 		}
-	}
 
-	// Sync database - delete sessions that are no longer active
-	currentIDs := make(map[string]bool)
-	for _, s := range allSessions {
-		currentIDs[s.ID] = true
-	}
+		serverID := fmt.Sprintf("%d", dbTarget.ID)
+		currentIDs := make(map[string]bool)
 
-	if dbSessions, err := m.db.ListActiveSessions(); err == nil {
-		for _, dbSession := range dbSessions {
-			if !currentIDs[dbSession.ID] {
-				if err := m.db.DeleteActiveSession(dbSession.ID); err != nil {
-					log.Error().Err(err).Str("session_id", dbSession.ID).Msg("Failed to delete inactive session")
-				} else {
-					log.Debug().Str("session_id", dbSession.ID).Msg("Deleted inactive session")
+		// Find sessions for this target and upsert them
+		for _, session := range allSessions {
+			if session.ServerID == serverID {
+				currentIDs[session.ID] = true
+				if err := m.db.UpsertActiveSession(session); err != nil {
+					log.Error().Err(err).Str("session_id", session.ID).Msg("Failed to upsert session")
+				}
+			}
+		}
+
+		// Delete stale sessions for this polling target
+		if dbSessions, err := m.db.ListActiveSessions(); err == nil {
+			for _, dbSession := range dbSessions {
+				if dbSession.ServerID == serverID && !currentIDs[dbSession.ID] {
+					if err := m.db.DeleteActiveSession(dbSession.ID); err != nil {
+						log.Error().Err(err).Str("session_id", dbSession.ID).Msg("Failed to delete inactive session")
+					}
 				}
 			}
 		}
