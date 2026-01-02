@@ -340,15 +340,15 @@
             {{template "upload_stats" .}}
             {{end}}
         </div>
-
-        <!-- Active Sessions -->
-        <div id="active-sessions" hx-get="/dashboard/sessions" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="10s">
-            {{if .Content}}
-            {{template "active_sessions" .Content.ActiveSessions}}
-            {{end}}
-        </div>
     </div>
     {{end}}
+
+    <!-- Active Sessions (always shown - sessions are tracked independently of uploads) -->
+    <div id="active-sessions" hx-get="/dashboard/sessions" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="10s">
+        {{if .Content}}
+        {{template "active_sessions" .Content.ActiveSessions}}
+        {{end}}
+    </div>
 </div>
 {{end}}
 
