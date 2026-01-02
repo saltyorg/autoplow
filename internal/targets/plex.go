@@ -63,13 +63,16 @@ type plexItemActivity struct {
 	scanStarted  bool
 }
 
-// plexAnalysisActivityTypes are the Plex activity types we track for scan completion
+// plexAnalysisActivityTypes are the Plex activity types we track for scan completion.
+// All activities starting with "library." or "media.generate." are tracked.
 var plexAnalysisActivityTypes = map[string]bool{
 	"library.update.section":        true,
 	"library.update.item.metadata":  true,
 	"media.generate.chapter.thumbs": true,
 	"media.generate.voice.activity": true,
 	"media.generate.credits":        true,
+	"media.generate.bif":            true, // video preview thumbnails
+	"media.generate.intros":         true, // intro detection
 }
 
 // PlexNotificationCallback is called when WebSocket notifications are received
