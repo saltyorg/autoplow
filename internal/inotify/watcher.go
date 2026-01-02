@@ -363,7 +363,7 @@ func (w *Watcher) scheduleEvent(path string, triggerID int64, priority int, debo
 	})
 
 	w.pending[path] = pending
-	log.Debug().Str("path", path).Dur("debounce", debounce).Msg("Scheduled debounced scan")
+	log.Debug().Str("path", path).Str("debounce", debounce.String()).Msg("Scheduled debounced scan")
 }
 
 // fireScan queues a scan and/or upload after debounce period

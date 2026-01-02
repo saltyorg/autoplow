@@ -622,17 +622,11 @@ func (p *Processor) processScan(scan *database.Scan) {
 				return
 			}
 
-			// Wait for scan completions (upload delay) before queueing upload
-			// Only wait if there's a destination that would accept this upload
+			// Wait for scan completions before marking scan as complete
 			// This waits for all targets in parallel - Plex uses smart detection, others use fixed delay
+			// Always wait to ensure consistent logging of scan completion status
 			if len(scanResult.CompletionInfos) > 0 {
-				if dest, _ := p.db.GetDestinationByPath(scan.Path); dest != nil {
-					p.targetsMgr.WaitForAllCompletions(ctx, scanResult.CompletionInfos)
-				} else {
-					log.Debug().
-						Str("path", scan.Path).
-						Msg("Skipping upload delay, no destination matches path")
-				}
+				p.targetsMgr.WaitForAllCompletions(ctx, scanResult.CompletionInfos)
 			}
 
 		} else {
