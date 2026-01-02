@@ -1269,8 +1269,8 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 	log.Debug().
 		Str("target", s.Name()).
 		Str("item", itemName).
-		Dur("timeout", timeout).
-		Dur("idle_threshold", idleThreshold).
+		Str("timeout", timeout.String()).
+		Str("idle_threshold", idleThreshold.String()).
 		Msg("Waiting for all Plex activities to complete")
 
 	// Check every 2 seconds for idle completion

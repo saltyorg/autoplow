@@ -103,17 +103,30 @@ type ScanAllResult struct {
 	CompletionInfos []ScanCompletionInfo
 }
 
+// SessionCallback is called when sessions are updated from a WebSocket watcher
+type SessionCallback func(targetID int64, targetName string, sessions []Session)
+
 // Manager manages multiple targets
 type Manager struct {
 	db      *database.DB
 	targets map[int64]Target
+
+	// WebSocket management
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	wsWatchers       map[int64]context.CancelFunc
+	wsWatchersMu     sync.Mutex
+	sessionCallbacks []SessionCallback
+	sessionCbMu      sync.RWMutex
 }
 
 // NewManager creates a new target manager
 func NewManager(db *database.DB) *Manager {
 	return &Manager{
-		db:      db,
-		targets: make(map[int64]Target),
+		db:         db,
+		targets:    make(map[int64]Target),
+		wsWatchers: make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -329,8 +342,8 @@ func (m *Manager) WaitForAllCompletions(ctx context.Context, infos []ScanComplet
 
 	log.Debug().
 		Int("target_count", len(infos)).
-		Int("max_timeout_secs", maxTimeout).
-		Msg("Waiting for scan completions (upload delay)")
+		Str("max_timeout", (time.Duration(maxTimeout) * time.Second).String()).
+		Msg("Waiting for scan completions")
 
 	var wg sync.WaitGroup
 	for _, info := range infos {
@@ -345,7 +358,7 @@ func (m *Manager) WaitForAllCompletions(ctx context.Context, infos []ScanComplet
 				log.Debug().
 					Str("target", info.TargetName).
 					Str("path", info.ScanPath).
-					Int("timeout_secs", info.TimeoutSecs).
+					Str("timeout", timeout.String()).
 					Msg("Waiting for scan completion (smart detection)")
 
 				if err := waiter.WaitForScanCompletion(ctx, info.ScanPath, timeout); err != nil {
@@ -488,5 +501,155 @@ func (m *Manager) refreshLibraryCacheForTarget(ctx context.Context, dbTarget *da
 		Int("path_count", len(dbLibraries)).
 		Msg("Refreshed library cache")
 
+	return nil
+}
+
+// RegisterSessionCallback adds a callback to be invoked when sessions are updated
+// from WebSocket watchers. Callbacks are invoked synchronously, so they should be fast.
+func (m *Manager) RegisterSessionCallback(cb SessionCallback) {
+	m.sessionCbMu.Lock()
+	m.sessionCallbacks = append(m.sessionCallbacks, cb)
+	m.sessionCbMu.Unlock()
+}
+
+// StartWebSocketWatchers starts WebSocket watchers for all enabled targets that support it.
+// This should be called after the manager is created to enable real-time monitoring.
+func (m *Manager) StartWebSocketWatchers(ctx context.Context) error {
+	m.ctx, m.cancel = context.WithCancel(ctx)
+
+	dbTargets, err := m.db.ListEnabledTargets()
+	if err != nil {
+		return fmt.Errorf("failed to list targets: %w", err)
+	}
+
+	started := 0
+	for _, dbTarget := range dbTargets {
+		target, err := m.GetTargetForDBTarget(dbTarget)
+		if err != nil {
+			log.Warn().Err(err).
+				Int64("target_id", dbTarget.ID).
+				Str("target", dbTarget.Name).
+				Msg("Failed to get target for WebSocket watcher")
+			continue
+		}
+
+		// Check if target supports WebSocket monitoring
+		watcher, ok := target.(SessionWatcher)
+		if !ok || !watcher.SupportsWebSocket() {
+			continue
+		}
+
+		m.startWebSocketWatcher(dbTarget, watcher)
+		started++
+	}
+
+	if started > 0 {
+		log.Info().Int("count", started).Msg("Started WebSocket watchers for targets")
+	}
+
+	return nil
+}
+
+// startWebSocketWatcher starts a WebSocket watcher for a specific target
+func (m *Manager) startWebSocketWatcher(dbTarget *database.Target, watcher SessionWatcher) {
+	m.wsWatchersMu.Lock()
+	// Check if watcher already exists
+	if _, exists := m.wsWatchers[dbTarget.ID]; exists {
+		m.wsWatchersMu.Unlock()
+		return
+	}
+
+	// Create context for this watcher
+	watcherCtx, watcherCancel := context.WithCancel(m.ctx)
+	m.wsWatchers[dbTarget.ID] = watcherCancel
+	m.wsWatchersMu.Unlock()
+
+	// Start WebSocket watcher goroutine
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		defer func() {
+			m.wsWatchersMu.Lock()
+			delete(m.wsWatchers, dbTarget.ID)
+			m.wsWatchersMu.Unlock()
+		}()
+
+		log.Info().
+			Str("target", dbTarget.Name).
+			Int64("target_id", dbTarget.ID).
+			Msg("Starting WebSocket watcher")
+
+		callback := func(sessions []Session) {
+			m.dispatchSessions(dbTarget.ID, dbTarget.Name, sessions)
+		}
+
+		err := watcher.WatchSessions(watcherCtx, callback)
+		if err != nil && watcherCtx.Err() == nil {
+			log.Error().
+				Err(err).
+				Str("target", dbTarget.Name).
+				Msg("WebSocket watcher exited with error")
+		}
+
+		log.Info().
+			Str("target", dbTarget.Name).
+			Msg("WebSocket watcher stopped")
+	}()
+}
+
+// dispatchSessions invokes all registered session callbacks
+func (m *Manager) dispatchSessions(targetID int64, targetName string, sessions []Session) {
+	m.sessionCbMu.RLock()
+	callbacks := m.sessionCallbacks
+	m.sessionCbMu.RUnlock()
+
+	for _, cb := range callbacks {
+		cb(targetID, targetName, sessions)
+	}
+}
+
+// StopWebSocketWatchers stops all WebSocket watchers
+func (m *Manager) StopWebSocketWatchers() {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.wg.Wait()
+}
+
+// RestartWebSocketWatcher restarts the WebSocket watcher for a specific target.
+// This is useful after target configuration changes.
+func (m *Manager) RestartWebSocketWatcher(targetID int64) error {
+	// Stop existing watcher if any
+	m.wsWatchersMu.Lock()
+	if cancel, exists := m.wsWatchers[targetID]; exists {
+		cancel()
+		delete(m.wsWatchers, targetID)
+	}
+	m.wsWatchersMu.Unlock()
+
+	// Invalidate cache to get fresh target
+	m.InvalidateCache(targetID)
+
+	// Get target from database
+	dbTarget, err := m.db.GetTarget(targetID)
+	if err != nil {
+		return fmt.Errorf("failed to get target: %w", err)
+	}
+	if dbTarget == nil || !dbTarget.Enabled {
+		return nil // Target doesn't exist or is disabled
+	}
+
+	target, err := m.GetTargetForDBTarget(dbTarget)
+	if err != nil {
+		return fmt.Errorf("failed to get target instance: %w", err)
+	}
+
+	// Check if target supports WebSocket monitoring
+	watcher, ok := target.(SessionWatcher)
+	if !ok || !watcher.SupportsWebSocket() {
+		return nil
+	}
+
+	m.startWebSocketWatcher(dbTarget, watcher)
 	return nil
 }

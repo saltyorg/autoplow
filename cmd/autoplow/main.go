@@ -189,6 +189,13 @@ func run(cmd *cobra.Command, args []string) error {
 	processor.Start()
 	defer processor.Stop()
 
+	// Start WebSocket watchers for all targets (always enabled for scan completion monitoring, etc.)
+	targetsMgr := server.TargetsManager()
+	if err := targetsMgr.StartWebSocketWatchers(context.Background()); err != nil {
+		log.Warn().Err(err).Msg("Failed to start WebSocket watchers")
+	}
+	defer targetsMgr.StopWebSocketWatchers()
+
 	// Initialize upload subsystem only if uploads are enabled
 	var uploadMgr *uploader.Manager
 	var throttleMgr *throttle.Manager

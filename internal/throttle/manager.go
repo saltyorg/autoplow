@@ -100,9 +100,7 @@ type Manager struct {
 	currentLimit    int64 // Current bandwidth limit in bytes/sec
 	skippingUploads bool  // True when bandwidth is below skip threshold
 
-	// WebSocket watcher management
-	wsWatchers   map[int64]context.CancelFunc // targetID -> cancel function
-	wsWatchersMu sync.Mutex
+	// Session data from WebSocket watchers (managed by targets.Manager)
 	wsSessions   map[int64][]targets.Session // targetID -> sessions from WebSocket
 	wsSessionsMu sync.RWMutex
 
@@ -113,14 +111,18 @@ type Manager struct {
 
 // New creates a new throttle manager
 func New(db *database.DB, targetsMgr *targets.Manager, rcloneMgr *rclone.Manager, config Config) *Manager {
-	return &Manager{
+	m := &Manager{
 		db:         db,
 		targetsMgr: targetsMgr,
 		rcloneMgr:  rcloneMgr,
 		config:     config,
-		wsWatchers: make(map[int64]context.CancelFunc),
 		wsSessions: make(map[int64][]targets.Session),
 	}
+
+	// Register callback to receive session updates from WebSocket watchers
+	targetsMgr.RegisterSessionCallback(m.handleWebSocketSessions)
+
+	return m
 }
 
 // Start begins the throttle monitoring loop
@@ -129,9 +131,6 @@ func (m *Manager) Start() {
 
 	m.wg.Add(1)
 	go m.pollLoop()
-
-	// Start WebSocket watchers for targets configured to use WebSocket mode
-	m.startWebSocketWatchers()
 
 	log.Info().
 		Dur("poll_interval", m.config.PollInterval).
@@ -152,10 +151,6 @@ func (m *Manager) Stop() {
 	m.currentLimit = 0
 	m.skippingUploads = false
 	m.mu.Unlock()
-
-	m.wsWatchersMu.Lock()
-	m.wsWatchers = make(map[int64]context.CancelFunc)
-	m.wsWatchersMu.Unlock()
 
 	m.wsSessionsMu.Lock()
 	m.wsSessions = make(map[int64][]targets.Session)
@@ -450,126 +445,11 @@ func (m *Manager) Stats() Stats {
 	}
 }
 
-// startWebSocketWatchers starts WebSocket watchers for all targets configured to use WebSocket mode
-func (m *Manager) startWebSocketWatchers() {
-	dbTargets, err := m.db.ListEnabledTargets()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to list targets for WebSocket watchers")
-		return
-	}
-
-	for _, dbTarget := range dbTargets {
-		m.ensureWebSocketWatcher(dbTarget)
-	}
-}
-
-// ensureWebSocketWatcher ensures a WebSocket watcher is running for the target if needed
-func (m *Manager) ensureWebSocketWatcher(dbTarget *database.Target) {
-	// Check if target supports session monitoring
-	targetInstance, err := m.targetsMgr.GetTargetForDBTarget(dbTarget)
-	if err != nil {
-		log.Debug().Err(err).Str("target", dbTarget.Name).Msg("Failed to get target instance")
-		return
-	}
-
-	if !targetInstance.SupportsSessionMonitoring() {
-		return
-	}
-
-	// Check if target is configured for WebSocket mode (default is WebSocket)
-	sessionMode := dbTarget.Config.SessionMode
-	if sessionMode == "" {
-		sessionMode = database.SessionModeWebSocket // Default to WebSocket
-	}
-
-	if sessionMode != database.SessionModeWebSocket {
-		// Target is in polling mode, ensure no WebSocket watcher is running
-		m.stopWebSocketWatcher(dbTarget.ID)
-		return
-	}
-
-	// Check if target supports WebSocket
-	watcher, ok := targetInstance.(targets.SessionWatcher)
-	if !ok || !watcher.SupportsWebSocket() {
-		log.Debug().Str("target", dbTarget.Name).Msg("Target doesn't support WebSocket, will use polling")
-		return
-	}
-
-	// Check if watcher is already running and register atomically to prevent race condition
-	m.wsWatchersMu.Lock()
-	if _, exists := m.wsWatchers[dbTarget.ID]; exists {
-		m.wsWatchersMu.Unlock()
-		return
-	}
-
-	// Create context and register watcher while still holding the lock
-	watcherCtx, watcherCancel := context.WithCancel(m.ctx)
-	m.wsWatchers[dbTarget.ID] = watcherCancel
-	m.wsWatchersMu.Unlock()
-
-	// Start WebSocket watcher goroutine
-	m.startWebSocketWatcher(dbTarget, watcher, watcherCtx)
-}
-
-// startWebSocketWatcher starts a WebSocket watcher goroutine for a specific target
-// The watcher must already be registered in m.wsWatchers before calling this
-func (m *Manager) startWebSocketWatcher(dbTarget *database.Target, watcher targets.SessionWatcher, watcherCtx context.Context) {
-
-	m.wg.Go(func() {
-		defer func() {
-			m.wsWatchersMu.Lock()
-			delete(m.wsWatchers, dbTarget.ID)
-			m.wsWatchersMu.Unlock()
-
-			// Clear sessions for this target
-			m.wsSessionsMu.Lock()
-			delete(m.wsSessions, dbTarget.ID)
-			m.wsSessionsMu.Unlock()
-		}()
-
-		log.Info().
-			Str("target", dbTarget.Name).
-			Int64("target_id", dbTarget.ID).
-			Msg("Starting WebSocket session watcher")
-
-		callback := func(sessions []targets.Session) {
-			m.handleWebSocketSessions(dbTarget, sessions)
-		}
-
-		err := watcher.WatchSessions(watcherCtx, callback)
-		if err != nil && watcherCtx.Err() == nil {
-			log.Error().
-				Err(err).
-				Str("target", dbTarget.Name).
-				Msg("WebSocket watcher exited with error")
-		}
-
-		log.Info().
-			Str("target", dbTarget.Name).
-			Msg("WebSocket session watcher stopped")
-	})
-}
-
-// stopWebSocketWatcher stops the WebSocket watcher for a specific target
-func (m *Manager) stopWebSocketWatcher(targetID int64) {
-	m.wsWatchersMu.Lock()
-	if cancel, exists := m.wsWatchers[targetID]; exists {
-		cancel()
-		delete(m.wsWatchers, targetID)
-	}
-	m.wsWatchersMu.Unlock()
-
-	// Clear sessions for this target
-	m.wsSessionsMu.Lock()
-	delete(m.wsSessions, targetID)
-	m.wsSessionsMu.Unlock()
-}
-
 // handleWebSocketSessions processes session updates from a WebSocket watcher
-func (m *Manager) handleWebSocketSessions(dbTarget *database.Target, sessions []targets.Session) {
+func (m *Manager) handleWebSocketSessions(targetID int64, targetName string, sessions []targets.Session) {
 	// Store sessions for this target
 	m.wsSessionsMu.Lock()
-	m.wsSessions[dbTarget.ID] = sessions
+	m.wsSessions[targetID] = sessions
 	m.wsSessionsMu.Unlock()
 
 	// Aggregate all sessions and update
@@ -708,43 +588,36 @@ func (m *Manager) aggregateAndUpdateSessions() {
 
 // isTargetUsingWebSocket checks if a target is configured to use WebSocket mode
 func (m *Manager) isTargetUsingWebSocket(dbTarget *database.Target) bool {
-	// Check if we have an active WebSocket watcher for this target
-	m.wsWatchersMu.Lock()
-	_, hasWatcher := m.wsWatchers[dbTarget.ID]
-	m.wsWatchersMu.Unlock()
-
-	return hasWatcher
+	// Check if target is configured for WebSocket mode (default is WebSocket)
+	sessionMode := dbTarget.Config.SessionMode
+	if sessionMode == "" {
+		sessionMode = database.SessionModeWebSocket // Default to WebSocket
+	}
+	return sessionMode == database.SessionModeWebSocket
 }
 
 // RefreshWebSocketWatchers refreshes WebSocket watchers based on current target configurations
 // Call this when target configurations change
 func (m *Manager) RefreshWebSocketWatchers() {
+	// Clear stale session data for targets that may have been removed
 	dbTargets, err := m.db.ListEnabledTargets()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list targets for WebSocket watcher refresh")
+		log.Error().Err(err).Msg("Failed to list targets for session cleanup")
 		return
 	}
 
-	// Create map of current targets
-	currentTargets := make(map[int64]*database.Target)
+	// Create map of current target IDs
+	currentTargets := make(map[int64]bool)
 	for _, t := range dbTargets {
-		currentTargets[t.ID] = t
+		currentTargets[t.ID] = true
 	}
 
-	// Stop watchers for targets that no longer exist or are disabled
-	m.wsWatchersMu.Lock()
-	for targetID := range m.wsWatchers {
-		if _, exists := currentTargets[targetID]; !exists {
-			if cancel, ok := m.wsWatchers[targetID]; ok {
-				cancel()
-				delete(m.wsWatchers, targetID)
-			}
+	// Clear session data for targets that no longer exist
+	m.wsSessionsMu.Lock()
+	for targetID := range m.wsSessions {
+		if !currentTargets[targetID] {
+			delete(m.wsSessions, targetID)
 		}
 	}
-	m.wsWatchersMu.Unlock()
-
-	// Ensure watchers are running for all appropriate targets
-	for _, dbTarget := range dbTargets {
-		m.ensureWebSocketWatcher(dbTarget)
-	}
+	m.wsSessionsMu.Unlock()
 }
