@@ -32,11 +32,10 @@ type ThrottleStatusData struct {
 // DashboardStats contains summary statistics
 type DashboardStats struct {
 	// Scan stats
-	PendingScans    int
-	ActiveScans     int
-	CompletedScans  int
-	FailedScans     int
-	TotalScansToday int
+	PendingScans   int
+	ActiveScans    int
+	CompletedScans int
+	FailedScans    int
 	// Upload stats
 	ActiveUploads    int
 	QueuedUploads    int
@@ -96,19 +95,18 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data.UploadsEnabled = uploadsEnabled
 	data.Stats.UploadsEnabled = uploadsEnabled
 
-	// Scan stats (only if enabled)
+	// Scan stats - all time totals
 	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&data.Stats.PendingScans)
 	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&data.Stats.ActiveScans)
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&data.Stats.CompletedScans)
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&data.Stats.FailedScans)
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE date(created_at) = date('now')`).Scan(&data.Stats.TotalScansToday)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'completed'").Scan(&data.Stats.CompletedScans)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'failed'").Scan(&data.Stats.FailedScans)
 
-	// Upload stats (only if enabled)
+	// Upload stats - all time totals (only if enabled)
 	if uploadsEnabled {
 		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&data.Stats.ActiveUploads)
 		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&data.Stats.QueuedUploads)
-		_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&data.Stats.CompletedUploads)
-		_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&data.Stats.FailedUploads)
+		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'completed'").Scan(&data.Stats.CompletedUploads)
+		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'failed'").Scan(&data.Stats.FailedUploads)
 	}
 
 	// Get active sessions count
@@ -226,12 +224,11 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DashboardStatsPartial(w http.ResponseWriter, r *http.Request) {
 	stats := DashboardStats{}
 
-	// Scan stats
+	// Scan stats - all time totals
 	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&stats.PendingScans)
 	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&stats.ActiveScans)
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&stats.CompletedScans)
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM scans WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&stats.FailedScans)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&stats.ActiveSessions)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'completed'").Scan(&stats.CompletedScans)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'failed'").Scan(&stats.FailedScans)
 
 	h.renderPartial(w, "dashboard.html", "scan_stats", stats)
 }
@@ -240,11 +237,11 @@ func (h *Handlers) DashboardStatsPartial(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) DashboardUploadStatsPartial(w http.ResponseWriter, r *http.Request) {
 	stats := DashboardStats{}
 
+	// Upload stats - all time totals
 	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&stats.ActiveUploads)
 	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&stats.QueuedUploads)
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'completed' AND date(completed_at) = date('now')`).Scan(&stats.CompletedUploads)
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM uploads WHERE status = 'failed' AND date(created_at) = date('now')`).Scan(&stats.FailedUploads)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&stats.ActiveSessions)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'completed'").Scan(&stats.CompletedUploads)
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'failed'").Scan(&stats.FailedUploads)
 
 	h.renderPartial(w, "dashboard.html", "upload_stats", stats)
 }
