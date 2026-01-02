@@ -653,4 +653,13 @@ var migrations = []migration{
 			CREATE INDEX idx_pal_history_target ON plex_auto_languages_history(target_id, created_at DESC);
 		`,
 	},
+	{
+		Version: 19,
+		Name:    "plex_auto_languages_preferences_username",
+		SQL: `
+			-- Add plex_username column to preferences table
+			-- This allows displaying the username instead of user ID
+			ALTER TABLE plex_auto_languages_preferences ADD COLUMN plex_username TEXT DEFAULT '';
+		`,
+	},
 }

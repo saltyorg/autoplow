@@ -37,6 +37,7 @@ type PlexAutoLanguagesPreference struct {
 	ID                      int64     `json:"id"`
 	TargetID                int64     `json:"target_id"`
 	PlexUserID              string    `json:"plex_user_id"`
+	PlexUsername            string    `json:"plex_username"`
 	ShowRatingKey           string    `json:"show_rating_key"`
 	ShowTitle               string    `json:"show_title"`
 	AudioLanguageCode       string    `json:"audio_language_code"`
@@ -183,14 +184,15 @@ func (db *DB) UpsertPlexAutoLanguagesConfig(config *PlexAutoLanguagesConfig) err
 func (db *DB) UpsertPlexAutoLanguagesPreference(pref *PlexAutoLanguagesPreference) error {
 	_, err := db.Exec(`
 		INSERT INTO plex_auto_languages_preferences (
-			target_id, plex_user_id, show_rating_key, show_title,
+			target_id, plex_user_id, plex_username, show_rating_key, show_title,
 			audio_language_code, audio_codec, audio_channels, audio_channel_layout,
 			audio_title, audio_display_title, audio_visual_impaired,
 			subtitle_language_code, subtitle_forced, subtitle_hearing_impaired,
 			subtitle_codec, subtitle_title, subtitle_display_title,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(target_id, plex_user_id, show_rating_key) DO UPDATE SET
+			plex_username = excluded.plex_username,
 			show_title = excluded.show_title,
 			audio_language_code = excluded.audio_language_code,
 			audio_codec = excluded.audio_codec,
@@ -206,7 +208,7 @@ func (db *DB) UpsertPlexAutoLanguagesPreference(pref *PlexAutoLanguagesPreferenc
 			subtitle_title = excluded.subtitle_title,
 			subtitle_display_title = excluded.subtitle_display_title,
 			updated_at = CURRENT_TIMESTAMP
-	`, pref.TargetID, pref.PlexUserID, pref.ShowRatingKey, pref.ShowTitle,
+	`, pref.TargetID, pref.PlexUserID, pref.PlexUsername, pref.ShowRatingKey, pref.ShowTitle,
 		pref.AudioLanguageCode, pref.AudioCodec, pref.AudioChannels, pref.AudioChannelLayout,
 		pref.AudioTitle, pref.AudioDisplayTitle, pref.AudioVisualImpaired,
 		pref.SubtitleLanguageCode, pref.SubtitleForced, pref.SubtitleHearingImpaired,
@@ -221,9 +223,10 @@ func (db *DB) UpsertPlexAutoLanguagesPreference(pref *PlexAutoLanguagesPreferenc
 // GetPlexAutoLanguagesPreference retrieves a user's track preference for a show
 func (db *DB) GetPlexAutoLanguagesPreference(targetID int64, plexUserID, showRatingKey string) (*PlexAutoLanguagesPreference, error) {
 	var pref PlexAutoLanguagesPreference
+	var plexUsername sql.NullString
 
 	err := db.QueryRow(`
-		SELECT id, target_id, plex_user_id, show_rating_key, show_title,
+		SELECT id, target_id, plex_user_id, plex_username, show_rating_key, show_title,
 			audio_language_code, audio_codec, audio_channels, audio_channel_layout,
 			audio_title, audio_display_title, audio_visual_impaired,
 			subtitle_language_code, subtitle_forced, subtitle_hearing_impaired,
@@ -232,7 +235,7 @@ func (db *DB) GetPlexAutoLanguagesPreference(targetID int64, plexUserID, showRat
 		FROM plex_auto_languages_preferences
 		WHERE target_id = ? AND plex_user_id = ? AND show_rating_key = ?
 	`, targetID, plexUserID, showRatingKey).Scan(
-		&pref.ID, &pref.TargetID, &pref.PlexUserID, &pref.ShowRatingKey, &pref.ShowTitle,
+		&pref.ID, &pref.TargetID, &pref.PlexUserID, &plexUsername, &pref.ShowRatingKey, &pref.ShowTitle,
 		&pref.AudioLanguageCode, &pref.AudioCodec, &pref.AudioChannels, &pref.AudioChannelLayout,
 		&pref.AudioTitle, &pref.AudioDisplayTitle, &pref.AudioVisualImpaired,
 		&pref.SubtitleLanguageCode, &pref.SubtitleForced, &pref.SubtitleHearingImpaired,
@@ -245,6 +248,7 @@ func (db *DB) GetPlexAutoLanguagesPreference(targetID int64, plexUserID, showRat
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plex auto languages preference: %w", err)
 	}
+	pref.PlexUsername = plexUsername.String
 
 	return &pref, nil
 }
@@ -252,7 +256,7 @@ func (db *DB) GetPlexAutoLanguagesPreference(targetID int64, plexUserID, showRat
 // ListPlexAutoLanguagesPreferences retrieves all preferences for a target
 func (db *DB) ListPlexAutoLanguagesPreferences(targetID int64) ([]*PlexAutoLanguagesPreference, error) {
 	rows, err := db.Query(`
-		SELECT id, target_id, plex_user_id, show_rating_key, show_title,
+		SELECT id, target_id, plex_user_id, plex_username, show_rating_key, show_title,
 			audio_language_code, audio_codec, audio_channels, audio_channel_layout,
 			audio_title, audio_display_title, audio_visual_impaired,
 			subtitle_language_code, subtitle_forced, subtitle_hearing_impaired,
@@ -273,7 +277,7 @@ func (db *DB) ListPlexAutoLanguagesPreferences(targetID int64) ([]*PlexAutoLangu
 // ListPlexAutoLanguagesPreferencesForShow retrieves all user preferences for a specific show
 func (db *DB) ListPlexAutoLanguagesPreferencesForShow(targetID int64, showRatingKey string) ([]*PlexAutoLanguagesPreference, error) {
 	rows, err := db.Query(`
-		SELECT id, target_id, plex_user_id, show_rating_key, show_title,
+		SELECT id, target_id, plex_user_id, plex_username, show_rating_key, show_title,
 			audio_language_code, audio_codec, audio_channels, audio_channel_layout,
 			audio_title, audio_display_title, audio_visual_impaired,
 			subtitle_language_code, subtitle_forced, subtitle_hearing_impaired,
@@ -295,8 +299,9 @@ func scanPlexAutoLanguagesPreferences(rows *sql.Rows) ([]*PlexAutoLanguagesPrefe
 	var prefs []*PlexAutoLanguagesPreference
 	for rows.Next() {
 		var pref PlexAutoLanguagesPreference
+		var plexUsername sql.NullString
 		if err := rows.Scan(
-			&pref.ID, &pref.TargetID, &pref.PlexUserID, &pref.ShowRatingKey, &pref.ShowTitle,
+			&pref.ID, &pref.TargetID, &pref.PlexUserID, &plexUsername, &pref.ShowRatingKey, &pref.ShowTitle,
 			&pref.AudioLanguageCode, &pref.AudioCodec, &pref.AudioChannels, &pref.AudioChannelLayout,
 			&pref.AudioTitle, &pref.AudioDisplayTitle, &pref.AudioVisualImpaired,
 			&pref.SubtitleLanguageCode, &pref.SubtitleForced, &pref.SubtitleHearingImpaired,
@@ -305,6 +310,7 @@ func scanPlexAutoLanguagesPreferences(rows *sql.Rows) ([]*PlexAutoLanguagesPrefe
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan plex auto languages preference: %w", err)
 		}
+		pref.PlexUsername = plexUsername.String
 		prefs = append(prefs, &pref)
 	}
 	return prefs, rows.Err()
@@ -432,4 +438,138 @@ func (db *DB) DeleteOldPlexAutoLanguagesHistory(daysToKeep int) (int64, error) {
 		return 0, fmt.Errorf("failed to delete old plex auto languages history: %w", err)
 	}
 	return result.RowsAffected()
+}
+
+// ListPlexAutoLanguagesPreferencesFiltered retrieves preferences with pagination and optional user filter
+func (db *DB) ListPlexAutoLanguagesPreferencesFiltered(targetID int64, userFilter string, limit, offset int) ([]*PlexAutoLanguagesPreference, int, error) {
+	// Get total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM plex_auto_languages_preferences WHERE target_id = ?`
+	countArgs := []any{targetID}
+	if userFilter != "" {
+		countQuery += ` AND plex_username = ?`
+		countArgs = append(countArgs, userFilter)
+	}
+	if err := db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count plex auto languages preferences: %w", err)
+	}
+
+	// Get paginated results
+	query := `
+		SELECT id, target_id, plex_user_id, plex_username, show_rating_key, show_title,
+			audio_language_code, audio_codec, audio_channels, audio_channel_layout,
+			audio_title, audio_display_title, audio_visual_impaired,
+			subtitle_language_code, subtitle_forced, subtitle_hearing_impaired,
+			subtitle_codec, subtitle_title, subtitle_display_title,
+			created_at, updated_at
+		FROM plex_auto_languages_preferences
+		WHERE target_id = ?`
+	args := []any{targetID}
+	if userFilter != "" {
+		query += ` AND plex_username = ?`
+		args = append(args, userFilter)
+	}
+	query += ` ORDER BY show_title, plex_user_id LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list plex auto languages preferences: %w", err)
+	}
+	defer rows.Close()
+
+	prefs, err := scanPlexAutoLanguagesPreferences(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return prefs, total, nil
+}
+
+// ListAllPlexAutoLanguagesHistoryFiltered retrieves history with optional user filter and pagination
+func (db *DB) ListAllPlexAutoLanguagesHistoryFiltered(userFilter string, limit, offset int) ([]*PlexAutoLanguagesHistory, int, error) {
+	// Get total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM plex_auto_languages_history`
+	var countArgs []any
+	if userFilter != "" {
+		countQuery += ` WHERE plex_username = ?`
+		countArgs = append(countArgs, userFilter)
+	}
+	if err := db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count plex auto languages history: %w", err)
+	}
+
+	// Get paginated results
+	query := `
+		SELECT id, target_id, plex_user_id, plex_username, show_title, show_rating_key,
+			episode_title, episode_rating_key, event_type,
+			audio_changed, audio_from, audio_to,
+			subtitle_changed, subtitle_from, subtitle_to,
+			episodes_updated, created_at
+		FROM plex_auto_languages_history`
+	var args []any
+	if userFilter != "" {
+		query += ` WHERE plex_username = ?`
+		args = append(args, userFilter)
+	}
+	query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list plex auto languages history: %w", err)
+	}
+	defer rows.Close()
+
+	entries, err := scanPlexAutoLanguagesHistory(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return entries, total, nil
+}
+
+// GetDistinctPlexUsersFromPreferences returns distinct usernames for filter dropdown
+func (db *DB) GetDistinctPlexUsersFromPreferences(targetID int64) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT plex_username FROM plex_auto_languages_preferences
+		WHERE target_id = ? AND plex_username != ''
+		ORDER BY plex_username
+	`, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distinct users from preferences: %w", err)
+	}
+	defer rows.Close()
+
+	var users []string
+	for rows.Next() {
+		var user string
+		if err := rows.Scan(&user); err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+// GetDistinctPlexUsersFromHistory returns distinct usernames for filter dropdown
+func (db *DB) GetDistinctPlexUsersFromHistory() ([]string, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT plex_username FROM plex_auto_languages_history
+		WHERE plex_username != ''
+		ORDER BY plex_username
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distinct users from history: %w", err)
+	}
+	defer rows.Close()
+
+	var users []string
+	for rows.Next() {
+		var user string
+		if err := rows.Scan(&user); err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
 }

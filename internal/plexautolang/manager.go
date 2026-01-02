@@ -355,7 +355,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	}
 
 	// Save the new preference
-	newPref := m.createPreference(targetID, user.ID, episode, selectedAudio, selectedSubtitle)
+	newPref := m.createPreference(targetID, user.ID, user.Name, episode, selectedAudio, selectedSubtitle)
 	if err := m.db.UpsertPlexAutoLanguagesPreference(newPref); err != nil {
 		log.Error().Err(err).Msg("Plex Auto Languages: Failed to save preference")
 		return
@@ -458,7 +458,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	}
 
 	// User changed tracks - save new preference
-	newPref := m.createPreference(targetID, user.ID, episode, selectedAudio, selectedSubtitle)
+	newPref := m.createPreference(targetID, user.ID, user.Name, episode, selectedAudio, selectedSubtitle)
 	if err := m.db.UpsertPlexAutoLanguagesPreference(newPref); err != nil {
 		log.Error().Err(err).Msg("Failed to save preference")
 		return
@@ -952,10 +952,11 @@ func (m *Manager) tracksMatchPreference(audio *AudioStream, subtitle *SubtitleSt
 }
 
 // createPreference creates a preference record from the selected streams
-func (m *Manager) createPreference(targetID int64, userID string, episode *Episode, audio *AudioStream, subtitle *SubtitleStream) *database.PlexAutoLanguagesPreference {
+func (m *Manager) createPreference(targetID int64, userID, username string, episode *Episode, audio *AudioStream, subtitle *SubtitleStream) *database.PlexAutoLanguagesPreference {
 	pref := &database.PlexAutoLanguagesPreference{
 		TargetID:            targetID,
 		PlexUserID:          userID,
+		PlexUsername:        username,
 		ShowRatingKey:       episode.GrandparentKey,
 		ShowTitle:           episode.GrandparentTitle,
 		AudioLanguageCode:   audio.LanguageCode,

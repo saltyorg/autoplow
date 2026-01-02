@@ -199,8 +199,15 @@
                 </form>
                 {{end}}
             </div>
-            <div id="pal-history" class="px-4 py-5 sm:p-6" hx-get="/plex-auto-languages/history/partial" hx-trigger="sse-refresh" hx-swap="innerHTML">
-                {{template "history_table" .Content}}
+            <div id="pal-history" hx-get="/plex-auto-languages/history/partial" hx-trigger="load, sse-refresh" hx-swap="innerHTML">
+                <div class="px-4 py-5 sm:p-6">
+                    <div class="animate-pulse flex space-x-4">
+                        <div class="flex-1 space-y-4 py-1">
+                            <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                            <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -295,7 +302,7 @@
             {{range .Preferences}}
             <tr id="pref-{{.ID}}">
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.ShowTitle}}</td>
-                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.PlexUserID}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{if .PlexUsername}}{{.PlexUsername}}{{else}}{{.PlexUserID}}{{end}}</td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.AudioDisplayTitle}}</td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
                     {{if .SubtitleDisplayTitle}}{{.SubtitleDisplayTitle}}{{else}}None{{end}}
@@ -456,5 +463,192 @@
 </div>
 {{else}}
 <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No activity yet. Start watching content to see track changes here.</p>
+{{end}}
+{{end}}
+
+{{define "history_section"}}
+<div class="px-4 py-5 sm:p-6">
+    <!-- Filters -->
+    {{if .Users}}
+    <div class="mb-4 flex items-center gap-4">
+        <div class="flex items-center gap-2">
+            <label for="history-user-filter" class="text-sm font-medium text-gray-700 dark:text-gray-300">User:</label>
+            <select id="history-user-filter"
+                    class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                    hx-get="/plex-auto-languages/history/partial"
+                    hx-target="#pal-history"
+                    hx-swap="innerHTML"
+                    hx-include="[name='pageSize']"
+                    name="user">
+                <option value="">All Users</option>
+                {{range .Users}}
+                <option value="{{.}}" {{if eq $.UserFilter .}}selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+        </div>
+        {{if .Total}}
+        <span class="text-sm text-gray-500 dark:text-gray-400">{{.Total}} {{if eq .Total 1}}entry{{else}}entries{{end}}</span>
+        {{end}}
+    </div>
+    {{end}}
+
+    <!-- Table -->
+    {{if .History}}
+    <div class="overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                    <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Time</th>
+                    <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">User</th>
+                    <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Show</th>
+                    <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Episode</th>
+                    <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Changes</th>
+                    <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Episodes Updated</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                {{range .History}}
+                <tr>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{formatTime .CreatedAt}}</td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.PlexUsername}}</td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.ShowTitle}}</td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.EpisodeTitle}}</td>
+                    <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                        {{if .AudioChanged}}<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-2 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200 mr-1">Audio: {{.AudioTo}}</span>{{end}}
+                        {{if .SubtitleChanged}}<span class="inline-flex items-center rounded-full bg-purple-100 dark:bg-purple-900 px-2 py-0.5 text-xs font-medium text-purple-800 dark:text-purple-200">Sub: {{.SubtitleTo}}</span>{{end}}
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.EpisodesUpdated}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {{if gt .TotalPages 1}}
+    <div class="mt-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+        <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-700 dark:text-gray-300">Page {{.Page}} of {{.TotalPages}}</span>
+        </div>
+        <div class="flex items-center gap-2">
+            {{if gt .Page 1}}
+            <button hx-get="/plex-auto-languages/history/partial?page={{sub .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}"
+                    hx-target="#pal-history"
+                    hx-swap="innerHTML"
+                    class="inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
+                Previous
+            </button>
+            {{end}}
+            {{if lt .Page .TotalPages}}
+            <button hx-get="/plex-auto-languages/history/partial?page={{add .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}"
+                    hx-target="#pal-history"
+                    hx-swap="innerHTML"
+                    class="inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
+                Next
+            </button>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+    {{else}}
+    <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No history yet.</p>
+    {{end}}
+</div>
+{{end}}
+
+{{define "preferences_section"}}
+<!-- Filters -->
+{{if .Users}}
+<div class="mb-4 flex items-center gap-4">
+    <div class="flex items-center gap-2">
+        <label for="prefs-user-filter-{{.TargetID}}" class="text-sm font-medium text-gray-700 dark:text-gray-300">User:</label>
+        <select id="prefs-user-filter-{{.TargetID}}"
+                class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial"
+                hx-target="closest .pal-preferences-target"
+                hx-swap="innerHTML"
+                name="user">
+            <option value="">All Users</option>
+            {{range .Users}}
+            <option value="{{.}}" {{if eq $.UserFilter .}}selected{{end}}>{{.}}</option>
+            {{end}}
+        </select>
+    </div>
+    {{if .Total}}
+    <span class="text-sm text-gray-500 dark:text-gray-400">{{.Total}} {{if eq .Total 1}}preference{{else}}preferences{{end}}</span>
+    {{end}}
+</div>
+{{end}}
+
+<!-- Table -->
+{{if .Preferences}}
+<div class="overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead class="bg-gray-50 dark:bg-gray-700">
+            <tr>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Show</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">User</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Audio</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Subtitle</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Updated</th>
+                <th scope="col" class="relative py-3 pl-3 pr-4 sm:pr-0">
+                    <span class="sr-only">Actions</span>
+                </th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+            {{range .Preferences}}
+            <tr id="pref-{{.ID}}">
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.ShowTitle}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{if .PlexUsername}}{{.PlexUsername}}{{else}}{{.PlexUserID}}{{end}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.AudioDisplayTitle}}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                    {{if .SubtitleDisplayTitle}}{{.SubtitleDisplayTitle}}{{else}}None{{end}}
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{formatTime .UpdatedAt}}</td>
+                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
+                    <button
+                        hx-delete="/plex-auto-languages/preferences/{{.ID}}"
+                        hx-target="#pref-{{.ID}}"
+                        hx-swap="outerHTML"
+                        hx-confirm="Are you sure you want to delete this preference?"
+                        class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        Delete
+                    </button>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+{{if gt .TotalPages 1}}
+<div class="mt-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+    <div class="flex items-center gap-2">
+        <span class="text-sm text-gray-700 dark:text-gray-300">Page {{.Page}} of {{.TotalPages}}</span>
+    </div>
+    <div class="flex items-center gap-2">
+        {{if gt .Page 1}}
+        <button hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial?page={{sub .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}"
+                hx-target="closest .pal-preferences-target"
+                hx-swap="innerHTML"
+                class="inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
+            Previous
+        </button>
+        {{end}}
+        {{if lt .Page .TotalPages}}
+        <button hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial?page={{add .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}"
+                hx-target="closest .pal-preferences-target"
+                hx-swap="innerHTML"
+                class="inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
+            Next
+        </button>
+        {{end}}
+    </div>
+</div>
+{{end}}
+{{else}}
+<p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No preferences saved yet.</p>
 {{end}}
 {{end}}
