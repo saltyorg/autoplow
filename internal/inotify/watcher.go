@@ -3,6 +3,7 @@ package inotify
 import (
 	"context"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -186,13 +187,10 @@ func (w *Watcher) addTriggerLocked(trigger *database.Trigger) error {
 			continue
 		}
 
-		if err := w.watcher.Add(absPath); err != nil {
-			log.Error().Err(err).Str("path", absPath).Msg("Failed to add watch")
-			continue
-		}
-
-		tw.paths = append(tw.paths, absPath)
-		log.Debug().Str("path", absPath).Str("trigger", trigger.Name).Msg("Added watch")
+		// Recursively add watches for this path and all subdirectories
+		watched := w.addWatchRecursive(absPath)
+		tw.paths = append(tw.paths, watched...)
+		log.Debug().Str("path", absPath).Int("directories", len(watched)).Str("trigger", trigger.Name).Msg("Added recursive watch")
 	}
 
 	w.triggers[trigger.ID] = tw
@@ -288,6 +286,26 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 	// Only process create and write events
 	if !event.Has(fsnotify.Create) && !event.Has(fsnotify.Write) {
 		return
+	}
+
+	// If a new directory was created, add watches for it and its subdirectories
+	if event.Has(fsnotify.Create) {
+		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+			w.mu.Lock()
+			// Find which trigger this directory belongs to and add watches
+			for _, tw := range w.triggers {
+				for _, watchPath := range tw.paths {
+					if isUnderPath(event.Name, watchPath) {
+						watched := w.addWatchRecursive(event.Name)
+						tw.paths = append(tw.paths, watched...)
+						log.Debug().Str("path", event.Name).Int("directories", len(watched)).Str("trigger", tw.trigger.Name).Msg("Added watch for new directory")
+						break
+					}
+				}
+			}
+			w.mu.Unlock()
+			return // Don't trigger scans for directory creation
+		}
 	}
 
 	// Find which trigger this path belongs to
@@ -406,6 +424,37 @@ func isUnderPath(childPath, parentPath string) bool {
 	}
 	// If the relative path starts with "..", it's not under parentPath
 	return len(rel) > 0 && rel[0] != '.'
+}
+
+// addWatchRecursive adds watches to a directory and all its subdirectories.
+// Returns a slice of all paths that were successfully watched.
+func (w *Watcher) addWatchRecursive(rootPath string) []string {
+	var watched []string
+
+	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			log.Debug().Err(err).Str("path", path).Msg("Error walking directory")
+			return nil // Continue walking despite errors
+		}
+
+		if !d.IsDir() {
+			return nil
+		}
+
+		if err := w.watcher.Add(path); err != nil {
+			log.Debug().Err(err).Str("path", path).Msg("Failed to add watch for directory")
+			return nil
+		}
+
+		watched = append(watched, path)
+		return nil
+	})
+
+	if err != nil {
+		log.Error().Err(err).Str("path", rootPath).Msg("Failed to walk directory tree")
+	}
+
+	return watched
 }
 
 // ScanExistingFiles walks all watched paths and queues existing files for upload.
