@@ -30,7 +30,17 @@
         </div>
         <div class="px-4 py-5 sm:p-6">
             <form action="/settings" method="POST" class="space-y-6">
-                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Log Level</label>
+                        <select name="log_level" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <option value="info" {{if eq .Content.Settings.LogLevel "info"}}selected{{end}}>Info</option>
+                            <option value="debug" {{if eq .Content.Settings.LogLevel "debug"}}selected{{end}}>Debug</option>
+                            <option value="trace" {{if eq .Content.Settings.LogLevel "trace"}}selected{{end}}>Trace</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Application logging verbosity</p>
+                    </div>
+
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Retries</label>
                         <input type="text" inputmode="numeric" name="max_retries" value="{{.Content.Settings.MaxRetries}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">

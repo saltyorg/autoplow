@@ -40,7 +40,6 @@ var (
 	bind        string
 	allowSubnet string
 	dbPath      string
-	verbosity   int
 
 	// Timeout flags (advanced)
 	httpTimeout   time.Duration
@@ -61,7 +60,6 @@ func main() {
 	rootCmd.Flags().StringVarP(&bind, "bind", "b", "", "IP address to bind to (e.g., 127.0.0.1, 0.0.0.0)")
 	rootCmd.Flags().StringVarP(&allowSubnet, "allow-subnet", "a", "", "CIDR subnet allowed to connect (e.g., 192.168.1.0/24)")
 	rootCmd.Flags().StringVarP(&dbPath, "db", "d", "./autoplow.db", "SQLite database path (or set DB_PATH env var)")
-	rootCmd.Flags().CountVarP(&verbosity, "verbose", "v", "Increase verbosity (-v debug, -vv trace)")
 
 	// Advanced timeout flags
 	rootCmd.Flags().DurationVar(&httpTimeout, "http-timeout", 30*time.Second, "Timeout for HTTP client requests to external services")
@@ -121,8 +119,8 @@ func run(cmd *cobra.Command, args []string) error {
 		allowedNet = parsedNet
 	}
 
-	// Setup logging
-	setupLogging(verbosity)
+	// Setup logging (initial setup, will be updated from DB setting after migrations)
+	setupLogging()
 
 	// Configure global timeouts
 	config.SetGlobalTimeouts(&config.TimeoutConfig{
@@ -154,6 +152,18 @@ func run(cmd *cobra.Command, args []string) error {
 	// Run migrations
 	if err := db.Migrate(); err != nil {
 		log.Fatal().Err(err).Msg("Failed to run database migrations")
+	}
+
+	// Apply log level from database settings
+	if level, err := db.GetSetting("log.level"); err == nil && level != "" {
+		switch level {
+		case "trace":
+			zerolog.SetGlobalLevel(zerolog.TraceLevel)
+		case "debug":
+			zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		default:
+			zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		}
 	}
 
 	// Create web server with bind address and allowed subnet
@@ -354,18 +364,12 @@ func (g *plexAutoLangTargetGetter) GetPlexTarget(targetID int64) (plexautolang.P
 	return plexTarget, nil
 }
 
-func setupLogging(verbosity int) {
+func setupLogging() {
 	// Pretty console output
 	output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "2006-01-02 15:04:05"}
 
-	switch verbosity {
-	case 0:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case 1:
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	default: // 2+
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	}
+	// Default to info level, will be overridden by database setting after migrations
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
 	log.Logger = zerolog.New(output).With().Timestamp().Logger()
 }

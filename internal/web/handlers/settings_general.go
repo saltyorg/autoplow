@@ -4,12 +4,14 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/saltyorg/autoplow/internal/config"
 )
 
 // GeneralSettings holds the general configuration for display
 type GeneralSettings struct {
+	LogLevel          string
 	MaxRetries        int
 	CleanupDays       int
 	ScanningEnabled   bool
@@ -23,6 +25,7 @@ func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
 	loader := config.NewLoader(h.db)
 
 	settings := GeneralSettings{
+		LogLevel:          loader.String("log.level", "info"),
 		MaxRetries:        loader.Int("processor.max_retries", 3),
 		CleanupDays:       loader.Int("processor.cleanup_days", 7),
 		ScanningEnabled:   loader.BoolDefaultTrue("scanning.enabled"),
@@ -50,12 +53,21 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	wasUploadsEnabled := loader.BoolDefaultTrue("uploads.enabled")
 
 	// Parse form values
+	logLevel := r.FormValue("log_level")
 	maxRetries, _ := strconv.Atoi(r.FormValue("max_retries"))
 	cleanupDays, _ := strconv.Atoi(r.FormValue("cleanup_days"))
 	scanningEnabled := r.FormValue("scanning_enabled") == "on"
 	uploadsEnabled := r.FormValue("uploads_enabled") == "on"
 	useBinaryUnits := r.FormValue("use_binary_units") == "on"
 	useBitsForBitrate := r.FormValue("use_bits_for_bitrate") == "on"
+
+	// Validate log level
+	switch logLevel {
+	case "trace", "debug", "info":
+		// valid
+	default:
+		logLevel = "info"
+	}
 
 	// Validate that at least one of scanning or uploads is enabled
 	if !scanningEnabled && !uploadsEnabled {
@@ -74,6 +86,9 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Save to database
 	var saveErr error
+	if err := h.db.SetSetting("log.level", logLevel); err != nil {
+		saveErr = err
+	}
 	if err := h.db.SetSetting("processor.max_retries", strconv.Itoa(maxRetries)); err != nil {
 		saveErr = err
 	}
@@ -97,6 +112,16 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		h.flashErr(w, "Failed to save some settings")
 		h.redirect(w, r, "/settings")
 		return
+	}
+
+	// Apply log level change immediately
+	switch logLevel {
+	case "trace":
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 
 	// Handle upload subsystem toggle

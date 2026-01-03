@@ -98,6 +98,7 @@ func (db *DB) DeleteSetting(key string) error {
 
 // Default settings
 var DefaultSettings = map[string]any{
+	"log.level":                              "info",
 	"processor.minimum_age_seconds":          600,
 	"processor.anchor.enabled":               true,
 	"processor.batch_interval_seconds":       60,
