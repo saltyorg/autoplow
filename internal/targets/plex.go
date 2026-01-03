@@ -1209,15 +1209,12 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 		Str("target", s.Name()).
 		Str("title", matchInfo.title).
 		Strs("season_patterns", matchInfo.seasonPatterns).
-		Str("timeout", timeout.String()).
 		Str("idle_threshold", idleThreshold.String()).
 		Msg("Waiting for all Plex activities to complete")
 
 	// Check every 2 seconds for idle completion
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-
-	timeoutCh := time.After(timeout)
 
 	for {
 		select {
@@ -1245,16 +1242,6 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 				}
 				return nil
 			}
-		case <-timeoutCh:
-			tracker.mu.Lock()
-			remaining := len(tracker.activeUUIDs)
-			tracker.mu.Unlock()
-			log.Warn().
-				Str("target", s.Name()).
-				Str("title", matchInfo.title).
-				Int("remaining_activities", remaining).
-				Msg("Plex activity wait timed out")
-			return nil
 		case <-ctx.Done():
 			return ctx.Err()
 		}

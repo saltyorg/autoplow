@@ -299,9 +299,22 @@ func (m *Manager) ScanAll(ctx context.Context, path string, triggerName string) 
 				Message: dbTarget.Name,
 			})
 
-			// Collect completion info for targets with ScanCompletionSeconds configured
-			// The actual waiting happens in WaitForAllCompletions() after all scans are triggered
-			if dbTarget.Config.ScanCompletionSeconds > 0 {
+			// Collect completion info for scan tracking
+			// Always track completion for targets with smart detection (Plex)
+			// For other targets, only track if ScanCompletionSeconds is configured
+			if _, hasSmartDetection := target.(ScanCompletionWaiter); hasSmartDetection {
+				timeout := dbTarget.Config.ScanCompletionSeconds
+				if timeout <= 0 {
+					timeout = 300 // default max timeout for smart detection
+				}
+				completionInfos = append(completionInfos, ScanCompletionInfo{
+					TargetID:    dbTarget.ID,
+					TargetName:  dbTarget.Name,
+					ScanPath:    scanPath,
+					TimeoutSecs: timeout,
+					Target:      target,
+				})
+			} else if dbTarget.Config.ScanCompletionSeconds > 0 {
 				completionInfos = append(completionInfos, ScanCompletionInfo{
 					TargetID:    dbTarget.ID,
 					TargetName:  dbTarget.Name,
