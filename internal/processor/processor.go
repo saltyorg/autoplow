@@ -625,8 +625,9 @@ func (p *Processor) processScan(scan *database.Scan) {
 			// Wait for scan completions before marking scan as complete
 			// This waits for all targets in parallel - Plex uses smart detection, others use fixed delay
 			// Always wait to ensure consistent logging of scan completion status
+			// Use p.ctx instead of the ScanOperation-scoped ctx, since completion wait has its own timeout
 			if len(scanResult.CompletionInfos) > 0 {
-				p.targetsMgr.WaitForAllCompletions(ctx, scanResult.CompletionInfos)
+				p.targetsMgr.WaitForAllCompletions(p.ctx, scanResult.CompletionInfos)
 			}
 
 		} else {

@@ -1246,10 +1246,10 @@ func (s *PlexTarget) checkIdleItems(idleThreshold time.Duration) {
 
 // runIdleChecker runs a goroutine that periodically checks for idle items and logs completion
 func (s *PlexTarget) runIdleChecker(ctx context.Context) {
-	// Get idle threshold from config, default to 10 seconds
+	// Get idle threshold from config, default to 30 seconds
 	idleThreshold := time.Duration(s.dbTarget.Config.ScanCompletionIdleSeconds) * time.Second
 	if idleThreshold == 0 {
-		idleThreshold = 10 * time.Second
+		idleThreshold = 30 * time.Second
 	}
 
 	ticker := time.NewTicker(2 * time.Second)
@@ -1267,7 +1267,7 @@ func (s *PlexTarget) runIdleChecker(ctx context.Context) {
 
 // WaitForScanCompletion waits for a Plex library scan to complete by monitoring activity notifications.
 // It tracks all analysis activities (scan, metadata, thumbnails, voice, credits) and waits until
-// there's been no activity for the configured idle threshold (default 10 seconds).
+// there's been no activity for the configured idle threshold (default 30 seconds).
 // Returns nil if scan completed, or the context error if timeout/cancelled.
 func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, timeout time.Duration) error {
 	// Build match info from path
@@ -1283,10 +1283,10 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 		return nil
 	}
 
-	// Get idle threshold from config, default to 10 seconds
+	// Get idle threshold from config, default to 30 seconds
 	idleThreshold := time.Duration(s.dbTarget.Config.ScanCompletionIdleSeconds) * time.Second
 	if idleThreshold == 0 {
-		idleThreshold = 10 * time.Second
+		idleThreshold = 30 * time.Second
 	}
 
 	// Create tracker

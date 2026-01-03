@@ -133,7 +133,7 @@ type TargetConfig struct {
 	// ScanCompletionIdleSeconds is the idle time (no Plex activity) before considering scan complete.
 	// Only applies to Plex targets with smart completion detection.
 	// The idle timer resets on each activity event, so this waits for all analysis tasks to finish.
-	// Defaults to 10 if not set or 0.
+	// Defaults to 30 if not set or 0.
 	ScanCompletionIdleSeconds int `json:"scan_completion_idle_seconds,omitempty"`
 }
 

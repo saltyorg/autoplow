@@ -95,21 +95,25 @@
                             class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delay before scanning. Default: 0</p>
                     </div>
+                    {{if $.UploadsEnabled}}
                     <div>
                         <label for="scan_completion_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Delay (seconds)</label>
                         <input type="text" inputmode="numeric" name="scan_completion_seconds" id="scan_completion_seconds" value="300"
                             class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                         <p id="upload-delay-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fixed delay before allowing uploads after scan. Default: 300</p>
                     </div>
+                    {{end}}
                 </div>
                 <!-- Plex Specific Options (hidden by default, shown when type is plex) -->
                 <div id="plex-options" class="hidden space-y-4">
+                    {{if $.UploadsEnabled}}
                     <div>
                         <label for="scan_completion_idle_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan Idle Threshold (seconds)</label>
-                        <input type="text" inputmode="numeric" name="scan_completion_idle_seconds" id="scan_completion_idle_seconds" value="10"
+                        <input type="text" inputmode="numeric" name="scan_completion_idle_seconds" id="scan_completion_idle_seconds" value="30"
                             class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Seconds of no Plex activity before scan is considered complete. Resets on each activity event. Default: 10</p>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Seconds of no Plex activity before scan is considered complete. Resets on each activity event. Default: 30</p>
                     </div>
+                    {{end}}
                 </div>
                 <!-- Emby/Jellyfin Specific Options (hidden by default, shown when type changes) -->
                 <div id="emby-options" class="hidden space-y-4">
@@ -682,6 +686,7 @@
                             class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delay before scanning. Default: 0</p>
                     </div>
+                    {{if $.UploadsEnabled}}
                     <div>
                         <label for="scan_completion_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Delay (seconds)</label>
                         <input type="text" inputmode="numeric" name="scan_completion_seconds" id="scan_completion_seconds" value="{{if .Content.Target.Config.ScanCompletionSeconds}}{{.Content.Target.Config.ScanCompletionSeconds}}{{else}}300{{end}}"
@@ -695,10 +700,11 @@
                     {{if eq .Content.Target.Type "plex"}}
                     <div>
                         <label for="scan_completion_idle_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan Idle Threshold (seconds)</label>
-                        <input type="text" inputmode="numeric" name="scan_completion_idle_seconds" id="scan_completion_idle_seconds" value="{{if .Content.Target.Config.ScanCompletionIdleSeconds}}{{.Content.Target.Config.ScanCompletionIdleSeconds}}{{else}}10{{end}}"
+                        <input type="text" inputmode="numeric" name="scan_completion_idle_seconds" id="scan_completion_idle_seconds" value="{{if .Content.Target.Config.ScanCompletionIdleSeconds}}{{.Content.Target.Config.ScanCompletionIdleSeconds}}{{else}}30{{end}}"
                             class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Seconds of no Plex activity before scan is considered complete. Resets on each activity event. Default: 10</p>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Seconds of no Plex activity before scan is considered complete. Resets on each activity event. Default: 30</p>
                     </div>
+                    {{end}}
                     {{end}}
                 </div>
                 {{if or (eq .Content.Target.Type "emby") (eq .Content.Target.Type "jellyfin")}}
