@@ -161,8 +161,14 @@ func (p *Poller) addTriggerLocked(trigger *database.Trigger) error {
 	p.triggers[trigger.ID] = tp
 
 	// Start the polling loop
-	p.wg.Add(1)
-	go p.pollLoop(ctx, tp)
+	p.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Str("trigger", trigger.Name).Msg("Polling loop panicked")
+			}
+		}()
+		p.pollLoop(ctx, tp)
+	})
 
 	log.Info().Str("trigger", trigger.Name).Int("paths", len(trigger.Config.WatchPaths)).Msg("Polling trigger loaded")
 
@@ -227,8 +233,6 @@ func (p *Poller) ReloadTrigger(triggerID int64) error {
 
 // pollLoop is the main polling loop for a trigger
 func (p *Poller) pollLoop(ctx context.Context, tp *triggerPoll) {
-	defer p.wg.Done()
-
 	interval := time.Duration(tp.trigger.Config.PollIntervalSeconds) * time.Second
 	if interval < 10*time.Second {
 		interval = 60 * time.Second // Default to 60 seconds

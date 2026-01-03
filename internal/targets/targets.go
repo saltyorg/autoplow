@@ -360,9 +360,12 @@ func (m *Manager) WaitForAllCompletions(ctx context.Context, infos []ScanComplet
 
 	var wg sync.WaitGroup
 	for _, info := range infos {
-		wg.Add(1)
-		go func(info ScanCompletionInfo) {
-			defer wg.Done()
+		wg.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("target", info.TargetName).Msg("Scan completion wait panicked")
+				}
+			}()
 
 			timeout := time.Duration(info.TimeoutSecs) * time.Second
 
@@ -409,7 +412,7 @@ func (m *Manager) WaitForAllCompletions(ctx context.Context, infos []ScanComplet
 					Str("path", info.ScanPath).
 					Msg("Upload delay ready")
 			}
-		}(info)
+		})
 	}
 
 	wg.Wait()
@@ -578,10 +581,14 @@ func (m *Manager) startWebSocketWatcher(dbTarget *database.Target, watcher Sessi
 	m.wsWatchersMu.Unlock()
 
 	// Start WebSocket watcher goroutine
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
+	m.wg.Go(func() {
 		defer func() {
+			if r := recover(); r != nil {
+				log.Error().
+					Interface("panic", r).
+					Str("target", dbTarget.Name).
+					Msg("WebSocket watcher panicked")
+			}
 			m.wsWatchersMu.Lock()
 			delete(m.wsWatchers, dbTarget.ID)
 			m.wsWatchersMu.Unlock()
@@ -607,7 +614,7 @@ func (m *Manager) startWebSocketWatcher(dbTarget *database.Target, watcher Sessi
 		log.Info().
 			Str("target", dbTarget.Name).
 			Msg("WebSocket watcher stopped")
-	}()
+	})
 }
 
 // dispatchSessions stores sessions to database and invokes all registered session callbacks

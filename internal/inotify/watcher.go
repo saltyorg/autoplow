@@ -93,8 +93,14 @@ func (w *Watcher) Start() (bool, error) {
 
 	// Start event processing
 	w.running = true
-	w.wg.Add(1)
-	go w.eventLoop()
+	w.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Inotify event loop panicked")
+			}
+		}()
+		w.eventLoop()
+	})
 
 	log.Info().Msg("Inotify watcher started")
 	return true, nil
@@ -259,8 +265,6 @@ func (w *Watcher) ReloadTrigger(triggerID int64) error {
 
 // eventLoop processes filesystem events
 func (w *Watcher) eventLoop() {
-	defer w.wg.Done()
-
 	for {
 		select {
 		case <-w.ctx.Done():

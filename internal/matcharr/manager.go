@@ -328,15 +328,22 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 	var targetMetadata []targetMetadataResult
 	var metadataWg sync.WaitGroup
 
-	metadataWg.Add(2)
-	go func() {
-		defer metadataWg.Done()
+	metadataWg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Fetching Arr metadata panicked")
+			}
+		}()
 		arrMetadata = m.fetchAllArrMetadata(ctx, arrs, runLog)
-	}()
-	go func() {
-		defer metadataWg.Done()
+	})
+	metadataWg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Fetching target metadata panicked")
+			}
+		}()
 		targetMetadata = m.fetchAllTargetMetadata(ctx, targets, runLog)
-	}()
+	})
 	metadataWg.Wait()
 
 	if ctx.Err() != nil {
@@ -363,15 +370,22 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 	var targetResults []targetFetchResult
 	var dataWg sync.WaitGroup
 
-	dataWg.Add(2)
-	go func() {
-		defer dataWg.Done()
+	dataWg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Fetching Arr media panicked")
+			}
+		}()
 		arrResults = m.fetchAllArrMedia(ctx, arrs, runLog)
-	}()
-	go func() {
-		defer dataWg.Done()
+	})
+	dataWg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Fetching library items panicked")
+			}
+		}()
 		targetResults = m.fetchLibraryItems(ctx, requiredLibraries, runLog)
-	}()
+	})
 	dataWg.Wait()
 
 	if ctx.Err() != nil {
@@ -513,23 +527,26 @@ func (m *Manager) fetchAllArrMetadata(ctx context.Context, arrs []*database.Matc
 	var wg sync.WaitGroup
 
 	for i, arr := range arrs {
-		wg.Add(1)
-		go func(idx int, a *database.MatcharrArr) {
-			defer wg.Done()
+		wg.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("arr", arr.Name).Msg("Fetching Arr metadata panicked")
+				}
+			}()
 
-			runLog.Info("Fetching root folders from Arr: %s (%s)", a.Name, a.Type)
+			runLog.Info("Fetching root folders from Arr: %s (%s)", arr.Name, arr.Type)
 
-			arrClient := NewArrClient(a.URL, a.APIKey, a.Type)
+			arrClient := NewArrClient(arr.URL, arr.APIKey, arr.Type)
 			rootFolders, err := arrClient.GetRootFolders(ctx)
 			if err != nil {
-				runLog.Error("Failed to fetch root folders from %s: %v", a.Name, err)
-				results[idx] = arrMetadataResult{arr: a, err: err}
+				runLog.Error("Failed to fetch root folders from %s: %v", arr.Name, err)
+				results[i] = arrMetadataResult{arr: arr, err: err}
 				return
 			}
 
-			runLog.Info("Fetched %d root folders from %s", len(rootFolders), a.Name)
-			results[idx] = arrMetadataResult{arr: a, rootFolders: rootFolders}
-		}(i, arr)
+			runLog.Info("Fetched %d root folders from %s", len(rootFolders), arr.Name)
+			results[i] = arrMetadataResult{arr: arr, rootFolders: rootFolders}
+		})
 	}
 
 	wg.Wait()
@@ -542,38 +559,41 @@ func (m *Manager) fetchAllTargetMetadata(ctx context.Context, targets []*databas
 	var wg sync.WaitGroup
 
 	for i, target := range targets {
-		wg.Add(1)
-		go func(idx int, t *database.Target) {
-			defer wg.Done()
+		wg.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("target", target.Name).Msg("Fetching target metadata panicked")
+				}
+			}()
 
-			runLog.Info("Fetching library list from target: %s", t.Name)
+			runLog.Info("Fetching library list from target: %s", target.Name)
 
 			// Get target fixer
-			targetObj, err := m.targetGetter.GetTargetAny(t.ID)
+			targetObj, err := m.targetGetter.GetTargetAny(target.ID)
 			if err != nil {
-				runLog.Warn("Failed to get target %s: %v", t.Name, err)
-				results[idx] = targetMetadataResult{target: t, err: err}
+				runLog.Warn("Failed to get target %s: %v", target.Name, err)
+				results[i] = targetMetadataResult{target: target, err: err}
 				return
 			}
 
 			fixer, ok := targetObj.(TargetFixer)
 			if !ok {
-				runLog.Debug("Target %s does not support matcharr operations", t.Name)
-				results[idx] = targetMetadataResult{target: t, err: fmt.Errorf("target does not support matcharr")}
+				runLog.Debug("Target %s does not support matcharr operations", target.Name)
+				results[i] = targetMetadataResult{target: target, err: fmt.Errorf("target does not support matcharr")}
 				return
 			}
 
 			// Get library list from cached data
-			libraries, err := m.getTargetLibraries(ctx, t)
+			libraries, err := m.getTargetLibraries(ctx, target)
 			if err != nil {
-				runLog.Warn("Failed to get libraries for target %s: %v", t.Name, err)
-				results[idx] = targetMetadataResult{target: t, fixer: fixer, err: err}
+				runLog.Warn("Failed to get libraries for target %s: %v", target.Name, err)
+				results[i] = targetMetadataResult{target: target, fixer: fixer, err: err}
 				return
 			}
 
-			runLog.Info("Found %d libraries in %s", len(libraries), t.Name)
-			results[idx] = targetMetadataResult{target: t, fixer: fixer, libraries: libraries}
-		}(i, target)
+			runLog.Info("Found %d libraries in %s", len(libraries), target.Name)
+			results[i] = targetMetadataResult{target: target, fixer: fixer, libraries: libraries}
+		})
 	}
 
 	wg.Wait()
@@ -690,26 +710,29 @@ func (m *Manager) fetchAllArrMedia(ctx context.Context, arrs []*database.Matchar
 	var wg sync.WaitGroup
 
 	for i, arr := range arrs {
-		wg.Add(1)
-		go func(idx int, a *database.MatcharrArr) {
-			defer wg.Done()
+		wg.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("arr", arr.Name).Msg("Fetching Arr media panicked")
+				}
+			}()
 
-			runLog.Info("Fetching media from Arr: %s (%s)", a.Name, a.Type)
+			runLog.Info("Fetching media from Arr: %s (%s)", arr.Name, arr.Type)
 
-			arrClient := NewArrClient(a.URL, a.APIKey, a.Type)
+			arrClient := NewArrClient(arr.URL, arr.APIKey, arr.Type)
 			media, err := arrClient.GetMedia(ctx)
 			if err != nil {
-				runLog.Error("Failed to fetch media from Arr %s: %v", a.Name, err)
-				log.Error().Err(err).Str("arr", a.Name).Msg("Failed to fetch media from Arr")
-				results[idx] = arrFetchResult{arr: a, err: err}
+				runLog.Error("Failed to fetch media from Arr %s: %v", arr.Name, err)
+				log.Error().Err(err).Str("arr", arr.Name).Msg("Failed to fetch media from Arr")
+				results[i] = arrFetchResult{arr: arr, err: err}
 				return
 			}
 
-			runLog.Info("Fetched %d media items from %s", len(media), a.Name)
-			log.Debug().Str("arr", a.Name).Int("media_count", len(media)).Msg("Fetched media from Arr")
+			runLog.Info("Fetched %d media items from %s", len(media), arr.Name)
+			log.Debug().Str("arr", arr.Name).Int("media_count", len(media)).Msg("Fetched media from Arr")
 
-			results[idx] = arrFetchResult{arr: a, media: media}
-		}(i, arr)
+			results[i] = arrFetchResult{arr: arr, media: media}
+		})
 	}
 
 	wg.Wait()
@@ -722,27 +745,30 @@ func (m *Manager) fetchLibraryItems(ctx context.Context, specs []libraryFetchSpe
 	var wg sync.WaitGroup
 
 	for i, spec := range specs {
-		wg.Add(1)
-		go func(idx int, s libraryFetchSpec) {
-			defer wg.Done()
+		wg.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("target", spec.target.Name).Str("library", spec.library.Name).Msg("Fetching library items panicked")
+				}
+			}()
 
-			runLog.Info("Fetching items from %s/%s (path: %s)", s.target.Name, s.library.Name, s.library.Path)
+			runLog.Info("Fetching items from %s/%s (path: %s)", spec.target.Name, spec.library.Name, spec.library.Path)
 
-			items, err := s.fixer.GetLibraryItemsWithProviderIDs(ctx, s.library.ID)
+			items, err := spec.fixer.GetLibraryItemsWithProviderIDs(ctx, spec.library.ID)
 			if err != nil {
-				runLog.Warn("Failed to fetch library items from %s/%s: %v", s.target.Name, s.library.Name, err)
+				runLog.Warn("Failed to fetch library items from %s/%s: %v", spec.target.Name, spec.library.Name, err)
 				log.Warn().
 					Err(err).
-					Str("target", s.target.Name).
-					Str("library", s.library.Name).
+					Str("target", spec.target.Name).
+					Str("library", spec.library.Name).
 					Msg("Failed to fetch library items")
-				results[idx] = targetFetchResult{target: s.target, fixer: s.fixer, library: s.library, err: err}
+				results[i] = targetFetchResult{target: spec.target, fixer: spec.fixer, library: spec.library, err: err}
 				return
 			}
 
-			runLog.Info("Fetched %d items from %s/%s", len(items), s.target.Name, s.library.Name)
-			results[idx] = targetFetchResult{target: s.target, fixer: s.fixer, library: s.library, items: items}
-		}(i, spec)
+			runLog.Info("Fetched %d items from %s/%s", len(items), spec.target.Name, spec.library.Name)
+			results[i] = targetFetchResult{target: spec.target, fixer: spec.fixer, library: spec.library, items: items}
+		})
 	}
 
 	wg.Wait()

@@ -129,8 +129,14 @@ func New(db *database.DB, targetsMgr *targets.Manager, rcloneMgr *rclone.Manager
 func (m *Manager) Start() {
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 
-	m.wg.Add(1)
-	go m.pollLoop()
+	m.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Throttle poll loop panicked")
+			}
+		}()
+		m.pollLoop()
+	})
 
 	log.Info().
 		Dur("poll_interval", m.config.PollInterval).
@@ -215,8 +221,6 @@ func (m *Manager) ShouldSkipNewUploads() bool {
 
 // pollLoop periodically polls media servers for active sessions
 func (m *Manager) pollLoop() {
-	defer m.wg.Done()
-
 	ticker := time.NewTicker(m.config.PollInterval)
 	defer ticker.Stop()
 

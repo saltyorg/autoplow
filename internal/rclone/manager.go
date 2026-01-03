@@ -248,8 +248,14 @@ func (m *Manager) Start() error {
 		Msg("Started rclone RCD process (managed mode)")
 
 	// Start process monitor goroutine
-	m.wg.Add(1)
-	go m.monitorProcess()
+	m.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Rclone process monitor panicked")
+			}
+		}()
+		m.monitorProcess()
+	})
 
 	// Wait for RCD to be ready
 	if err := m.waitForReady(); err != nil {
@@ -410,8 +416,6 @@ func (m *Manager) Healthy(ctx context.Context) bool {
 
 // monitorProcess monitors the subprocess and restarts if needed
 func (m *Manager) monitorProcess() {
-	defer m.wg.Done()
-
 	// Wait for process to exit
 	processExit := make(chan error, 1)
 	go func() {

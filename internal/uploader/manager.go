@@ -147,16 +147,34 @@ func (m *Manager) Start() {
 	m.recoverOrphanedUploads()
 
 	// Start request processor
-	m.wg.Add(1)
-	go m.requestProcessor()
+	m.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Upload request processor panicked")
+			}
+		}()
+		m.requestProcessor()
+	})
 
 	// Start batch processor
-	m.wg.Add(1)
-	go m.batchProcessor()
+	m.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Upload batch processor panicked")
+			}
+		}()
+		m.batchProcessor()
+	})
 
 	// Start progress monitor
-	m.wg.Add(1)
-	go m.progressMonitor()
+	m.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Upload progress monitor panicked")
+			}
+		}()
+		m.progressMonitor()
+	})
 }
 
 // IsRunning returns whether the upload manager is running
@@ -477,8 +495,6 @@ func (m *Manager) GetActiveTransfers() *ActiveTransfers {
 
 // requestProcessor handles incoming upload requests
 func (m *Manager) requestProcessor() {
-	defer m.wg.Done()
-
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -600,8 +616,6 @@ func (m *Manager) handleRequest(req UploadRequest) {
 
 // batchProcessor periodically processes ready uploads
 func (m *Manager) batchProcessor() {
-	defer m.wg.Done()
-
 	ticker := time.NewTicker(time.Duration(m.config.BatchIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 
@@ -1078,8 +1092,6 @@ func (m *Manager) cleanupEmptyDirectories(dirs []string) {
 
 // progressMonitor monitors active batch for progress
 func (m *Manager) progressMonitor() {
-	defer m.wg.Done()
-
 	ticker := time.NewTicker(m.config.ProgressPollInterval)
 	defer ticker.Stop()
 

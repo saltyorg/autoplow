@@ -33,10 +33,7 @@ func (h *Handlers) PlexAutoLangPage(w http.ResponseWriter, r *http.Request) {
 	pageSize := 20
 	history, historyTotal, _ := h.db.ListAllPlexAutoLanguagesHistoryFiltered("", pageSize, 0)
 	historyUsers, _ := h.db.GetDistinctPlexUsersFromHistory()
-	historyTotalPages := (historyTotal + pageSize - 1) / pageSize
-	if historyTotalPages < 1 {
-		historyTotalPages = 1
-	}
+	historyTotalPages := max((historyTotal+pageSize-1)/pageSize, 1)
 
 	// Get preferences count per target
 	preferencesCount := make(map[int64]int)
@@ -206,10 +203,7 @@ func (h *Handlers) PlexAutoLangPreferencesPartial(w http.ResponseWriter, r *http
 	prefs, total, _ := h.db.ListPlexAutoLanguagesPreferencesFiltered(id, userFilter, pageSize, offset)
 	users, _ := h.db.GetDistinctPlexUsersFromPreferences(id)
 
-	totalPages := (total + pageSize - 1) / pageSize
-	if totalPages < 1 {
-		totalPages = 1
-	}
+	totalPages := max((total+pageSize-1)/pageSize, 1)
 
 	h.renderPartial(w, "plexautolang.html", "preferences_section", map[string]any{
 		"Preferences": prefs,
@@ -288,10 +282,7 @@ func (h *Handlers) PlexAutoLangHistoryPartial(w http.ResponseWriter, r *http.Req
 	history, total, _ := h.db.ListAllPlexAutoLanguagesHistoryFiltered(userFilter, pageSize, offset)
 	users, _ := h.db.GetDistinctPlexUsersFromHistory()
 
-	totalPages := (total + pageSize - 1) / pageSize
-	if totalPages < 1 {
-		totalPages = 1
-	}
+	totalPages := max((total+pageSize-1)/pageSize, 1)
 
 	h.renderPartial(w, "plexautolang.html", "history_section", map[string]any{
 		"History":    history,

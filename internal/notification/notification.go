@@ -140,8 +140,14 @@ func (m *Manager) Start() bool {
 	}
 
 	m.running = true
-	m.wg.Add(1)
-	go m.dispatcher()
+	m.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Notification dispatcher panicked")
+			}
+		}()
+		m.dispatcher()
+	})
 	log.Info().Msg("Notification manager started")
 	return true
 }
@@ -195,8 +201,6 @@ func (m *Manager) NotifySimple(eventType EventType, title, message string) {
 
 // dispatcher processes events and sends notifications
 func (m *Manager) dispatcher() {
-	defer m.wg.Done()
-
 	for {
 		select {
 		case <-m.stopChan:

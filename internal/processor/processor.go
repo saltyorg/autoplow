@@ -136,9 +136,22 @@ func (p *Processor) Start() {
 		log.Info().Int64("count", count).Msg("Reset interrupted scans back to pending")
 	}
 
-	p.wg.Add(2)
-	go p.requestProcessor()
-	go p.batchProcessor()
+	p.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Scan request processor panicked")
+			}
+		}()
+		p.requestProcessor()
+	})
+	p.wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("Scan batch processor panicked")
+			}
+		}()
+		p.batchProcessor()
+	})
 	log.Info().Msg("Scan processor started")
 }
 
@@ -169,8 +182,6 @@ func (p *Processor) QueueScans(reqs []ScanRequest) {
 
 // requestProcessor handles incoming scan requests
 func (p *Processor) requestProcessor() {
-	defer p.wg.Done()
-
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -229,8 +240,6 @@ func (p *Processor) handleRequest(req ScanRequest) {
 
 // batchProcessor periodically processes ready scans
 func (p *Processor) batchProcessor() {
-	defer p.wg.Done()
-
 	ticker := time.NewTicker(time.Duration(p.config.BatchIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 
