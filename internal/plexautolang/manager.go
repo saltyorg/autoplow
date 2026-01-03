@@ -239,8 +239,8 @@ func (m *Manager) handlePlayingNotification(targetID int64, target PlexTargetInt
 		log.Error().Err(err).Int64("target_id", targetID).Msg("Plex Auto Languages: Failed to get config")
 		return
 	}
-	if !config.Enabled || !config.TriggerOnPlay {
-		log.Trace().Int64("target_id", targetID).Bool("enabled", config.Enabled).Bool("trigger_on_play", config.TriggerOnPlay).Msg("Plex Auto Languages: Trigger disabled")
+	if !config.TriggerOnPlay {
+		log.Trace().Int64("target_id", targetID).Msg("Plex Auto Languages: Trigger on play disabled")
 		return
 	}
 
@@ -539,7 +539,7 @@ func (m *Manager) handleTimelineNotification(targetID int64, target PlexTargetIn
 
 	// Get config
 	config, err := m.db.GetPlexAutoLanguagesConfig(targetID)
-	if err != nil || !config.Enabled || !config.TriggerOnScan {
+	if err != nil || !config.TriggerOnScan {
 		return
 	}
 
@@ -658,7 +658,7 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 func (m *Manager) handleActivityNotification(targetID int64, target PlexTargetInterface, activity ActivityNotification) {
 	// Get config
 	config, err := m.db.GetPlexAutoLanguagesConfig(targetID)
-	if err != nil || !config.Enabled || !config.TriggerOnActivity {
+	if err != nil || !config.TriggerOnActivity {
 		return
 	}
 

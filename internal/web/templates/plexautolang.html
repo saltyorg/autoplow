@@ -252,15 +252,15 @@
             <div class="overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-700 px-4 py-5 sm:p-6">
                 <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
                 <dd class="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-white">
-                    {{if .IsRunning}}
+                    {{if gt (len .EnabledTargets) 0}}
                     <span class="inline-flex items-center">
                         <span class="mr-2 h-2 w-2 rounded-full bg-green-500"></span>
-                        Running
+                        Enabled
                     </span>
                     {{else}}
                     <span class="inline-flex items-center">
                         <span class="mr-2 h-2 w-2 rounded-full bg-gray-400"></span>
-                        Stopped
+                        Disabled
                     </span>
                     {{end}}
                 </dd>
@@ -409,7 +409,7 @@
             <input type="checkbox" id="trigger_on_activity" name="trigger_on_activity" {{if .Config.TriggerOnActivity}}checked{{end}} class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
             <label for="trigger_on_activity" class="ml-3 block text-sm text-gray-700 dark:text-gray-300">
                 Trigger on library activity
-                <span class="block text-xs text-gray-500 dark:text-gray-400">Process activity notifications (experimental).</span>
+                <span class="block text-xs text-gray-500 dark:text-gray-400">Process activity notifications from Plex.</span>
             </label>
         </div>
     </div>

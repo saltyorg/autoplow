@@ -103,7 +103,7 @@ func DefaultPlexAutoLanguagesConfig(targetID int64) PlexAutoLanguagesConfig {
 		UpdateStrategy:    PlexAutoLanguagesUpdateStrategyNext,
 		TriggerOnPlay:     true,
 		TriggerOnScan:     true,
-		TriggerOnActivity: false,
+		TriggerOnActivity: true,
 		IgnoreLabels:      []string{},
 		IgnoreLibraries:   []string{},
 		Schedule:          "",
