@@ -318,6 +318,9 @@ func run(cmd *cobra.Command, args []string) error {
 		log.Warn().Err(err).Msg("Failed to start Plex Auto Languages manager")
 	}
 
+	// Set version info for display in UI
+	server.SetVersionInfo(version, commit, date)
+
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

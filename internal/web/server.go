@@ -128,6 +128,13 @@ func (s *Server) SetUploadManager(mgr *uploader.Manager) {
 	}
 }
 
+// SetVersionInfo sets the application version information
+func (s *Server) SetVersionInfo(version, commit, date string) {
+	if s.handlers != nil {
+		s.handlers.SetVersionInfo(version, commit, date)
+	}
+}
+
 // RcloneManager returns the rclone manager
 func (s *Server) RcloneManager() *rclone.Manager {
 	return s.rcloneMgr
@@ -665,6 +672,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/", h.SettingsPage)
 			r.Post("/", h.SettingsUpdate)
 			r.Post("/clear-upload-history", h.ClearUploadHistory)
+			r.Get("/about", h.SettingsAboutPage)
 			r.Get("/processor", h.SettingsProcessorPage)
 			r.Post("/processor", h.SettingsProcessorUpdate)
 

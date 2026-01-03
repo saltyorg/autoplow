@@ -163,3 +163,10 @@ func (h *Handlers) ClearUploadHistory(w http.ResponseWriter, r *http.Request) {
 	h.flash(w, "Cleared "+strconv.FormatInt(count, 10)+" upload history records")
 	h.redirect(w, r, "/settings")
 }
+
+// SettingsAboutPage renders the about settings page
+func (h *Handlers) SettingsAboutPage(w http.ResponseWriter, r *http.Request) {
+	h.render(w, r, "settings.html", map[string]any{
+		"Tab": "about",
+	})
+}

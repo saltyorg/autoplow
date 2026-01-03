@@ -3,6 +3,7 @@ package handlers
 import (
 	"html/template"
 	"net/http"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -26,6 +27,13 @@ type UploadSubsystemToggler interface {
 	StopUploadSubsystem() error
 }
 
+// VersionInfo holds application version information
+type VersionInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	db                     *database.DB
@@ -43,6 +51,7 @@ type Handlers struct {
 	matcharrMgr            *matcharr.Manager
 	plexAutoLangMgr        *plexautolang.Manager
 	uploadSubsystemToggler UploadSubsystemToggler
+	versionInfo            VersionInfo
 }
 
 // New creates a new Handlers instance
@@ -102,6 +111,21 @@ func (h *Handlers) SetPlexAutoLangManager(mgr *plexautolang.Manager) {
 	h.plexAutoLangMgr = mgr
 }
 
+// SetVersionInfo sets the application version information
+func (h *Handlers) SetVersionInfo(version, commit, date string) {
+	// Parse and format the date to be human-readable
+	formattedDate := date
+	if t, err := time.Parse(time.RFC3339, date); err == nil {
+		formattedDate = t.Format("January 2, 2006 at 3:04 PM MST")
+	}
+
+	h.versionInfo = VersionInfo{
+		Version: version,
+		Commit:  commit,
+		Date:    formattedDate,
+	}
+}
+
 // PageData contains common data for all pages
 type PageData struct {
 	Title           string
@@ -111,6 +135,7 @@ type PageData struct {
 	Content         any
 	ScanningEnabled bool // Global setting to show/hide scanning functionality
 	UploadsEnabled  bool // Global setting to show/hide upload functionality
+	Version         VersionInfo
 }
 
 // render renders a template with common data
@@ -135,6 +160,7 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, name string, d
 		Content:         data,
 		ScanningEnabled: scanningEnabled,
 		UploadsEnabled:  uploadsEnabled,
+		Version:         h.versionInfo,
 	}
 
 	// Check for flash messages in cookies
