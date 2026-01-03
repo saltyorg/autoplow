@@ -55,14 +55,6 @@ func (t *plexActivityTracker) matchesItem(itemName string) bool {
 	return false
 }
 
-// plexItemActivity tracks activity state for an item globally (not tied to waiting uploaders)
-type plexItemActivity struct {
-	activeUUIDs  map[string]string // uuid -> activity type
-	mu           sync.Mutex
-	lastActivity time.Time
-	scanStarted  bool
-}
-
 // plexAnalysisActivityTypes are the Plex activity types we track for scan completion.
 // All activities starting with "library." or "media.generate." are tracked.
 var plexAnalysisActivityTypes = map[string]bool{
@@ -86,7 +78,6 @@ type PlexTarget struct {
 	dbTarget    *database.Target
 	client      *http.Client
 	subscribers sync.Map // map[string]*plexActivityTracker - for waiting uploaders
-	activeItems sync.Map // map[string]*plexItemActivity - global tracking for all items
 
 	// Notification callbacks for external observers (e.g., Plex Auto Languages)
 	notificationCallbacks []PlexNotificationCallback
@@ -951,9 +942,6 @@ func (s *PlexTarget) WatchSessions(ctx context.Context, callback func(sessions [
 		maxBackoff     = 5 * time.Minute
 	)
 
-	// Start idle checker goroutine to log scan completions
-	go s.runIdleChecker(ctx)
-
 	pingInterval := config.GetTimeouts().WebSocketPing
 	backoff := initialBackoff
 
@@ -1155,44 +1143,8 @@ func (s *PlexTarget) handleActivityNotifications(activities []plexActivityNotifi
 			continue
 		}
 
-		// 1. Update global tracker (always runs for visibility/logging)
-		s.updateGlobalTracker(subtitle, uuid, actType, activity.Event)
-
-		// 2. Notify waiting subscribers (only affects waiting uploaders)
+		// Notify waiting subscribers (only affects waiting uploaders)
 		s.notifyWaitingSubscribers(subtitle, uuid, actType, activity.Event)
-	}
-}
-
-// updateGlobalTracker updates the global activity tracker for an item (independent of waiting uploaders)
-func (s *PlexTarget) updateGlobalTracker(itemName, uuid, actType, event string) {
-	// Get or create tracker for this item
-	val, _ := s.activeItems.LoadOrStore(itemName, &plexItemActivity{
-		activeUUIDs: make(map[string]string),
-	})
-	tracker := val.(*plexItemActivity)
-
-	tracker.mu.Lock()
-	defer tracker.mu.Unlock()
-
-	tracker.lastActivity = time.Now()
-
-	switch event {
-	case "started":
-		tracker.scanStarted = true
-		tracker.activeUUIDs[uuid] = actType
-		log.Debug().
-			Str("target", s.Name()).
-			Str("item", itemName).
-			Str("activity", actType).
-			Msg("Plex activity started")
-
-	case "ended":
-		delete(tracker.activeUUIDs, uuid)
-		log.Debug().
-			Str("target", s.Name()).
-			Str("item", itemName).
-			Str("activity", actType).
-			Msg("Plex activity ended")
 	}
 }
 
@@ -1216,53 +1168,6 @@ func (s *PlexTarget) notifyWaitingSubscribers(itemName, uuid, actType, event str
 		}
 		return true
 	})
-}
-
-// checkIdleItems checks for items that have gone idle and logs completion
-func (s *PlexTarget) checkIdleItems(idleThreshold time.Duration) {
-	s.activeItems.Range(func(key, value any) bool {
-		itemName := key.(string)
-		tracker := value.(*plexItemActivity)
-
-		tracker.mu.Lock()
-		idle := time.Since(tracker.lastActivity)
-		started := tracker.scanStarted
-		activeCount := len(tracker.activeUUIDs)
-		tracker.mu.Unlock()
-
-		// Item is complete: scan started, no active activities, idle > threshold
-		if started && activeCount == 0 && idle > idleThreshold {
-			log.Debug().
-				Str("target", s.Name()).
-				Str("item", itemName).
-				Float64("idle_secs", idle.Seconds()).
-				Msg("Plex scan complete (all activities finished)")
-			s.activeItems.Delete(key)
-		}
-
-		return true
-	})
-}
-
-// runIdleChecker runs a goroutine that periodically checks for idle items and logs completion
-func (s *PlexTarget) runIdleChecker(ctx context.Context) {
-	// Get idle threshold from config, default to 30 seconds
-	idleThreshold := time.Duration(s.dbTarget.Config.ScanCompletionIdleSeconds) * time.Second
-	if idleThreshold == 0 {
-		idleThreshold = 30 * time.Second
-	}
-
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.checkIdleItems(idleThreshold)
-		}
-	}
 }
 
 // WaitForScanCompletion waits for a Plex library scan to complete by monitoring activity notifications.
@@ -1323,13 +1228,21 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 			activeCount := len(tracker.activeUUIDs)
 			tracker.mu.Unlock()
 
-			// Complete when scan started, no active tasks, and idle threshold exceeded
-			if started && activeCount == 0 && idle > idleThreshold {
-				log.Debug().
-					Str("target", s.Name()).
-					Str("title", matchInfo.title).
-					Dur("idle", idle).
-					Msg("All Plex activities completed (idle)")
+			// Complete when no active tasks and idle threshold exceeded
+			if activeCount == 0 && idle > idleThreshold {
+				if started {
+					log.Debug().
+						Str("target", s.Name()).
+						Str("title", matchInfo.title).
+						Dur("idle", idle).
+						Msg("Plex scan complete (all activities finished)")
+				} else {
+					log.Debug().
+						Str("target", s.Name()).
+						Str("title", matchInfo.title).
+						Dur("idle", idle).
+						Msg("Plex scan complete (idle timeout, no activities detected)")
+				}
 				return nil
 			}
 		case <-timeoutCh:
