@@ -519,12 +519,13 @@ func (s *Server) setupRoutes() {
 		r.Get("/api/events", s.sseBroker.ServeHTTP)
 	})
 
-	// Static files
+	// Static files with caching
 	staticContent, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to setup static files")
 	}
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticContent))))
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(staticContent)))
+	r.Handle("/static/*", middleware.StaticCache(staticHandler))
 
 	// Create handlers
 	h := handlers.New(s.db, s.templates, s.authService, s.apiKeyService, s.processor)

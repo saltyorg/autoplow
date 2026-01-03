@@ -1055,7 +1055,7 @@ func (s *PlexTarget) watchSessionsOnce(ctx context.Context, callback func(sessio
 
 			// Check if this is a session-related notification
 			if s.isSessionNotification(notification) {
-				log.Debug().
+				log.Trace().
 					Str("target", s.Name()).
 					Str("type", notification.NotificationContainer.Type).
 					Msg("Fetching sessions")

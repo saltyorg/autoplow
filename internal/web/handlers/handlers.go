@@ -29,8 +29,9 @@ type UploadSubsystemToggler interface {
 
 // VersionInfo holds application version information
 type VersionInfo struct {
-	Version string
-	Commit  string
+	Version       string
+	Commit        string
+	StaticVersion string // Cache-busting version for static files (empty in dev mode)
 	Date    string
 }
 
@@ -119,10 +120,17 @@ func (h *Handlers) SetVersionInfo(version, commit, date string) {
 		formattedDate = t.Format("January 2, 2006 at 3:04 PM MST")
 	}
 
+	// Only set StaticVersion for non-dev builds (enables browser caching)
+	staticVersion := ""
+	if version != "0.0.0-dev" && commit != "none" && commit != "" {
+		staticVersion = commit
+	}
+
 	h.versionInfo = VersionInfo{
-		Version: version,
-		Commit:  commit,
-		Date:    formattedDate,
+		Version:       version,
+		Commit:        commit,
+		StaticVersion: staticVersion,
+		Date:          formattedDate,
 	}
 }
 

@@ -29,7 +29,7 @@ func Logger(next http.Handler) http.Handler {
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
-			log.Debug().
+			log.Trace().
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Int("status", ww.Status()).
@@ -119,6 +119,22 @@ func GetUser(ctx context.Context) *auth.User {
 		return nil
 	}
 	return user
+}
+
+// StaticCache adds cache headers to static file responses when a version query param is present.
+// When ?v=<commit> is present, it sets a long cache duration (1 year).
+// When no version param is present (dev mode), it sets no-cache headers.
+func StaticCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.URL.Query().Get("v"); v != "" {
+			// Release build: cache for 1 year (immutable content)
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			// Dev mode: no caching
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // AllowSubnet is a middleware that restricts access to connections from within the allowed subnet.
