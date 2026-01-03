@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"html/template"
 	"net/http"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -29,10 +33,13 @@ type UploadSubsystemToggler interface {
 
 // VersionInfo holds application version information
 type VersionInfo struct {
-	Version       string
-	Commit        string
-	StaticVersion string // Cache-busting version for static files (empty in dev mode)
-	Date    string
+	Version         string
+	Commit          string
+	StaticVersion   string // Cache-busting version for static files (empty in dev mode)
+	Date            string // Formatted date for display (fallback)
+	RawDate         string // RFC3339 date for JS locale formatting
+	LatestVersion   string // Latest version from GitHub
+	UpdateAvailable bool   // True if a newer version is available
 }
 
 // Handlers contains all HTTP handlers
@@ -53,6 +60,7 @@ type Handlers struct {
 	plexAutoLangMgr        *plexautolang.Manager
 	uploadSubsystemToggler UploadSubsystemToggler
 	versionInfo            VersionInfo
+	versionMu              sync.RWMutex
 }
 
 // New creates a new Handlers instance
@@ -126,12 +134,124 @@ func (h *Handlers) SetVersionInfo(version, commit, date string) {
 		staticVersion = commit
 	}
 
+	h.versionMu.Lock()
 	h.versionInfo = VersionInfo{
 		Version:       version,
 		Commit:        commit,
 		StaticVersion: staticVersion,
 		Date:          formattedDate,
+		RawDate:       date,
 	}
+	h.versionMu.Unlock()
+}
+
+// getVersionInfo returns a copy of the version info (thread-safe)
+func (h *Handlers) getVersionInfo() VersionInfo {
+	h.versionMu.RLock()
+	defer h.versionMu.RUnlock()
+	return h.versionInfo
+}
+
+// StartUpdateChecker starts a background goroutine that periodically checks for updates
+func (h *Handlers) StartUpdateChecker() {
+	// Skip update checking for dev versions
+	h.versionMu.RLock()
+	version := h.versionInfo.Version
+	h.versionMu.RUnlock()
+
+	if version == "0.0.0-dev" || version == "dev" {
+		log.Debug().Msg("Skipping update checker for dev version")
+		return
+	}
+
+	// Check immediately on startup
+	go h.checkForUpdates()
+
+	// Then check every 6 hours
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			h.checkForUpdates()
+		}
+	}()
+}
+
+// githubRelease represents the response from GitHub releases API
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+}
+
+// checkForUpdates fetches the latest release from GitHub and updates version info
+func (h *Handlers) checkForUpdates() {
+	const apiURL = "https://svm.saltbox.dev/version?url=https://api.github.com/repos/saltyorg/autoplow/releases/latest"
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(apiURL)
+	if err != nil {
+		log.Debug().Err(err).Msg("Failed to check for updates")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Debug().Int("status", resp.StatusCode).Msg("Update check returned non-OK status")
+		return
+	}
+
+	var release githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		log.Debug().Err(err).Msg("Failed to parse update check response")
+		return
+	}
+
+	latestVersion := strings.TrimPrefix(release.TagName, "v")
+	if latestVersion == "" {
+		return
+	}
+
+	h.versionMu.Lock()
+	defer h.versionMu.Unlock()
+
+	h.versionInfo.LatestVersion = latestVersion
+	h.versionInfo.UpdateAvailable = compareVersions(h.versionInfo.Version, latestVersion) < 0
+
+	if h.versionInfo.UpdateAvailable {
+		log.Info().
+			Str("current", h.versionInfo.Version).
+			Str("latest", latestVersion).
+			Msg("Update available")
+	}
+}
+
+// compareVersions compares two semantic versions
+// Returns -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
+func compareVersions(v1, v2 string) int {
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+
+	maxLen := len(parts1)
+	if len(parts2) > maxLen {
+		maxLen = len(parts2)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		var n1, n2 int
+		if i < len(parts1) {
+			n1, _ = strconv.Atoi(parts1[i])
+		}
+		if i < len(parts2) {
+			n2, _ = strconv.Atoi(parts2[i])
+		}
+
+		if n1 < n2 {
+			return -1
+		}
+		if n1 > n2 {
+			return 1
+		}
+	}
+	return 0
 }
 
 // PageData contains common data for all pages
@@ -168,7 +288,7 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, name string, d
 		Content:         data,
 		ScanningEnabled: scanningEnabled,
 		UploadsEnabled:  uploadsEnabled,
-		Version:         h.versionInfo,
+		Version:         h.getVersionInfo(),
 	}
 
 	// Check for flash messages in cookies

@@ -321,6 +321,9 @@ func run(cmd *cobra.Command, args []string) error {
 	// Set version info for display in UI
 	server.SetVersionInfo(version, commit, date)
 
+	// Start background update checker
+	server.StartUpdateChecker()
+
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

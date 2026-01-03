@@ -135,6 +135,13 @@ func (s *Server) SetVersionInfo(version, commit, date string) {
 	}
 }
 
+// StartUpdateChecker starts the background update checker
+func (s *Server) StartUpdateChecker() {
+	if s.handlers != nil {
+		s.handlers.StartUpdateChecker()
+	}
+}
+
 // RcloneManager returns the rclone manager
 func (s *Server) RcloneManager() *rclone.Manager {
 	return s.rcloneMgr

@@ -983,7 +983,14 @@
             <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
                 <div>
                     <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Version</dt>
-                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.Version.Version}}</dd>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        <a href="https://github.com/saltyorg/autoplow/releases/tag/{{.Version.Version}}" target="_blank" class="text-indigo-600 dark:text-indigo-400 hover:underline">{{.Version.Version}}</a>
+                        {{if .Version.UpdateAvailable}}
+                        <a href="https://github.com/saltyorg/autoplow/releases/tag/{{.Version.LatestVersion}}" target="_blank" class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800">
+                            Update available: {{.Version.LatestVersion}}
+                        </a>
+                        {{end}}
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Commit</dt>
@@ -991,7 +998,7 @@
                 </div>
                 <div>
                     <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Build Date</dt>
-                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.Version.Date}}</dd>
+                    <dd id="build-date" class="mt-1 text-sm text-gray-900 dark:text-white" data-date="{{.Version.RawDate}}">{{.Version.Date}}</dd>
                 </div>
                 <div>
                     <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Source</dt>
@@ -1000,6 +1007,24 @@
             </dl>
         </div>
     </div>
+    <script>
+    (function() {
+        const el = document.getElementById('build-date');
+        if (el && el.dataset.date) {
+            const d = new Date(el.dataset.date);
+            if (!isNaN(d.getTime())) {
+                el.textContent = d.toLocaleString(undefined, {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hourCycle: 'h23'
+                });
+            }
+        }
+    })();
+    </script>
     {{end}}
 </div>
 {{end}}
