@@ -347,7 +347,6 @@ func (w *Watcher) scheduleEvent(path string, triggerID int64, priority int, debo
 	// Check if there's already a pending event for this path
 	if existing, ok := w.pending[path]; ok {
 		existing.timer.Reset(debounce)
-		log.Debug().Str("path", path).Dur("debounce", debounce).Msg("Reset debounce timer")
 		return
 	}
 
