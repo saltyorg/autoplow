@@ -126,20 +126,28 @@
                                     <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400">Disabled</span>
                                     {{end}}
                                 </td>
-                                <td class="px-3 py-4 text-sm text-right space-x-2">
-                                    <button
-                                        onclick="testArrConnection({{.ID}}, this)"
-                                        class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">Test</button>
-                                    <button
-                                        hx-get="/matcharr/arrs/{{.ID}}"
-                                        hx-target="#arr-form-container"
-                                        hx-swap="innerHTML"
-                                        class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">Edit</button>
-                                    <button
-                                        hx-delete="/matcharr/arrs/{{.ID}}"
-                                        hx-confirm="Are you sure you want to delete this Arr instance?"
-                                        hx-swap="none"
-                                        class="text-red-600 dark:text-red-400 hover:text-red-500">Delete</button>
+                                <td class="px-3 py-4 text-sm text-right">
+                                    <div class="flex justify-end gap-2">
+                                        <button
+                                            onclick="testArrConnection({{.ID}}, this)"
+                                            class="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-indigo-50 disabled:opacity-60 disabled:cursor-not-allowed dark:bg-gray-700 dark:text-indigo-300 dark:ring-gray-500 dark:hover:bg-gray-600">
+                                            Test
+                                        </button>
+                                        <button
+                                            hx-get="/matcharr/arrs/{{.ID}}"
+                                            hx-target="#arr-form-container"
+                                            hx-swap="innerHTML"
+                                            class="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:ring-gray-500 dark:hover:bg-gray-600">
+                                            Edit
+                                        </button>
+                                        <button
+                                            hx-delete="/matcharr/arrs/{{.ID}}"
+                                            hx-confirm="Are you sure you want to delete this Arr instance?"
+                                            hx-swap="none"
+                                            class="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-red-50 dark:bg-gray-700 dark:text-red-400 dark:ring-gray-500 dark:hover:bg-red-900/40">
+                                            Delete
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                             {{end}}
@@ -159,14 +167,28 @@
         </div>
     </div>
     <script>
+    async function handleArrTestResponse(response) {
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (error) {
+            // Non-JSON response; fall back to generic messaging
+        }
+        const success = data.success ?? (!data.error && response.ok);
+        const message = data.message || data.error || (response.ok ? 'Request completed' : 'Request failed');
+        showToast(!!success, message);
+    }
+
     async function testArrConnection(id, btn) {
-        const originalText = btn.textContent;
+        const originalText = btn.textContent.trim();
         btn.disabled = true;
         btn.textContent = 'Testing...';
         try {
-            const response = await fetch('/matcharr/arrs/' + id + '/test', { method: 'POST' });
-            const data = await response.json();
-            showToast(data.success, data.message);
+            const response = await fetch('/matcharr/arrs/' + id + '/test', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+            await handleArrTestResponse(response);
         } catch (error) {
             showToast(false, 'Failed to test: ' + error.message);
         } finally {
@@ -177,30 +199,46 @@
 
     async function testArrConnectionRaw(btn) {
         const form = btn.closest('form');
-        const url = form.querySelector('input[name="url"]').value;
-        const apiKey = form.querySelector('input[name="api_key"]').value;
-        const type = form.querySelector('select[name="type"]').value;
+        if (!form) {
+            showToast(false, 'Unable to locate form for testing');
+            return;
+        }
+
+        const formData = new FormData(form);
+        const url = (formData.get('url') || '').toString().trim();
+        const apiKey = (formData.get('api_key') || '').toString().trim();
+        const type = (formData.get('type') || '').toString();
+        const arrId = form.dataset.arrId;
+
+        // If the form is for an existing Arr and fields are empty (e.g., user didn't touch them), use DB-stored values via ID test.
+        if ((!url || !apiKey) && arrId && arrId !== '0') {
+            await testArrConnection(arrId, btn);
+            return;
+        }
 
         if (!url || !apiKey) {
             showToast(false, 'URL and API Key are required');
             return;
         }
 
-        const originalText = btn.textContent;
+        const payload = new URLSearchParams();
+        payload.set('url', url);
+        payload.set('api_key', apiKey);
+        payload.set('type', type);
+
+        const originalText = btn.textContent.trim();
         btn.disabled = true;
         btn.textContent = 'Testing...';
         try {
-            const formData = new FormData();
-            formData.append('url', url);
-            formData.append('api_key', apiKey);
-            formData.append('type', type);
-
             const response = await fetch('/matcharr/arrs/test', {
                 method: 'POST',
-                body: formData
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: payload.toString(),
+                credentials: 'same-origin'
             });
-            const data = await response.json();
-            showToast(data.success, data.message);
+            await handleArrTestResponse(response);
         } catch (error) {
             showToast(false, 'Failed to test: ' + error.message);
         } finally {
@@ -392,7 +430,7 @@
 
 {{define "arr_form"}}
 <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
-    <form action="{{if .IsNew}}/matcharr/arrs{{else}}/matcharr/arrs/{{.Arr.ID}}{{end}}" method="POST" class="space-y-4">
+    <form action="{{if .IsNew}}/matcharr/arrs{{else}}/matcharr/arrs/{{.Arr.ID}}{{end}}" method="POST" class="space-y-4" data-arr-id="{{if .IsNew}}0{{else}}{{.Arr.ID}}{{end}}">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
                 <label for="name" class="block text-sm font-medium text-gray-900 dark:text-white">Name</label>
