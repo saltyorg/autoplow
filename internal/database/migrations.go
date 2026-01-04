@@ -662,4 +662,14 @@ var migrations = []migration{
 			ALTER TABLE plex_auto_languages_preferences ADD COLUMN plex_username TEXT DEFAULT '';
 		`,
 	},
+	{
+		Version: 20,
+		Name:    "scans_file_paths",
+		SQL: `
+			-- Add file_paths column to scans table
+			-- Stores the original file paths that triggered the scan (JSON array)
+			-- Used to queue uploads for specific files after scan completion
+			ALTER TABLE scans ADD COLUMN file_paths TEXT;
+		`,
+	},
 }

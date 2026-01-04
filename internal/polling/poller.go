@@ -266,12 +266,16 @@ func (p *Poller) pollLoop(ctx context.Context, tp *triggerPoll) {
 // doScan performs a single scan of all watch paths for a trigger
 func (p *Poller) doScan(tp *triggerPoll) {
 	// Check settings
+	scanningEnabled := true
+	if val, _ := p.db.GetSetting("scanning.enabled"); val == "false" {
+		scanningEnabled = false
+	}
 	uploadsEnabled := true
 	if val, _ := p.db.GetSetting("uploads.enabled"); val == "false" {
 		uploadsEnabled = false
 	}
 
-	if !uploadsEnabled || p.uploadManager == nil {
+	if !uploadsEnabled {
 		// Still track files even if uploads disabled, so we don't queue them all when re-enabled
 		p.trackFilesOnly(tp)
 		return
@@ -322,28 +326,61 @@ func (p *Poller) doScan(tp *triggerPoll) {
 
 	tp.firstScan = false
 
-	// Queue new files for upload
+	// Queue new files
 	if len(newFiles) > 0 {
 		triggerID := tp.trigger.ID
-		for _, path := range newFiles {
+
+		if scanningEnabled {
+			// Group files by parent directory for efficient scanning
+			filesByDir := make(map[string][]string)
+			for _, path := range newFiles {
+				dir := filepath.Dir(path)
+				filesByDir[dir] = append(filesByDir[dir], path)
+			}
+
+			// Queue one scan per directory with all file paths
+			for dir, files := range filesByDir {
+				log.Info().
+					Str("path", dir).
+					Int("files", len(files)).
+					Int64("trigger_id", triggerID).
+					Msg("Polling trigger queuing scan")
+
+				p.processor.QueueScan(processor.ScanRequest{
+					Path:      dir,
+					TriggerID: &triggerID,
+					Priority:  tp.trigger.Priority,
+					FilePaths: files,
+				})
+			}
+
 			log.Info().
-				Str("path", path).
+				Int("files", len(newFiles)).
 				Int64("trigger_id", triggerID).
-				Msg("Polling trigger queuing upload")
+				Str("trigger", tp.trigger.Name).
+				Msg("Polling scan completed - scans queued")
+		} else if p.uploadManager != nil {
+			// Scanning disabled - queue uploads directly
+			for _, path := range newFiles {
+				log.Info().
+					Str("path", path).
+					Int64("trigger_id", triggerID).
+					Msg("Polling trigger queuing upload (scanning disabled)")
 
-			p.uploadManager.QueueUpload(uploader.UploadRequest{
-				LocalPath: path,
-				ScanID:    nil,
-				Priority:  tp.trigger.Priority,
-				TriggerID: &triggerID,
-			})
+				p.uploadManager.QueueUpload(uploader.UploadRequest{
+					LocalPath: path,
+					ScanID:    nil,
+					Priority:  tp.trigger.Priority,
+					TriggerID: &triggerID,
+				})
+			}
+
+			log.Info().
+				Int("files", len(newFiles)).
+				Int64("trigger_id", triggerID).
+				Str("trigger", tp.trigger.Name).
+				Msg("Polling scan completed - uploads queued")
 		}
-
-		log.Info().
-			Int("files", len(newFiles)).
-			Int64("trigger_id", triggerID).
-			Str("trigger", tp.trigger.Name).
-			Msg("Polling scan completed - new files queued")
 	}
 }
 

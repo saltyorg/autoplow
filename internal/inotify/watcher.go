@@ -389,10 +389,11 @@ func (w *Watcher) fireScan(path string, triggerID int64, priority int) {
 	// Get parent directory for the scan (more efficient for media servers)
 	scanPath := filepath.Dir(path)
 
-	// If scanning enabled, queue the scan
 	if scanningEnabled {
+		// Queue scan with file path - upload will be queued after scan completes
 		log.Info().
 			Str("path", scanPath).
+			Str("file", path).
 			Int64("trigger_id", triggerID).
 			Msg("Inotify triggered scan")
 
@@ -400,15 +401,14 @@ func (w *Watcher) fireScan(path string, triggerID int64, priority int) {
 			Path:      scanPath,
 			TriggerID: &triggerID,
 			Priority:  priority,
+			FilePaths: []string{path},
 		})
-	}
-
-	// If uploads enabled and upload manager set, queue upload for the file
-	if uploadsEnabled && w.uploadManager != nil {
+	} else if uploadsEnabled && w.uploadManager != nil {
+		// Scanning disabled - queue upload directly
 		log.Info().
 			Str("path", path).
 			Int64("trigger_id", triggerID).
-			Msg("Inotify triggered upload")
+			Msg("Inotify triggered upload (scanning disabled)")
 
 		w.uploadManager.QueueUpload(uploader.UploadRequest{
 			LocalPath: path,

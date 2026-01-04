@@ -12,12 +12,14 @@ import (
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/targets"
+	"github.com/saltyorg/autoplow/internal/uploader"
 	"github.com/saltyorg/autoplow/internal/web/sse"
 )
 
 // UploadQueuer is an interface for queueing uploads
 type UploadQueuer interface {
 	QueueUploadPath(localPath string, scanID *int64, priority int)
+	QueueUpload(req uploader.UploadRequest)
 }
 
 // Config holds the processor configuration
@@ -66,6 +68,7 @@ type ScanRequest struct {
 	TriggerID *int64
 	Priority  int
 	EventType string
+	FilePaths []string // Original file paths that triggered this scan (for upload queuing)
 }
 
 // fileStabilityCheck tracks file size for stability checking
@@ -208,6 +211,15 @@ func (p *Processor) handleRequest(req ScanRequest) {
 	}
 
 	if existing != nil {
+		// Merge file paths if new request has any
+		if len(req.FilePaths) > 0 {
+			if err := p.db.AppendScanFilePaths(existing.ID, req.FilePaths); err != nil {
+				log.Error().Err(err).Str("path", path).Msg("Failed to append file paths to existing scan")
+			} else {
+				log.Debug().Str("path", path).Int("new_files", len(req.FilePaths)).Msg("Appended file paths to existing scan")
+			}
+		}
+
 		// Update priority if new request has higher priority
 		if req.Priority > existing.Priority {
 			if err := p.db.UpdateScanPriority(existing.ID, req.Priority); err != nil {
@@ -228,6 +240,7 @@ func (p *Processor) handleRequest(req ScanRequest) {
 		Priority:  req.Priority,
 		Status:    database.ScanStatusPending,
 		EventType: req.EventType,
+		FilePaths: req.FilePaths,
 	}
 
 	if err := p.db.CreateScan(scan); err != nil {
@@ -691,20 +704,36 @@ func (p *Processor) processScan(scan *database.Scan) {
 	}()
 }
 
-// queueUploadIfConfigured queues an upload for the scanned path if configured
+// queueUploadIfConfigured queues uploads for the scanned file paths if configured
 func (p *Processor) queueUploadIfConfigured(scan *database.Scan) {
 	if p.uploadQueuer == nil {
 		return
 	}
 
-	// Queue upload request - the upload manager will check if the path
-	// matches any configured upload paths
-	p.uploadQueuer.QueueUploadPath(scan.Path, &scan.ID, scan.Priority)
+	// If file paths are stored (from inotify/polling), queue uploads for each file
+	if len(scan.FilePaths) > 0 {
+		for _, filePath := range scan.FilePaths {
+			p.uploadQueuer.QueueUpload(uploader.UploadRequest{
+				LocalPath: filePath,
+				ScanID:    &scan.ID,
+				Priority:  scan.Priority,
+				TriggerID: scan.TriggerID,
+			})
 
+			log.Debug().
+				Int64("scan_id", scan.ID).
+				Str("path", filePath).
+				Msg("Upload request queued after scan completion")
+		}
+		return
+	}
+
+	// No file paths stored - this is a webhook trigger or legacy scan
+	// Don't queue uploads for these (they provide directory paths, not file paths)
 	log.Debug().
 		Int64("scan_id", scan.ID).
 		Str("path", scan.Path).
-		Msg("Upload request queued after scan completion")
+		Msg("Scan has no file paths, skipping upload queue")
 }
 
 // Stats returns current processor statistics

@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -32,14 +33,25 @@ type Scan struct {
 	LastError   string     `json:"last_error,omitempty"`
 	TargetID    *int64     `json:"target_id,omitempty"`
 	EventType   string     `json:"event_type,omitempty"`
+	FilePaths   []string   `json:"file_paths,omitempty"` // Original file paths that triggered this scan (for upload queuing)
 }
 
 // CreateScan creates a new scan record
 func (db *DB) CreateScan(scan *Scan) error {
+	var filePathsJSON *string
+	if len(scan.FilePaths) > 0 {
+		data, err := json.Marshal(scan.FilePaths)
+		if err != nil {
+			return fmt.Errorf("failed to marshal file paths: %w", err)
+		}
+		s := string(data)
+		filePathsJSON = &s
+	}
+
 	result, err := db.Exec(`
-		INSERT INTO scans (path, trigger_id, priority, status, created_at, retry_count, event_type)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, scan.Path, scan.TriggerID, scan.Priority, scan.Status, time.Now(), 0, scan.EventType)
+		INSERT INTO scans (path, trigger_id, priority, status, created_at, retry_count, event_type, file_paths)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, scan.Path, scan.TriggerID, scan.Priority, scan.Status, time.Now(), 0, scan.EventType, filePathsJSON)
 	if err != nil {
 		return fmt.Errorf("failed to create scan: %w", err)
 	}
@@ -59,12 +71,12 @@ func (db *DB) GetScan(id int64) (*Scan, error) {
 	scan := &Scan{}
 	var triggerID, targetID sql.NullInt64
 	var startedAt, completedAt, nextRetryAt sql.NullTime
-	var lastError, eventType sql.NullString
+	var lastError, eventType, filePathsJSON sql.NullString
 
 	err := db.QueryRow(`
-		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type
+		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 		FROM scans WHERE id = ?
-	`, id).Scan(&scan.ID, &scan.Path, &triggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType)
+	`, id).Scan(&scan.ID, &scan.Path, &triggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType, &filePathsJSON)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -79,6 +91,9 @@ func (db *DB) GetScan(id int64) (*Scan, error) {
 	scan.NextRetryAt = nullTimeToPtr(nextRetryAt)
 	scan.LastError = nullStringValue(lastError)
 	scan.EventType = nullStringValue(eventType)
+	if filePathsJSON.Valid && filePathsJSON.String != "" {
+		_ = json.Unmarshal([]byte(filePathsJSON.String), &scan.FilePaths)
+	}
 
 	return scan, nil
 }
@@ -87,7 +102,7 @@ func (db *DB) GetScan(id int64) (*Scan, error) {
 func (db *DB) ListPendingScans() ([]*Scan, error) {
 	now := time.Now()
 	rows, err := db.Query(`
-		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type
+		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 		FROM scans
 		WHERE (status = ? AND (next_retry_at IS NULL OR next_retry_at <= ?))
 		   OR (status = ? AND (next_retry_at IS NULL OR next_retry_at <= ?))
@@ -105,7 +120,7 @@ func (db *DB) ListPendingScans() ([]*Scan, error) {
 func (db *DB) ListPendingScansOlderThan(age time.Duration) ([]*Scan, error) {
 	cutoff := time.Now().Add(-age)
 	rows, err := db.Query(`
-		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type
+		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 		FROM scans
 		WHERE status = ? AND created_at < ?
 		ORDER BY priority DESC, created_at ASC
@@ -121,7 +136,7 @@ func (db *DB) ListPendingScansOlderThan(age time.Duration) ([]*Scan, error) {
 // ListRecentScans returns the most recent scans
 func (db *DB) ListRecentScans(limit int) ([]*Scan, error) {
 	rows, err := db.Query(`
-		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type
+		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 		FROM scans
 		ORDER BY created_at DESC
 		LIMIT ?
@@ -141,9 +156,9 @@ func (db *DB) scanRowsToScans(rows *sql.Rows) ([]*Scan, error) {
 		scan := &Scan{}
 		var triggerID, targetID sql.NullInt64
 		var startedAt, completedAt, nextRetryAt sql.NullTime
-		var lastError, eventType sql.NullString
+		var lastError, eventType, filePathsJSON sql.NullString
 
-		if err := rows.Scan(&scan.ID, &scan.Path, &triggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType); err != nil {
+		if err := rows.Scan(&scan.ID, &scan.Path, &triggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType, &filePathsJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 
@@ -154,6 +169,9 @@ func (db *DB) scanRowsToScans(rows *sql.Rows) ([]*Scan, error) {
 		scan.NextRetryAt = nullTimeToPtr(nextRetryAt)
 		scan.LastError = nullStringValue(lastError)
 		scan.EventType = nullStringValue(eventType)
+		if filePathsJSON.Valid && filePathsJSON.String != "" {
+			_ = json.Unmarshal([]byte(filePathsJSON.String), &scan.FilePaths)
+		}
 
 		scans = append(scans, scan)
 	}
@@ -261,15 +279,15 @@ func (db *DB) FindDuplicatePendingScan(path string) (*Scan, error) {
 	scan := &Scan{}
 	var triggerID, targetID sql.NullInt64
 	var startedAt, completedAt, nextRetryAt sql.NullTime
-	var lastError, eventType sql.NullString
+	var lastError, eventType, filePathsJSON sql.NullString
 
 	err := db.QueryRow(`
-		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type
+		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 		FROM scans
 		WHERE path = ? AND status IN (?, ?)
 		ORDER BY created_at DESC
 		LIMIT 1
-	`, path, ScanStatusPending, ScanStatusRetry).Scan(&scan.ID, &scan.Path, &triggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType)
+	`, path, ScanStatusPending, ScanStatusRetry).Scan(&scan.ID, &scan.Path, &triggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType, &filePathsJSON)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -284,6 +302,9 @@ func (db *DB) FindDuplicatePendingScan(path string) (*Scan, error) {
 	scan.NextRetryAt = nullTimeToPtr(nextRetryAt)
 	scan.LastError = nullStringValue(lastError)
 	scan.EventType = nullStringValue(eventType)
+	if filePathsJSON.Valid && filePathsJSON.String != "" {
+		_ = json.Unmarshal([]byte(filePathsJSON.String), &scan.FilePaths)
+	}
 
 	return scan, nil
 }
@@ -315,7 +336,7 @@ func (db *DB) ListScansFiltered(status string, limit, offset int) ([]*Scan, erro
 
 	if status != "" && status != "all" {
 		rows, err = db.Query(`
-			SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type
+			SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 			FROM scans
 			WHERE status = ?
 			ORDER BY created_at DESC
@@ -323,7 +344,7 @@ func (db *DB) ListScansFiltered(status string, limit, offset int) ([]*Scan, erro
 		`, status, limit, offset)
 	} else {
 		rows, err = db.Query(`
-			SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type
+			SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 			FROM scans
 			ORDER BY created_at DESC
 			LIMIT ? OFFSET ?
@@ -382,4 +403,54 @@ func (db *DB) GetScanStatsByStatus() (map[string]int, error) {
 		}
 	}
 	return stats, nil
+}
+
+// AppendScanFilePaths appends new file paths to an existing scan's file_paths
+// This is used when a duplicate scan request comes in with additional files
+func (db *DB) AppendScanFilePaths(scanID int64, newPaths []string) error {
+	if len(newPaths) == 0 {
+		return nil
+	}
+
+	// Get current file paths
+	var filePathsJSON sql.NullString
+	err := db.QueryRow(`SELECT file_paths FROM scans WHERE id = ?`, scanID).Scan(&filePathsJSON)
+	if err != nil {
+		return fmt.Errorf("failed to get current file paths: %w", err)
+	}
+
+	// Parse existing paths
+	var existingPaths []string
+	if filePathsJSON.Valid && filePathsJSON.String != "" {
+		if err := json.Unmarshal([]byte(filePathsJSON.String), &existingPaths); err != nil {
+			return fmt.Errorf("failed to unmarshal existing file paths: %w", err)
+		}
+	}
+
+	// Create set for deduplication
+	pathSet := make(map[string]struct{})
+	for _, p := range existingPaths {
+		pathSet[p] = struct{}{}
+	}
+
+	// Add new paths that don't already exist
+	for _, p := range newPaths {
+		if _, exists := pathSet[p]; !exists {
+			existingPaths = append(existingPaths, p)
+			pathSet[p] = struct{}{}
+		}
+	}
+
+	// Marshal and update
+	data, err := json.Marshal(existingPaths)
+	if err != nil {
+		return fmt.Errorf("failed to marshal file paths: %w", err)
+	}
+
+	_, err = db.Exec(`UPDATE scans SET file_paths = ? WHERE id = ?`, string(data), scanID)
+	if err != nil {
+		return fmt.Errorf("failed to update file paths: %w", err)
+	}
+
+	return nil
 }
