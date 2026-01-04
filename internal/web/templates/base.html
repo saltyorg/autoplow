@@ -376,6 +376,27 @@
         </div>
     </div>
 
+    <!-- Shared Confirm Modal -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div class="flex items-start">
+                <div class="flex-shrink-0" id="confirm-modal-icon"></div>
+                <div class="ml-3 flex-1">
+                    <h3 id="confirm-modal-title" class="text-lg font-medium text-gray-900 dark:text-white"></h3>
+                    <div class="mt-2" id="confirm-modal-body"></div>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button type="button" id="confirm-modal-cancel" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Cancel
+                </button>
+                <button type="button" id="confirm-modal-confirm" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
     // Shared modal icons
     const alertModalIcons = {
@@ -411,6 +432,63 @@
     function hideAlertModal() {
         const modal = document.getElementById('alert-modal');
         if (modal) modal.classList.add('hidden');
+    }
+
+    // Confirm modal, returns a promise that resolves to true/false
+    function showConfirmModal(options) {
+        const modal = document.getElementById('confirm-modal');
+        const iconEl = document.getElementById('confirm-modal-icon');
+        const titleEl = document.getElementById('confirm-modal-title');
+        const bodyEl = document.getElementById('confirm-modal-body');
+        const confirmBtn = document.getElementById('confirm-modal-confirm');
+        const cancelBtn = document.getElementById('confirm-modal-cancel');
+
+        if (!modal || !confirmBtn || !cancelBtn) {
+            return Promise.resolve(false);
+        }
+
+        const type = options.type || 'warning';
+        iconEl.innerHTML = alertModalIcons[type] || alertModalIcons.info;
+        titleEl.textContent = options.title || 'Confirm';
+        bodyEl.innerHTML = '<p class="text-sm text-gray-600 dark:text-gray-300">' + (options.body || '') + '</p>';
+        confirmBtn.textContent = options.confirmText || 'Confirm';
+        cancelBtn.textContent = options.cancelText || 'Cancel';
+
+        modal.classList.remove('hidden');
+
+        return new Promise(resolve => {
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                modal.onclick = null;
+                document.removeEventListener('keydown', onKeyDown);
+            };
+
+            confirmBtn.onclick = () => {
+                cleanup();
+                resolve(true);
+            };
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(false);
+            };
+
+            modal.onclick = e => {
+                if (e.target === modal) {
+                    cleanup();
+                    resolve(false);
+                }
+            };
+
+            const onKeyDown = e => {
+                if (e.key === 'Escape') {
+                    cleanup();
+                    resolve(false);
+                }
+            };
+            document.addEventListener('keydown', onKeyDown);
+        });
     }
 
     // Close modal on escape key

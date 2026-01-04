@@ -40,13 +40,11 @@ func CompareArrToTarget(
 	targetByPath := make(map[string]*MediaServerItem)
 	for i := range targetItems {
 		item := &targetItems[i]
-		normalizedPath := normalizePath(item.Path)
-		targetByPath[normalizedPath] = item
-		// Also store by directory path for matching
-		dirPath := filepath.Dir(normalizedPath)
-		if _, exists := targetByPath[dirPath]; !exists {
-			targetByPath[dirPath] = item
+		matchPath := itemMatchPath(item.Path)
+		if matchPath == "" {
+			continue
 		}
+		targetByPath[matchPath] = item
 	}
 
 	log.Debug().
@@ -75,6 +73,7 @@ func CompareArrToTarget(
 				Str("arr", arr.Name).
 				Str("title", media.Title).
 				Str("path", mappedPath).
+				Str("normalized_path", normalizedPath).
 				Msg("No matching target item found")
 			continue
 		}
@@ -100,6 +99,9 @@ func CompareArrToTarget(
 				Str("arr", arr.Name).
 				Str("target", target.Name).
 				Str("title", media.Title).
+				Str("arr_path", media.Path).
+				Str("mapped_path", normalizedPath).
+				Str("server_path", targetItem.Path).
 				Str("id_type", expectedIDType).
 				Str("expected", expectedID).
 				Str("actual", actualID).
@@ -122,41 +124,53 @@ func CompareArrToTarget(
 
 // findMatchingTargetItem finds a target item that matches the given path
 func findMatchingTargetItem(path string, targetByPath map[string]*MediaServerItem) *MediaServerItem {
-	// Try exact match first
-	if item, ok := targetByPath[path]; ok {
-		return item
+	return targetByPath[path]
+}
+
+// itemMatchPath returns the directory path to compare against Arr paths.
+// If the media server path is a file, use its parent directory; otherwise use the path as-is.
+func itemMatchPath(path string) string {
+	normalized := normalizePath(path)
+	if normalized == "" {
+		return ""
 	}
 
-	// Try directory match (for TV shows where Arr path is the series folder)
-	// The target item path might be an episode file within that folder
-	for targetPath, item := range targetByPath {
-		// Check if the target item's path starts with the Arr path
-		if strings.HasPrefix(targetPath, path+"/") {
-			return item
-		}
-		// Check if the Arr path starts with the target item's directory
-		targetDir := filepath.Dir(targetPath)
-		if path == targetDir || strings.HasPrefix(path, targetDir+"/") {
-			return item
-		}
+	base := filepath.Base(normalized)
+	// Treat a path with an extension as a file path and use its directory
+	if strings.Contains(base, ".") {
+		return normalizePath(filepath.Dir(normalized))
 	}
 
-	return nil
+	return normalized
 }
 
 // mapPath applies path mappings to convert an Arr path to a media server path
 func mapPath(path string, mappings []database.MatcharrPathMapping) string {
 	if len(mappings) == 0 {
-		return path
+		return normalizePath(path)
 	}
 
+	normalizedPath := normalizePath(path)
+
 	for _, mapping := range mappings {
-		if strings.HasPrefix(path, mapping.ArrPath) {
-			return mapping.ServerPath + path[len(mapping.ArrPath):]
+		arrPrefix := normalizePath(mapping.ArrPath)
+		serverPrefix := normalizePath(mapping.ServerPath)
+
+		if arrPrefix == "" {
+			continue
+		}
+
+		if normalizedPath == arrPrefix {
+			return serverPrefix
+		}
+
+		// Require a path boundary so we don't map /mnt/media to /mnt/mediabackup
+		if strings.HasPrefix(normalizedPath, arrPrefix+"/") {
+			return serverPrefix + normalizedPath[len(arrPrefix):]
 		}
 	}
 
-	return path
+	return normalizedPath
 }
 
 // normalizePath normalizes a path for comparison

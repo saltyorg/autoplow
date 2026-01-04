@@ -192,7 +192,15 @@ func (h *Handlers) MatcharrArrDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.jsonSuccess(w, "Arr instance deleted")
+	// If this was an htmx request, redirect back to the Arrs tab to refresh the list.
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/matcharr?tab=arrs")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	h.flash(w, "Arr instance deleted")
+	h.redirect(w, r, "/matcharr?tab=arrs")
 }
 
 // MatcharrArrTest tests connection to an Arr instance

@@ -141,9 +141,7 @@
                                             Edit
                                         </button>
                                         <button
-                                            hx-delete="/matcharr/arrs/{{.ID}}"
-                                            hx-confirm="Are you sure you want to delete this Arr instance?"
-                                            hx-swap="none"
+                                            onclick="deleteArrInstance({{.ID}}, this)"
                                             class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-60 disabled:cursor-not-allowed">
                                             Delete
                                         </button>
@@ -177,6 +175,52 @@
         const success = data.success ?? (!data.error && response.ok);
         const message = data.message || data.error || (response.ok ? 'Request completed' : 'Request failed');
         showToast(!!success, message);
+    }
+
+    async function deleteArrInstance(id, button) {
+        const confirmed = await showConfirmModal({
+            type: 'warning',
+            title: 'Delete Arr Instance',
+            body: 'Are you sure you want to delete this Arr instance?',
+            confirmText: 'Delete',
+            cancelText: 'Cancel'
+        });
+        if (!confirmed) {
+            return;
+        }
+
+        button.disabled = true;
+        try {
+            const response = await fetch(`/matcharr/arrs/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'HX-Request': 'true'
+                }
+            });
+
+            const redirect = response.headers.get('HX-Redirect');
+            if (redirect) {
+                window.location.href = redirect;
+                return;
+            }
+
+            if (response.ok) {
+                showToast(true, 'Arr instance deleted');
+                window.location.reload();
+                return;
+            }
+
+            let message = 'Failed to delete Arr instance';
+            try {
+                const data = await response.json();
+                message = data.message || data.error || message;
+            } catch (_ignored) {}
+            showToast(false, message);
+        } catch (error) {
+            showToast(false, 'Failed to delete Arr instance');
+        } finally {
+            button.disabled = false;
+        }
     }
 
     async function testArrConnection(id, btn) {

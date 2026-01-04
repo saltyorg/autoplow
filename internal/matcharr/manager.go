@@ -457,6 +457,8 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 			for _, mismatch := range compareResult.Mismatches {
 				runLog.Info("MISMATCH: %s - expected %s=%s, got %s",
 					mismatch.ArrMedia.Title, mismatch.ExpectedIDType, mismatch.ExpectedID, mismatch.ActualID)
+				runLog.Debug("Paths: arr=%s mapped=%s server=%s",
+					mismatch.ArrMedia.Path, mapPath(mismatch.ArrMedia.Path, mismatch.ArrInstance.PathMappings), mismatch.ServerItem.Path)
 
 				dbMismatch := &database.MatcharrMismatch{
 					RunID:            run.ID,
