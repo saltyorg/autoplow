@@ -26,15 +26,31 @@
     </div>
 
     <!-- Filter -->
-    <div class="flex items-center gap-4">
-        <label for="status-filter" class="text-sm font-medium text-gray-700 dark:text-gray-300">Filter by status:</label>
-        <select id="status-filter" onchange="window.location.href='/history/scans?status=' + this.value" class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-            <option value="all" {{if eq .Content.Status ""}}selected{{end}}>All</option>
-            <option value="pending" {{if eq .Content.Status "pending"}}selected{{end}}>Pending</option>
-            <option value="scanning" {{if eq .Content.Status "scanning"}}selected{{end}}>Scanning</option>
-            <option value="completed" {{if eq .Content.Status "completed"}}selected{{end}}>Completed</option>
-            <option value="failed" {{if eq .Content.Status "failed"}}selected{{end}}>Failed</option>
-        </select>
+    <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Filter by status:</span>
+        <div class="inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+            {{ $status := .Content.Status }}
+            <a href="/history/scans"
+               class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status ""}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
+               All
+            </a>
+            <a href="/history/scans?status=pending"
+               class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "pending"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
+               Pending
+            </a>
+            <a href="/history/scans?status=scanning"
+               class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "scanning"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
+               Scanning
+            </a>
+            <a href="/history/scans?status=completed"
+               class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "completed"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
+               Completed
+            </a>
+            <a href="/history/scans?status=failed"
+               class="px-3 py-2 text-sm font-medium transition-colors {{if eq $status "failed"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
+               Failed
+            </a>
+        </div>
         <span class="text-sm text-gray-500 dark:text-gray-400">{{.Content.TotalCount}} total</span>
     </div>
 
@@ -92,23 +108,35 @@
         </table>
     </div>
 
-    <!-- Pagination -->
     {{if gt .Content.TotalPages 1}}
-    <nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 rounded-lg shadow">
-        <div class="hidden sm:block">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
-                Page <span class="font-medium">{{.Content.Page}}</span> of <span class="font-medium">{{.Content.TotalPages}}</span>
-            </p>
+    <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-b-lg">
+        <div class="text-sm text-gray-700 dark:text-gray-300">
+            <span class="font-medium">{{.Content.TotalCount}}</span> scans
         </div>
-        <div class="flex flex-1 justify-between sm:justify-end gap-2">
-            {{if .Content.HasPrev}}
-            <a href="/history/scans?page={{.Content.PrevPage}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}" class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">Previous</a>
-            {{end}}
-            {{if .Content.HasNext}}
-            <a href="/history/scans?page={{.Content.NextPage}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}" class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">Next</a>
-            {{end}}
+        <div class="flex items-center gap-2">
+            <a href="/history/scans?page=1{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if eq .Content.Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                « First
+            </a>
+            <a href="/history/scans?page={{.Content.PrevPage}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if .Content.HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                ‹ Prev
+            </a>
+            <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Content.Page}} / {{.Content.TotalPages}}</span>
+            <a href="/history/scans?page={{.Content.NextPage}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if .Content.HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover-bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                Next ›
+            </a>
+            <a href="/history/scans?page={{.Content.TotalPages}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if eq .Content.Page .Content.TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                Last »
+            </a>
         </div>
-    </nav>
+    </div>
     {{end}}
 </div>
 {{end}}

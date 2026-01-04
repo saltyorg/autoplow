@@ -1374,6 +1374,21 @@
                 <p class="text-xs text-green-600 dark:text-green-400 mt-2">
                     Pass the API key via the <code class="bg-green-100 dark:bg-green-800 px-1 rounded">X-API-Key</code> header (recommended) or as a query parameter.
                 </p>
+                <div class="mt-3 space-y-2">
+                    <button type="button"
+                        onclick="showRegenKeyConfirm(${id})"
+                        class="text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
+                        Regenerate API Key
+                    </button>
+                    <div id="regen-key-confirm" class="hidden mt-2 p-3 rounded-md bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800">
+                        <p class="text-sm text-yellow-800 dark:text-yellow-200 mb-2">Regenerate the API key? The old key will stop working immediately.</p>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="confirmRegenKey()" class="btn-primary text-xs">Regenerate</button>
+                            <button type="button" onclick="hideRegenKeyConfirm()" class="btn-secondary text-xs">Cancel</button>
+                        </div>
+                        <div id="regen-key-status" class="hidden mt-2 text-sm"></div>
+                    </div>
+                </div>
             `;
         }
 
@@ -1382,6 +1397,56 @@
 
     function hideTriggerDetails() {
         document.getElementById('trigger-details-modal').classList.add('hidden');
+    }
+
+    let currentTriggerId = null;
+
+    function showRegenKeyConfirm(id) {
+        currentTriggerId = id;
+        const confirmBox = document.getElementById('regen-key-confirm');
+        const status = document.getElementById('regen-key-status');
+        if (confirmBox) {
+            confirmBox.classList.remove('hidden');
+        }
+        if (status) {
+            status.classList.add('hidden');
+            status.textContent = '';
+            status.className = 'hidden mt-2 text-sm';
+        }
+    }
+
+    function hideRegenKeyConfirm() {
+        const confirmBox = document.getElementById('regen-key-confirm');
+        if (confirmBox) {
+            confirmBox.classList.add('hidden');
+        }
+    }
+
+    async function confirmRegenKey() {
+        const status = document.getElementById('regen-key-status');
+        if (!currentTriggerId) {
+            return;
+        }
+        try {
+            const resp = await fetch('/triggers/' + currentTriggerId + '/regenerate-key', { method: 'POST' });
+            if (resp.ok) {
+                window.location.reload();
+                return;
+            }
+            if (status) {
+                status.classList.remove('hidden');
+                status.classList.remove('text-green-600', 'dark:text-green-400');
+                status.classList.add('text-red-600', 'dark:text-red-400');
+                status.textContent = 'Failed to regenerate API key';
+            }
+        } catch (e) {
+            if (status) {
+                status.classList.remove('hidden');
+                status.classList.remove('text-green-600', 'dark:text-green-400');
+                status.classList.add('text-red-600', 'dark:text-red-400');
+                status.textContent = 'Failed to regenerate API key';
+            }
+        }
     }
 
     function copyToClipboard(text) {

@@ -151,6 +151,26 @@ func decryptTriggerPasswordWithKey(key []byte, encrypted string) (string, error)
 	return string(plaintext), nil
 }
 
+func encryptTriggerPasswordWithKey(key []byte, password string) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, []byte(password), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
 // CreateUser creates a new user account
 func (s *AuthService) CreateUser(username, password string) (*User, error) {
 	hash, err := HashPassword(password)

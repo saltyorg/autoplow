@@ -25,6 +25,59 @@
         </div>
     </div>
 
+    <!-- Remote Filter -->
+    <div class="flex flex-wrap items-center gap-3">
+        <div id="remote-filter" class="relative">
+            {{ $remote := .Content.Remote }}
+            <button type="button" class="relative inline-flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 shadow-sm text-sm font-medium text-gray-900 dark:text-gray-100 w-full"
+                style="min-width: 12rem;">
+                <svg class="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18" />
+                </svg>
+                <span class="whitespace-nowrap truncate block flex-1 text-left">{{if eq $remote ""}}All remotes{{else}}{{$remote}}{{end}}</span>
+                <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 absolute right-2 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            <div data-remote-menu class="hidden absolute z-20 mt-1 min-w-full max-w-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
+                style="min-width: 12rem;">
+                <a href="/history/uploads" class="block px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 {{if eq $remote ""}}bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200 font-semibold{{end}}">
+                    <span class="truncate block">All remotes</span>
+                </a>
+                {{range .Content.Remotes}}
+                {{ $name := . }}
+                <a href="/history/uploads?remote={{$name}}" class="block px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 {{if eq $remote $name}}bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200 font-semibold{{end}}">
+                    <span class="truncate block" title="{{$name}}">{{$name}}</span>
+                </a>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        const filter = document.getElementById('remote-filter');
+        if (!filter) return;
+        const button = filter.querySelector('button');
+        const menu = filter.querySelector('[data-remote-menu]');
+
+        function closeMenu() {
+            menu.classList.add('hidden');
+        }
+
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            menu.classList.toggle('hidden');
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!filter.contains(e.target)) {
+                closeMenu();
+            }
+        });
+    })();
+    </script>
+
     <!-- Uploads Table -->
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -55,26 +108,39 @@
                 {{end}}
             </tbody>
         </table>
+        {{if gt .Content.TotalPages 1}}
+        <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="text-sm text-gray-700 dark:text-gray-300">
+                <span class="font-medium">{{.Content.TotalCount}}</span> uploads
+            </div>
+            <div class="flex items-center gap-2">
+                {{if gt .Content.TotalPages 1}}
+                <a href="/history/uploads?page=1{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if eq .Content.Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                    « First
+                </a>
+                <a href="/history/uploads?page={{.Content.PrevPage}}{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if .Content.HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                    ‹ Prev
+                </a>
+                <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Content.Page}} / {{.Content.TotalPages}}</span>
+                <a href="/history/uploads?page={{.Content.NextPage}}{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if .Content.HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                    Next ›
+                </a>
+                <a href="/history/uploads?page={{.Content.TotalPages}}{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if eq .Content.Page .Content.TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                    Last »
+                </a>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
     </div>
-
-    <!-- Pagination -->
-    {{if gt .Content.TotalPages 1}}
-    <nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 rounded-lg shadow">
-        <div class="hidden sm:block">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
-                Page <span class="font-medium">{{.Content.Page}}</span> of <span class="font-medium">{{.Content.TotalPages}}</span>
-            </p>
-        </div>
-        <div class="flex flex-1 justify-between sm:justify-end gap-2">
-            {{if .Content.HasPrev}}
-            <a href="/history/uploads?page={{.Content.PrevPage}}" class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">Previous</a>
-            {{end}}
-            {{if .Content.HasNext}}
-            <a href="/history/uploads?page={{.Content.NextPage}}" class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">Next</a>
-            {{end}}
-        </div>
-    </nav>
-    {{end}}
 </div>
 {{end}}
 

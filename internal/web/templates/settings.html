@@ -106,6 +106,21 @@
         </div>
     </div>
 
+    <!-- Security -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div>
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Trigger Key</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Regenerate the per-install encryption key for trigger basic-auth passwords and re-encrypt stored secrets.</p>
+            </div>
+            <form method="POST" action="/settings/regenerate-trigger-key" onsubmit="return confirm('Regenerate the trigger key and re-encrypt stored trigger passwords? This will invalidate backups without the new key.');">
+                <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-offset-gray-800">
+                    Regenerate Key
+                </button>
+            </form>
+        </div>
+    </div>
+
     <!-- Data Management -->
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">

@@ -17,35 +17,49 @@ func MigrateTriggerPasswords(db *database.DB) error {
 		return nil
 	}
 
+	_, _, err := migrateTriggerPasswordsWithFallback(db, triggerPasswordKey, legacyTriggerPasswordKey)
+	return err
+}
+
+// migrateTriggerPasswordsWithFallback re-encrypts using current key, decrypting with provided fallback keys.
+func migrateTriggerPasswordsWithFallback(db *database.DB, fallbackKeys ...[]byte) (int, int, error) {
 	rows, err := db.Query(`
 		SELECT id, password_hash FROM triggers
 		WHERE auth_type = ? AND password_hash IS NOT NULL AND password_hash != ''
 	`, database.AuthTypeBasic)
 	if err != nil {
-		return fmt.Errorf("failed to list triggers for password migration: %w", err)
+		return 0, 0, fmt.Errorf("failed to list triggers for password migration: %w", err)
 	}
 	defer rows.Close()
 
 	var migrated, failed int
+	currentKey := currentTriggerPasswordKey()
 
 	for rows.Next() {
 		var id int64
 		var encrypted sql.NullString
 		if err := rows.Scan(&id, &encrypted); err != nil {
-			return fmt.Errorf("failed to scan trigger: %w", err)
+			return migrated, failed, fmt.Errorf("failed to scan trigger: %w", err)
 		}
 		if !encrypted.Valid || encrypted.String == "" {
 			continue
 		}
 
-		plaintext, err := DecryptTriggerPassword(encrypted.String)
+		plaintext, err := decryptTriggerPasswordWithKey(currentKey, encrypted.String)
+		if err != nil {
+			for _, fk := range fallbackKeys {
+				if plaintext, err = decryptTriggerPasswordWithKey(fk, encrypted.String); err == nil {
+					break
+				}
+			}
+		}
 		if err != nil {
 			failed++
 			log.Warn().Int64("trigger_id", id).Err(err).Msg("Failed to decrypt trigger password during migration")
 			continue
 		}
 
-		newEncrypted, err := EncryptTriggerPassword(plaintext)
+		newEncrypted, err := encryptTriggerPasswordWithKey(currentKey, plaintext)
 		if err != nil {
 			failed++
 			log.Warn().Int64("trigger_id", id).Err(err).Msg("Failed to re-encrypt trigger password during migration")
@@ -64,15 +78,15 @@ func MigrateTriggerPasswords(db *database.DB) error {
 	}
 
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("error iterating triggers for migration: %w", err)
+		return migrated, failed, fmt.Errorf("error iterating triggers for migration: %w", err)
 	}
 
 	if migrated > 0 {
 		log.Info().Int("count", migrated).Msg("Migrated trigger passwords to per-install key")
 	}
 	if failed > 0 {
-		log.Warn().Int("failed", failed).Msg("Some trigger passwords could not be migrated; they remain on the legacy key")
+		log.Warn().Int("failed", failed).Msg("Some trigger passwords could not be migrated; they remain on the fallback key")
 	}
 
-	return nil
+	return migrated, failed, nil
 }

@@ -682,6 +682,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/", h.SettingsPage)
 			r.Post("/", h.SettingsUpdate)
 			r.Post("/clear-upload-history", h.ClearUploadHistory)
+			r.Post("/regenerate-trigger-key", h.RegenerateTriggerKey)
 			r.Get("/about", h.SettingsAboutPage)
 			r.Get("/processor", h.SettingsProcessorPage)
 			r.Post("/processor", h.SettingsProcessorUpdate)

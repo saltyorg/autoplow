@@ -7,6 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rs/zerolog/log"
+
+	"github.com/saltyorg/autoplow/internal/database"
 )
 
 // LoadOrCreateTriggerPasswordKey loads the trigger password key from a file next to the database,
@@ -42,6 +46,42 @@ func LoadOrCreateTriggerPasswordKey(dbPath string) error {
 
 	triggerPasswordKey = keyBytes
 	return nil
+}
+
+// RegenerateTriggerPasswordKey replaces the per-install key, writes it to disk, and
+// re-encrypts all trigger passwords using the new key. Returns migrated and failed counts.
+func RegenerateTriggerPasswordKey(db *database.DB) (int, int, error) {
+	dbPath := db.Path()
+	keyPath := dbPath + ".key"
+
+	oldKey := currentTriggerPasswordKey()
+	if len(oldKey) == 0 {
+		oldKey = legacyTriggerPasswordKey
+	}
+
+	newKey, err := generateRandomKey()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to generate new trigger key: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o700); err != nil {
+		return 0, 0, fmt.Errorf("failed to ensure key directory: %w", err)
+	}
+
+	if err := os.WriteFile(keyPath, []byte(base64.StdEncoding.EncodeToString(newKey)), 0o600); err != nil {
+		return 0, 0, fmt.Errorf("failed to write new trigger key file: %w", err)
+	}
+
+	// Set the new key for future operations
+	triggerPasswordKey = newKey
+
+	migrated, failed, err := migrateTriggerPasswordsWithFallback(db, oldKey, legacyTriggerPasswordKey)
+	if err != nil {
+		return migrated, failed, err
+	}
+
+	log.Info().Int("migrated", migrated).Int("failed", failed).Msg("Regenerated trigger key and re-encrypted trigger passwords")
+	return migrated, failed, nil
 }
 
 // parseKeyFile accepts a base64-encoded key or a raw 16/24/32-byte value.

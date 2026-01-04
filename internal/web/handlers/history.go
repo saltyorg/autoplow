@@ -151,10 +151,12 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 		page = p
 	}
 
+	remote := r.URL.Query().Get("remote")
+
 	limit := 50
 	offset := (page - 1) * limit
 
-	history, err := h.db.ListUploadHistory(limit, offset)
+	history, err := h.db.ListUploadHistoryFiltered(remote, limit, offset)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list upload history")
 		h.flashErr(w, "Failed to load upload history")
@@ -187,7 +189,7 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	totalCount, _ := h.db.CountUploadHistory()
+	totalCount, _ := h.db.CountUploadHistoryFiltered(remote)
 	totalPages := (totalCount + limit - 1) / limit
 	totalUploads, totalBytes, _ := h.db.GetUploadStats()
 
@@ -196,11 +198,16 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 	queuedCount, _ := h.db.CountUploads(database.UploadStatusQueued)
 	pendingCount, _ := h.db.CountUploads(database.UploadStatusPending)
 
+	// Get available remotes for filtering
+	remotes, _ := h.db.ListUploadRemotes()
+
 	h.render(w, r, "history_uploads.html", map[string]any{
 		"Uploads":      items,
 		"Page":         page,
 		"TotalPages":   totalPages,
 		"TotalCount":   totalCount,
+		"Remote":       remote,
+		"Remotes":      remotes,
 		"TotalUploads": totalUploads,
 		"TotalBytes":   totalBytes,
 		"ActiveCount":  activeCount,

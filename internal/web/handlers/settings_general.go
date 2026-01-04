@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/config"
 )
 
@@ -161,6 +164,24 @@ func (h *Handlers) ClearUploadHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.flash(w, "Cleared "+strconv.FormatInt(count, 10)+" upload history records")
+	h.redirect(w, r, "/settings")
+}
+
+// RegenerateTriggerKey regenerates the per-install trigger key and re-encrypts trigger passwords.
+func (h *Handlers) RegenerateTriggerKey(w http.ResponseWriter, r *http.Request) {
+	migrated, failed, err := auth.RegenerateTriggerPasswordKey(h.db)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to regenerate trigger key")
+		h.flashErr(w, "Failed to regenerate trigger key")
+		h.redirect(w, r, "/settings")
+		return
+	}
+
+	msg := fmt.Sprintf("Regenerated trigger key and re-encrypted %d trigger passwords", migrated)
+	if failed > 0 {
+		msg += " (some failed: " + strconv.Itoa(failed) + ")"
+	}
+	h.flash(w, msg)
 	h.redirect(w, r, "/settings")
 }
 

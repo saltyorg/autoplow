@@ -1240,12 +1240,18 @@ func (db *DB) CreateUploadHistory(history *UploadHistory) error {
 
 // ListUploadHistory retrieves upload history with pagination
 func (db *DB) ListUploadHistory(limit, offset int) ([]*UploadHistory, error) {
+	return db.ListUploadHistoryFiltered("", limit, offset)
+}
+
+// ListUploadHistoryFiltered lists uploads with optional remote filter.
+func (db *DB) ListUploadHistoryFiltered(remote string, limit, offset int) ([]*UploadHistory, error) {
 	rows, err := db.Query(`
 		SELECT id, upload_id, local_path, remote_name, remote_path, size_bytes, completed_at
 		FROM upload_history
+		WHERE (? = '' OR remote_name = ?)
 		ORDER BY completed_at DESC
 		LIMIT ? OFFSET ?
-	`, limit, offset)
+	`, remote, remote, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list upload history: %w", err)
 	}
@@ -1283,8 +1289,13 @@ func (db *DB) GetUploadStats() (totalUploads int, totalBytes int64, err error) {
 
 // CountUploadHistory returns the total number of upload history records
 func (db *DB) CountUploadHistory() (int, error) {
+	return db.CountUploadHistoryFiltered("")
+}
+
+// CountUploadHistoryFiltered returns the number of upload history records filtered by remote name (optional)
+func (db *DB) CountUploadHistoryFiltered(remote string) (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM upload_history").Scan(&count)
+	err := db.QueryRow("SELECT COUNT(*) FROM upload_history WHERE (? = '' OR remote_name = ?)", remote, remote).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count upload history: %w", err)
 	}
