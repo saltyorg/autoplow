@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -16,10 +17,10 @@ import (
 	"github.com/saltyorg/autoplow/internal/database"
 )
 
-// triggerPasswordKey is a fixed key for encrypting trigger passwords.
-// This is not meant to be highly secure - it's just to avoid storing
-// webhook passwords in plain text. The main user password uses bcrypt.
-var triggerPasswordKey = []byte("autoplow-trigger-password-key32!")
+// triggerPasswordKey is loaded at startup from a per-install key file.
+// legacyTriggerPasswordKey preserves compatibility with previously encrypted values.
+var triggerPasswordKey []byte
+var legacyTriggerPasswordKey = []byte("autoplow-trigger-password-key32!")
 
 const (
 	// SessionDuration is how long sessions last
@@ -70,10 +71,19 @@ func CheckPassword(password, hash string) bool {
 	return err == nil
 }
 
+func currentTriggerPasswordKey() []byte {
+	if len(triggerPasswordKey) > 0 {
+		return triggerPasswordKey
+	}
+	return legacyTriggerPasswordKey
+}
+
 // EncryptTriggerPassword encrypts a trigger password using AES-GCM.
 // This is reversible encryption for webhook auth passwords (not user login passwords).
 func EncryptTriggerPassword(password string) (string, error) {
-	block, err := aes.NewCipher(triggerPasswordKey)
+	key := currentTriggerPasswordKey()
+
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -94,12 +104,30 @@ func EncryptTriggerPassword(password string) (string, error) {
 
 // DecryptTriggerPassword decrypts a trigger password encrypted with EncryptTriggerPassword.
 func DecryptTriggerPassword(encrypted string) (string, error) {
+	key := currentTriggerPasswordKey()
+
+	plaintext, err := decryptTriggerPasswordWithKey(key, encrypted)
+	if err == nil {
+		return plaintext, nil
+	}
+
+	// Fallback to legacy key for already-stored passwords if a new key is configured
+	if !bytes.Equal(key, legacyTriggerPasswordKey) {
+		if legacyPlaintext, legacyErr := decryptTriggerPasswordWithKey(legacyTriggerPasswordKey, encrypted); legacyErr == nil {
+			return legacyPlaintext, nil
+		}
+	}
+
+	return "", err
+}
+
+func decryptTriggerPasswordWithKey(key []byte, encrypted string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode: %w", err)
 	}
 
-	block, err := aes.NewCipher(triggerPasswordKey)
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cipher: %w", err)
 	}

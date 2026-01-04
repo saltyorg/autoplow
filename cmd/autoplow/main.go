@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/inotify"
@@ -149,9 +150,19 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	// Load or create the per-install trigger encryption key
+	if err := auth.LoadOrCreateTriggerPasswordKey(dbPath); err != nil {
+		log.Fatal().Err(err).Msg("Failed to load trigger encryption key")
+	}
+
 	// Run migrations
 	if err := db.Migrate(); err != nil {
 		log.Fatal().Err(err).Msg("Failed to run database migrations")
+	}
+
+	// Migrate trigger passwords from legacy key to per-install key
+	if err := auth.MigrateTriggerPasswords(db); err != nil {
+		log.Fatal().Err(err).Msg("Failed to migrate trigger passwords")
 	}
 
 	// Apply log level from database settings
