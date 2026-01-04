@@ -6,6 +6,7 @@
 *.db
 *.db-shm
 *.db-wal
+*.db.key
 
 # Documentation (development-only, except README)
 *.md
