@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/inotify"
+	"github.com/saltyorg/autoplow/internal/logging"
 	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
 	"github.com/saltyorg/autoplow/internal/plexautolang"
@@ -168,16 +168,9 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Apply log level from database settings
-	if level, err := db.GetSetting("log.level"); err == nil && level != "" {
-		switch level {
-		case "trace":
-			zerolog.SetGlobalLevel(zerolog.TraceLevel)
-		case "debug":
-			zerolog.SetGlobalLevel(zerolog.DebugLevel)
-		default:
-			zerolog.SetGlobalLevel(zerolog.InfoLevel)
-		}
-	}
+	settingsLoader := config.NewLoader(db)
+	logLevel := settingsLoader.String("log.level", "info")
+	logging.Apply(logLevel, settingsLoader, logging.FilePathForDB(db.Path()))
 
 	// Create web server with bind address and allowed subnet
 	server := web.NewServer(db, port, bind, allowedNet, devMode)
@@ -384,11 +377,6 @@ func (g *plexAutoLangTargetGetter) GetPlexTarget(targetID int64) (plexautolang.P
 }
 
 func setupLogging() {
-	// Pretty console output
-	output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "2006-01-02 15:04:05"}
-
-	// Default to info level, will be overridden by database setting after migrations
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
-
-	log.Logger = zerolog.New(output).With().Timestamp().Logger()
+	// Default to info level with console + rotating file outputs (using defaults until settings are loaded)
+	logging.Apply("info", nil, logging.FilePathForDB(dbPath))
 }

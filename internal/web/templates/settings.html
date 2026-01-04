@@ -55,7 +55,37 @@
                     </div>
                 </div>
 
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Log Size (MB)</label>
+                        <input type="text" inputmode="numeric" name="log_max_size_mb" value="{{.Content.Settings.LogMaxSizeMB}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Rotate the log file when it exceeds this size</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Rotated Files</label>
+                        <input type="text" inputmode="numeric" name="log_max_backups" value="{{.Content.Settings.LogMaxBackups}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How many rotated log files to keep (0 = keep all)</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Log Age (days)</label>
+                        <input type="text" inputmode="numeric" name="log_max_age_days" value="{{.Content.Settings.LogMaxAgeDays}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delete rotated logs older than this (0 = keep forever)</p>
+                    </div>
+                </div>
+
                 <div class="space-y-4">
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input type="checkbox" name="log_compress" id="log_compress" {{if .Content.Settings.LogCompress}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        </div>
+                        <div class="ml-2">
+                            <label for="log_compress" class="block text-sm text-gray-900 dark:text-white">Compress rotated logs</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Gzip rotated log files to save disk space</p>
+                        </div>
+                    </div>
+
                     <div class="flex items-start">
                         <div class="flex items-center h-5">
                             <input type="checkbox" name="scanning_enabled" id="scanning_enabled" {{if .Content.Settings.ScanningEnabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">

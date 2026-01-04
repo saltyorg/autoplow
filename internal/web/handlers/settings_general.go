@@ -5,16 +5,20 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/config"
+	"github.com/saltyorg/autoplow/internal/logging"
 )
 
 // GeneralSettings holds the general configuration for display
 type GeneralSettings struct {
 	LogLevel          string
+	LogMaxSizeMB      int
+	LogMaxBackups     int
+	LogMaxAgeDays     int
+	LogCompress       bool
 	MaxRetries        int
 	CleanupDays       int
 	ScanningEnabled   bool
@@ -29,6 +33,10 @@ func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
 
 	settings := GeneralSettings{
 		LogLevel:          loader.String("log.level", "info"),
+		LogMaxSizeMB:      loader.Int("log.max_size_mb", logging.DefaultMaxSizeMB),
+		LogMaxBackups:     loader.Int("log.max_backups", logging.DefaultMaxBackups),
+		LogMaxAgeDays:     loader.Int("log.max_age_days", logging.DefaultMaxAgeDays),
+		LogCompress:       loader.Bool("log.compress", logging.DefaultCompress),
 		MaxRetries:        loader.Int("processor.max_retries", 3),
 		CleanupDays:       loader.Int("processor.cleanup_days", 7),
 		ScanningEnabled:   loader.BoolDefaultTrue("scanning.enabled"),
@@ -63,6 +71,10 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	uploadsEnabled := r.FormValue("uploads_enabled") == "on"
 	useBinaryUnits := r.FormValue("use_binary_units") == "on"
 	useBitsForBitrate := r.FormValue("use_bits_for_bitrate") == "on"
+	logMaxSizeMB, _ := strconv.Atoi(r.FormValue("log_max_size_mb"))
+	logMaxBackups, _ := strconv.Atoi(r.FormValue("log_max_backups"))
+	logMaxAgeDays, _ := strconv.Atoi(r.FormValue("log_max_age_days"))
+	logCompress := r.FormValue("log_compress") == "on"
 
 	// Validate log level
 	switch logLevel {
@@ -86,10 +98,31 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	if cleanupDays < 0 {
 		cleanupDays = 0 // 0 = disabled
 	}
+	if logMaxSizeMB < 1 {
+		logMaxSizeMB = logging.DefaultMaxSizeMB
+	}
+	if logMaxBackups < 0 {
+		logMaxBackups = logging.DefaultMaxBackups
+	}
+	if logMaxAgeDays < 0 {
+		logMaxAgeDays = logging.DefaultMaxAgeDays
+	}
 
 	// Save to database
 	var saveErr error
 	if err := h.db.SetSetting("log.level", logLevel); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("log.max_size_mb", strconv.Itoa(logMaxSizeMB)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("log.max_backups", strconv.Itoa(logMaxBackups)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("log.max_age_days", strconv.Itoa(logMaxAgeDays)); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("log.compress", strconv.FormatBool(logCompress)); err != nil {
 		saveErr = err
 	}
 	if err := h.db.SetSetting("processor.max_retries", strconv.Itoa(maxRetries)); err != nil {
@@ -117,15 +150,8 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply log level change immediately
-	switch logLevel {
-	case "trace":
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	case "debug":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	default:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	}
+	// Apply logging changes immediately (level + rotation settings)
+	logging.Apply(logLevel, loader, logging.FilePathForDB(h.db.Path()))
 
 	// Handle upload subsystem toggle
 	if h.uploadSubsystemToggler != nil {

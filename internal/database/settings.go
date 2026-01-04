@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/saltyorg/autoplow/internal/logging"
 )
 
 // GetSetting retrieves a setting value by key
@@ -99,6 +101,10 @@ func (db *DB) DeleteSetting(key string) error {
 // Default settings
 var DefaultSettings = map[string]any{
 	"log.level":                              "info",
+	"log.max_size_mb":                        logging.DefaultMaxSizeMB,
+	"log.max_backups":                        logging.DefaultMaxBackups,
+	"log.max_age_days":                       logging.DefaultMaxAgeDays,
+	"log.compress":                           logging.DefaultCompress,
 	"processor.minimum_age_seconds":          600,
 	"processor.anchor.enabled":               true,
 	"processor.batch_interval_seconds":       60,
