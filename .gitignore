@@ -24,6 +24,7 @@
 *~
 /test-data/
 .cache
+.gocache
 
 # Test coverage
 coverage.out
