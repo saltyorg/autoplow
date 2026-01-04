@@ -16,6 +16,34 @@ import (
 	"github.com/saltyorg/autoplow/internal/processor"
 )
 
+// getBaseURL builds the external base URL, honoring proxy headers for TLS/host when behind a reverse proxy.
+func getBaseURL(r *http.Request) string {
+	scheme := "http"
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		// Use the first value if multiple are provided
+		if idx := strings.Index(proto, ","); idx != -1 {
+			proto = proto[:idx]
+		}
+		if p := strings.TrimSpace(proto); p != "" {
+			scheme = p
+		}
+	} else if r.TLS != nil {
+		scheme = "https"
+	}
+
+	host := r.Host
+	if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+		if idx := strings.Index(forwardedHost, ","); idx != -1 {
+			forwardedHost = forwardedHost[:idx]
+		}
+		if h := strings.TrimSpace(forwardedHost); h != "" {
+			host = h
+		}
+	}
+
+	return scheme + "://" + host
+}
+
 // TriggersPage renders the triggers list page
 func (h *Handlers) TriggersPage(w http.ResponseWriter, r *http.Request) {
 	triggers, err := h.db.ListTriggers()
@@ -39,12 +67,7 @@ func (h *Handlers) TriggersPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get base URL for webhook URLs
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := scheme + "://" + r.Host
+	baseURL := getBaseURL(r)
 
 	h.render(w, r, "triggers.html", map[string]any{
 		"Triggers":  triggers,
@@ -55,11 +78,7 @@ func (h *Handlers) TriggersPage(w http.ResponseWriter, r *http.Request) {
 
 // TriggerNew renders the new trigger form
 func (h *Handlers) TriggerNew(w http.ResponseWriter, r *http.Request) {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := scheme + "://" + r.Host
+	baseURL := getBaseURL(r)
 
 	h.render(w, r, "triggers.html", map[string]any{
 		"IsNew":   true,
@@ -311,11 +330,7 @@ func (h *Handlers) TriggerEdit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := scheme + "://" + r.Host
+	baseURL := getBaseURL(r)
 
 	h.render(w, r, "triggers.html", map[string]any{
 		"Trigger":           trigger,
