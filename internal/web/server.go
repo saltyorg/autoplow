@@ -46,6 +46,7 @@ type Server struct {
 	port            int
 	bind            string
 	allowedNet      *net.IPNet
+	isDev           bool
 	router          *chi.Mux
 	templates       map[string]*template.Template
 	authService     *auth.AuthService
@@ -65,13 +66,14 @@ type Server struct {
 }
 
 // NewServer creates a new web server
-func NewServer(db *database.DB, port int, bind string, allowedNet *net.IPNet) *Server {
+func NewServer(db *database.DB, port int, bind string, allowedNet *net.IPNet, isDev bool) *Server {
 	targetsMgr := targets.NewManager(db)
 	s := &Server{
 		db:            db,
 		port:          port,
 		bind:          bind,
 		allowedNet:    allowedNet,
+		isDev:         isDev,
 		router:        chi.NewRouter(),
 		authService:   auth.NewAuthService(db),
 		apiKeyService: auth.NewAPIKeyService(db),
@@ -535,7 +537,7 @@ func (s *Server) setupRoutes() {
 	r.Handle("/static/*", middleware.StaticCache(staticHandler))
 
 	// Create handlers
-	h := handlers.New(s.db, s.templates, s.authService, s.apiKeyService, s.processor)
+	h := handlers.New(s.db, s.templates, s.authService, s.apiKeyService, s.processor, s.isDev)
 	s.handlers = h
 
 	// Set the server as the upload subsystem toggler

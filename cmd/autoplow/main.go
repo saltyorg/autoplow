@@ -135,6 +135,8 @@ func run(cmd *cobra.Command, args []string) error {
 		log.Warn().Msg("Server is accessible from all interfaces without subnet restrictions. Consider using --bind or --allow-subnet for security.")
 	}
 
+	devMode := version == "0.0.0-dev"
+
 	log.Info().
 		Str("version", version).
 		Int("port", port).
@@ -178,7 +180,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create web server with bind address and allowed subnet
-	server := web.NewServer(db, port, bind, allowedNet)
+	server := web.NewServer(db, port, bind, allowedNet, devMode)
 
 	// Initialize rclone manager with config from database
 	// This also ensures credentials exist (generates random ones if not set)

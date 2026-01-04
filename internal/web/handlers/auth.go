@@ -70,14 +70,15 @@ func (h *Handlers) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set session cookie
-	http.SetCookie(w, &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     "session",
 		Value:    session.ID,
 		Path:     "/",
 		Expires:  session.ExpiresAt,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	}
+	h.applyCookieSecurity(cookie)
+	http.SetCookie(w, cookie)
 
 	log.Info().Str("username", username).Msg("User logged in")
 	h.redirect(w, r, "/")
@@ -91,13 +92,15 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     "session",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-	})
+	}
+	h.applyCookieSecurity(cookie)
+	http.SetCookie(w, cookie)
 
 	h.redirect(w, r, "/login")
 }
@@ -196,14 +199,15 @@ func (h *Handlers) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     "session",
 		Value:    session.ID,
 		Path:     "/",
 		Expires:  time.Now().Add(auth.SessionDuration),
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	}
+	h.applyCookieSecurity(cookie)
+	http.SetCookie(w, cookie)
 
 	log.Info().Str("username", username).Msg("Setup completed, user created")
 	h.flash(w, "Welcome to Autoplow! Setup complete.")

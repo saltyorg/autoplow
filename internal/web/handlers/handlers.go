@@ -61,10 +61,11 @@ type Handlers struct {
 	uploadSubsystemToggler UploadSubsystemToggler
 	versionInfo            VersionInfo
 	versionMu              sync.RWMutex
+	isDev                  bool
 }
 
 // New creates a new Handlers instance
-func New(db *database.DB, templates map[string]*template.Template, authService *auth.AuthService, apiKeyService *auth.APIKeyService, proc *processor.Processor) *Handlers {
+func New(db *database.DB, templates map[string]*template.Template, authService *auth.AuthService, apiKeyService *auth.APIKeyService, proc *processor.Processor, isDev bool) *Handlers {
 	return &Handlers{
 		db:                 db,
 		templates:          templates,
@@ -72,6 +73,7 @@ func New(db *database.DB, templates map[string]*template.Template, authService *
 		apiKeyService:      apiKeyService,
 		triggerAuthService: auth.NewTriggerAuthService(db),
 		processor:          proc,
+		isDev:              isDev,
 	}
 }
 
@@ -291,11 +293,15 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, name string, d
 	// Check for flash messages in cookies
 	if cookie, err := r.Cookie("flash"); err == nil {
 		pageData.Flash = cookie.Value
-		http.SetCookie(w, &http.Cookie{Name: "flash", MaxAge: -1, Path: "/"})
+		clear := &http.Cookie{Name: "flash", MaxAge: -1, Path: "/"}
+		h.applyCookieSecurity(clear)
+		http.SetCookie(w, clear)
 	}
 	if cookie, err := r.Cookie("flash_err"); err == nil {
 		pageData.FlashErr = cookie.Value
-		http.SetCookie(w, &http.Cookie{Name: "flash_err", MaxAge: -1, Path: "/"})
+		clear := &http.Cookie{Name: "flash_err", MaxAge: -1, Path: "/"}
+		h.applyCookieSecurity(clear)
+		http.SetCookie(w, clear)
 	}
 
 	tmpl, ok := h.templates[name]
@@ -331,24 +337,28 @@ func (h *Handlers) renderPartial(w http.ResponseWriter, pageTemplate string, par
 
 // flash sets a flash message
 func (h *Handlers) flash(w http.ResponseWriter, message string) {
-	http.SetCookie(w, &http.Cookie{
+	c := &http.Cookie{
 		Name:     "flash",
 		Value:    message,
 		Path:     "/",
 		MaxAge:   60,
 		HttpOnly: true,
-	})
+	}
+	h.applyCookieSecurity(c)
+	http.SetCookie(w, c)
 }
 
 // flashErr sets an error flash message
 func (h *Handlers) flashErr(w http.ResponseWriter, message string) {
-	http.SetCookie(w, &http.Cookie{
+	c := &http.Cookie{
 		Name:     "flash_err",
 		Value:    message,
 		Path:     "/",
 		MaxAge:   60,
 		HttpOnly: true,
-	})
+	}
+	h.applyCookieSecurity(c)
+	http.SetCookie(w, c)
 }
 
 // redirect redirects to a URL
@@ -361,6 +371,20 @@ func (h *Handlers) jsonError(w http.ResponseWriter, message string, status int) 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(`{"error":"` + message + `"}`))
+}
+
+// applyCookieSecurity sets Secure/SameSite defaults based on environment.
+func (h *Handlers) applyCookieSecurity(c *http.Cookie) {
+	if h.isDev {
+		if c.SameSite == 0 {
+			c.SameSite = http.SameSiteLaxMode
+		}
+		return
+	}
+	c.Secure = true
+	if c.SameSite == 0 {
+		c.SameSite = http.SameSiteStrictMode
+	}
 }
 
 // jsonSuccess sends a JSON success response
