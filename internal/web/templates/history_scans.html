@@ -27,7 +27,6 @@
 
     <!-- Filter -->
     <div class="flex flex-wrap items-center gap-3">
-        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Filter by status:</span>
         <div class="inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
             {{ $status := .Content.Status }}
             <a href="/history/scans"
@@ -51,7 +50,6 @@
                Failed
             </a>
         </div>
-        <span class="text-sm text-gray-500 dark:text-gray-400">{{.Content.TotalCount}} total</span>
     </div>
 
     <!-- Scans Table -->
