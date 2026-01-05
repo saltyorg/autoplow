@@ -542,6 +542,32 @@ func (h *Handlers) MatcharrQuickActionsPartial(w http.ResponseWriter, r *http.Re
 	})
 }
 
+// MatcharrTabCounts returns OOB updates for tab badge counts so they stay fresh regardless of which tab is open
+func (h *Handlers) MatcharrTabCounts(w http.ResponseWriter, r *http.Request) {
+	arrs, _ := h.db.ListMatcharrArrs()
+	matcharrTargets, _ := h.db.ListMatcharrEnabledTargets()
+
+	var arrGapsCount, targetGapsCount, pendingMismatchesCount int
+	if latestRun, _ := h.db.GetLatestMatcharrRun(); latestRun != nil {
+		if gaps, _ := h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceArr); gaps != nil {
+			arrGapsCount = len(gaps)
+		}
+		if gaps, _ := h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceTarget); gaps != nil {
+			targetGapsCount = len(gaps)
+		}
+		if mismatches, _ := h.db.GetActionableMatcharrMismatches(latestRun.ID); mismatches != nil {
+			pendingMismatchesCount = len(mismatches)
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<span id="arrs-count" hx-swap-oob="true">%d</span>`, len(arrs))
+	fmt.Fprintf(w, `<span id="matcharr-targets-count" hx-swap-oob="true">%d</span>`, len(matcharrTargets))
+	fmt.Fprintf(w, `<span id="arr-gaps-count" hx-swap-oob="true">%d</span>`, arrGapsCount)
+	fmt.Fprintf(w, `<span id="target-gaps-count" hx-swap-oob="true">%d</span>`, targetGapsCount)
+	fmt.Fprintf(w, `<span id="mismatches-count" hx-swap-oob="true">%d</span>`, pendingMismatchesCount)
+}
+
 // MatcharrToggleTarget toggles matcharr enabled state for a target
 func (h *Handlers) MatcharrToggleTarget(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)

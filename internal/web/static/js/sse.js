@@ -30,10 +30,10 @@
         'throttle_changed': ['#throttle-status-section'],
 
         // Matcharr events trigger matcharr page refreshes
-        'matcharr_run_started': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions'],
-        'matcharr_run_completed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-mismatches', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions'],
-        'matcharr_run_failed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions'],
-        'matcharr_mismatch_updated': ['#matcharr-mismatches', '#matcharr-status', '#quick-actions'],
+        'matcharr_run_started': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions', '#matcharr-tab-counts'],
+        'matcharr_run_completed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-mismatches', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions', '#matcharr-tab-counts'],
+        'matcharr_run_failed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions', '#matcharr-tab-counts'],
+        'matcharr_mismatch_updated': ['#matcharr-mismatches', '#matcharr-status', '#quick-actions', '#matcharr-tab-counts'],
 
         // Plex Auto Languages events
         'plex_auto_languages_track_changed': ['#pal-recent-activity', '#pal-history', '#pal-preferences', '#pal-status']

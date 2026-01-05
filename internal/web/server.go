@@ -769,6 +769,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/status", h.MatcharrStatusPartial)
 			r.Get("/last-run", h.MatcharrLastRunPartial)
 			r.Get("/quick-actions", h.MatcharrQuickActionsPartial)
+			r.Get("/tab-counts", h.MatcharrTabCounts)
 			r.Post("/targets/{id}/toggle", h.MatcharrToggleTarget)
 			r.Post("/history/clear", h.MatcharrClearHistory)
 		})

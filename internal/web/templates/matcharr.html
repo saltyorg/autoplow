@@ -14,10 +14,10 @@
                 Overview
             </a>
             <a href="/matcharr?tab=arrs" class="{{if eq .Content.Tab "arrs"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
-                Arr Instances ({{len .Content.Arrs}})
+                Arr Instances (<span id="arrs-count">{{len .Content.Arrs}}</span>)
             </a>
             <a href="/matcharr?tab=servers" class="{{if eq .Content.Tab "servers"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
-                Media Servers ({{.Content.MatcharrTargets}})
+                Media Servers (<span id="matcharr-targets-count">{{.Content.MatcharrTargets}}</span>)
             </a>
             <a href="/matcharr?tab=arr-gaps" class="{{if eq .Content.Tab "arr-gaps"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 Missing on Server (<span id="arr-gaps-count">{{len .Content.ArrGaps}}</span>)
@@ -36,6 +36,7 @@
             </a>
         </nav>
     </div>
+    <div id="matcharr-tab-counts" hx-get="/matcharr/tab-counts" hx-trigger="load, sse-refresh" hx-swap="none" class="hidden"></div>
 
     {{if eq .Content.Tab "overview"}}
     <!-- Overview Tab -->
