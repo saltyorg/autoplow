@@ -31,7 +31,7 @@ func (h *Handlers) PlexAutoLangPage(w http.ResponseWriter, r *http.Request) {
 
 	// Get history entries with pagination
 	pageSize := 20
-	history, historyTotal, _ := h.db.ListAllPlexAutoLanguagesHistoryFiltered("", pageSize, 0)
+	history, historyTotal, _ := h.db.ListAllPlexAutoLanguagesHistoryFiltered(0, "", pageSize, 0)
 	historyUsers, _ := h.db.GetDistinctPlexUsersFromHistory()
 	historyTotalPages := max((historyTotal+pageSize-1)/pageSize, 1)
 
@@ -187,6 +187,13 @@ func (h *Handlers) PlexAutoLangPreferencesPartial(w http.ResponseWriter, r *http
 	page := 1
 	pageSize := 20
 	userFilter := r.URL.Query().Get("user")
+	targetFilterStr := r.URL.Query().Get("target")
+	var targetFilter int64
+	if targetFilterStr != "" {
+		if parsed, err := strconv.ParseInt(targetFilterStr, 10, 64); err == nil && parsed >= 0 {
+			targetFilter = parsed
+		}
+	}
 
 	if p := r.URL.Query().Get("page"); p != "" {
 		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
@@ -200,20 +207,31 @@ func (h *Handlers) PlexAutoLangPreferencesPartial(w http.ResponseWriter, r *http
 	}
 
 	offset := (page - 1) * pageSize
-	prefs, total, _ := h.db.ListPlexAutoLanguagesPreferencesFiltered(id, userFilter, pageSize, offset)
-	users, _ := h.db.GetDistinctPlexUsersFromPreferences(id)
+	targets, _ := h.db.ListPlexAutoLanguagesEnabledTargets()
+
+	targetIDForQuery := id
+	if targetFilter > 0 {
+		targetIDForQuery = targetFilter
+	} else if targetFilter == 0 {
+		targetIDForQuery = 0
+	}
+
+	prefs, total, _ := h.db.ListPlexAutoLanguagesPreferencesFiltered(targetIDForQuery, userFilter, pageSize, offset)
+	users, _ := h.db.GetDistinctPlexUsersFromPreferences(targetIDForQuery)
 
 	totalPages := max((total+pageSize-1)/pageSize, 1)
 
 	h.renderPartial(w, "plexautolang.html", "preferences_section", map[string]any{
-		"Preferences": prefs,
-		"TargetID":    id,
-		"Page":        page,
-		"PageSize":    pageSize,
-		"TotalPages":  totalPages,
-		"Total":       total,
-		"UserFilter":  userFilter,
-		"Users":       users,
+		"Preferences":  prefs,
+		"TargetID":     id,
+		"TargetFilter": targetFilter,
+		"Targets":      targets,
+		"Page":         page,
+		"PageSize":     pageSize,
+		"TotalPages":   totalPages,
+		"Total":        total,
+		"UserFilter":   userFilter,
+		"Users":        users,
 	})
 }
 
@@ -266,6 +284,13 @@ func (h *Handlers) PlexAutoLangHistoryPartial(w http.ResponseWriter, r *http.Req
 	page := 1
 	pageSize := 20
 	userFilter := r.URL.Query().Get("user")
+	targetFilterStr := r.URL.Query().Get("target")
+	var targetFilter int64
+	if targetFilterStr != "" {
+		if parsed, err := strconv.ParseInt(targetFilterStr, 10, 64); err == nil && parsed >= 0 {
+			targetFilter = parsed
+		}
+	}
 
 	if p := r.URL.Query().Get("page"); p != "" {
 		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
@@ -279,19 +304,22 @@ func (h *Handlers) PlexAutoLangHistoryPartial(w http.ResponseWriter, r *http.Req
 	}
 
 	offset := (page - 1) * pageSize
-	history, total, _ := h.db.ListAllPlexAutoLanguagesHistoryFiltered(userFilter, pageSize, offset)
+	history, total, _ := h.db.ListAllPlexAutoLanguagesHistoryFiltered(targetFilter, userFilter, pageSize, offset)
 	users, _ := h.db.GetDistinctPlexUsersFromHistory()
+	targets, _ := h.db.ListPlexAutoLanguagesEnabledTargets()
 
 	totalPages := max((total+pageSize-1)/pageSize, 1)
 
 	h.renderPartial(w, "plexautolang.html", "history_section", map[string]any{
-		"History":    history,
-		"Page":       page,
-		"PageSize":   pageSize,
-		"TotalPages": totalPages,
-		"Total":      total,
-		"UserFilter": userFilter,
-		"Users":      users,
+		"History":      history,
+		"Page":         page,
+		"PageSize":     pageSize,
+		"TotalPages":   totalPages,
+		"Total":        total,
+		"UserFilter":   userFilter,
+		"TargetFilter": targetFilter,
+		"Targets":      targets,
+		"Users":        users,
 	})
 }
 
