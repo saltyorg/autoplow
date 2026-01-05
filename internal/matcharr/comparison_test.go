@@ -25,8 +25,8 @@ func TestCompareArrToTarget_RequiresExactFolderMatch(t *testing.T) {
 	targetItems := []MediaServerItem{{
 		Title: "Avatar",
 		Path:  "/mnt/media/Movies/Avatar/Avatar.mkv",
-		ProviderIDs: map[string]string{
-			"tmdb": "2",
+		ProviderIDs: map[string][]string{
+			"tmdb": {"2"},
 		},
 	}}
 
@@ -89,8 +89,8 @@ func TestCompareArrToTarget_MatchesMappedFolderExactly(t *testing.T) {
 	targetItems := []MediaServerItem{{
 		Title: "Avatar",
 		Path:  "/srv/movies/Avatar/Avatar.mkv",
-		ProviderIDs: map[string]string{
-			"tmdb": "999", // intentionally different to surface mismatch
+		ProviderIDs: map[string][]string{
+			"tmdb": {"999"}, // intentionally different to surface mismatch
 		},
 	}}
 
@@ -125,8 +125,8 @@ func TestCompareArrToTarget_AllowsDotsInDirectoryName(t *testing.T) {
 	targetItems := []MediaServerItem{{
 		Title: "Taylor Swift vs. Scooter Braun: Bad Blood",
 		Path:  "/mnt/media/TV/Taylor Swift vs. Scooter Braun - Bad Blood (2024) (tvdb-451309)",
-		ProviderIDs: map[string]string{
-			"tvdb": "451309",
+		ProviderIDs: map[string][]string{
+			"tvdb": {"451309"},
 		},
 	}}
 
@@ -163,8 +163,8 @@ func TestCompareArrToTarget_FallsBackToIMDBWhenTMDBMissing(t *testing.T) {
 	targetItems := []MediaServerItem{{
 		Title: "Die Hart: Die Harter",
 		Path:  "/mnt/media/Movies/Die Hart 2 Die Harter/Die Hart 2 Die Harter.mkv",
-		ProviderIDs: map[string]string{
-			"imdb": "tt32094375",
+		ProviderIDs: map[string][]string{
+			"imdb": {"tt32094375"},
 		},
 	}}
 
@@ -198,9 +198,9 @@ func TestCompareArrToTarget_DoesNotFallbackWhenIMDBMissing(t *testing.T) {
 	targetItems := []MediaServerItem{{
 		Title: "Another Movie",
 		Path:  "/mnt/media/Movies/Another Movie/Another Movie.mkv",
-		ProviderIDs: map[string]string{
+		ProviderIDs: map[string][]string{
 			// TMDB missing, IMDB present on server only
-			"imdb": "tt0123456",
+			"imdb": {"tt0123456"},
 		},
 	}}
 
@@ -238,9 +238,9 @@ func TestCompareArrToTarget_SonarrFallsBackToTMDB(t *testing.T) {
 	targetItems := []MediaServerItem{{
 		Title: "Show With TMDB",
 		Path:  "/mnt/media/TV/Show With TMDB/Show With TMDB.mkv",
-		ProviderIDs: map[string]string{
+		ProviderIDs: map[string][]string{
 			// TVDB missing/mismatched, tmdb present and should be used as fallback
-			"tmdb": "888",
+			"tmdb": {"888"},
 		},
 	}}
 
@@ -251,6 +251,79 @@ func TestCompareArrToTarget_SonarrFallsBackToTMDB(t *testing.T) {
 	}
 	if len(result.Mismatches) != 0 {
 		t.Fatalf("expected no mismatches when tmdb fallback matches, got %d", len(result.Mismatches))
+	}
+}
+
+func TestCompareArrToTarget_MatchesWhenIDInMultipleValues(t *testing.T) {
+	arr := &database.MatcharrArr{
+		ID:   7,
+		Name: "Radarr",
+		Type: database.ArrTypeRadarr,
+	}
+	arrMedia := []ArrMedia{{
+		Title:   "Multi-ID Movie",
+		Path:    "/mnt/media/Movies/Multi-ID Movie",
+		TMDBID:  1318297,
+		IMDBID:  "tt16478030",
+		HasFile: true,
+	}}
+	target := &database.Target{
+		ID:   70,
+		Name: "Plex",
+	}
+	targetItems := []MediaServerItem{{
+		Title: "Multi-ID Movie",
+		Path:  "/mnt/media/Movies/Multi-ID Movie/Multi-ID Movie.mkv",
+		ProviderIDs: map[string][]string{
+			"tmdb": {"999", "1318297"},
+			"imdb": {"tt16478030"},
+		},
+	}}
+
+	result := CompareArrToTarget(context.Background(), arr, arrMedia, target, targetItems)
+
+	if result.Compared != 1 {
+		t.Fatalf("expected 1 item compared, got %d", result.Compared)
+	}
+	if len(result.Mismatches) != 0 {
+		t.Fatalf("expected no mismatches when one of multiple IDs matches, got %d", len(result.Mismatches))
+	}
+}
+
+func TestCompareArrToTarget_MismatchShowsAllProviderIDs(t *testing.T) {
+	arr := &database.MatcharrArr{
+		ID:   8,
+		Name: "Sonarr",
+		Type: database.ArrTypeSonarr,
+	}
+	arrMedia := []ArrMedia{{
+		Title:   "Unmatched Show",
+		Path:    "/mnt/media/TV/Unmatched Show",
+		TVDBID:  451309,
+		HasFile: true,
+	}}
+	target := &database.Target{
+		ID:   80,
+		Name: "Plex",
+	}
+	targetItems := []MediaServerItem{{
+		Title: "Unmatched Show",
+		Path:  "/mnt/media/TV/Unmatched Show/Unmatched Show.mkv",
+		ProviderIDs: map[string][]string{
+			"tvdb": {"332107", "369019"},
+		},
+	}}
+
+	result := CompareArrToTarget(context.Background(), arr, arrMedia, target, targetItems)
+
+	if result.Compared != 1 {
+		t.Fatalf("expected 1 item compared, got %d", result.Compared)
+	}
+	if len(result.Mismatches) != 1 {
+		t.Fatalf("expected 1 mismatch, got %d", len(result.Mismatches))
+	}
+	if result.Mismatches[0].ActualID != "332107,369019" {
+		t.Fatalf("expected actual IDs to include all provider IDs, got %s", result.Mismatches[0].ActualID)
 	}
 }
 

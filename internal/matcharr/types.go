@@ -44,17 +44,17 @@ func (m *ArrMedia) GetPrimaryID(arrType database.ArrType) (idType string, idValu
 
 // MediaServerItem represents a media item from Plex/Emby/Jellyfin
 type MediaServerItem struct {
-	ServerType  string            `json:"server_type"` // plex, emby, jellyfin
-	ItemID      string            `json:"item_id"`     // Metadata ID for API calls
-	Title       string            `json:"title"`
-	Path        string            `json:"path"`
-	ProviderIDs map[string]string `json:"provider_ids"` // tmdb, tvdb, imdb -> value
+	ServerType  string              `json:"server_type"` // plex, emby, jellyfin
+	ItemID      string              `json:"item_id"`     // Metadata ID for API calls
+	Title       string              `json:"title"`
+	Path        string              `json:"path"`
+	ProviderIDs map[string][]string `json:"provider_ids"` // tmdb, tvdb, imdb -> values (supports multiple)
 }
 
-// GetProviderID returns the provider ID value for a given type
-func (m *MediaServerItem) GetProviderID(idType string) string {
+// GetProviderIDs returns all provider ID values for a given type
+func (m *MediaServerItem) GetProviderIDs(idType string) []string {
 	if m.ProviderIDs == nil {
-		return ""
+		return nil
 	}
 	return m.ProviderIDs[idType]
 }

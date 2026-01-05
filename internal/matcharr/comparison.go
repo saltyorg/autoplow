@@ -110,7 +110,8 @@ func CompareArrToTarget(
 		}
 
 		// Get actual ID from target
-		actualID := targetItem.GetProviderID(expectedIDType)
+		actualIDs := targetItem.GetProviderIDs(expectedIDType)
+		hasExpectedID := containsID(actualIDs, expectedID)
 
 		log.Trace().
 			Str("arr", arr.Name).
@@ -122,11 +123,11 @@ func CompareArrToTarget(
 			Msg("Comparing media IDs")
 
 		// Radarr movies: if TMDB is missing on the server, allow imdb as a fallback
-		if arr.Type == database.ArrTypeRadarr && expectedIDType == "tmdb" && actualID == "" {
+		if arr.Type == database.ArrTypeRadarr && expectedIDType == "tmdb" && len(actualIDs) == 0 {
 			imdbID := strings.TrimSpace(media.IMDBID)
 			if imdbID != "" {
-				fallbackID := targetItem.GetProviderID("imdb")
-				if fallbackID != "" && imdbID == fallbackID {
+				fallbackIDs := targetItem.GetProviderIDs("imdb")
+				if containsID(fallbackIDs, imdbID) {
 					log.Debug().
 						Str("arr", arr.Name).
 						Str("target", target.Name).
@@ -146,9 +147,9 @@ func CompareArrToTarget(
 		}
 
 		// Sonarr shows: if TVDB doesn't match, allow imdb first, then tmdb as fallbacks
-		if arr.Type == database.ArrTypeSonarr && expectedIDType == "tvdb" && actualID != expectedID {
+		if arr.Type == database.ArrTypeSonarr && expectedIDType == "tvdb" && !hasExpectedID {
 			if imdbID := strings.TrimSpace(media.IMDBID); imdbID != "" {
-				if fallbackID := targetItem.GetProviderID("imdb"); fallbackID == imdbID {
+				if fallbackIDs := targetItem.GetProviderIDs("imdb"); containsID(fallbackIDs, imdbID) {
 					log.Debug().
 						Str("arr", arr.Name).
 						Str("target", target.Name).
@@ -163,7 +164,7 @@ func CompareArrToTarget(
 
 			if media.TMDBID > 0 {
 				tmdbID := intToString(media.TMDBID)
-				if fallbackID := targetItem.GetProviderID("tmdb"); fallbackID == tmdbID {
+				if fallbackIDs := targetItem.GetProviderIDs("tmdb"); containsID(fallbackIDs, tmdbID) {
 					log.Debug().
 						Str("arr", arr.Name).
 						Str("target", target.Name).
@@ -178,7 +179,8 @@ func CompareArrToTarget(
 		}
 
 		// Compare IDs
-		if actualID != expectedID {
+		if !hasExpectedID {
+			actualID := strings.Join(actualIDs, ",")
 			log.Debug().
 				Str("arr", arr.Name).
 				Str("target", target.Name).
@@ -304,4 +306,15 @@ func mapPath(path string, mappings []database.MatcharrPathMapping) string {
 // normalizePath normalizes a path for comparison
 func normalizePath(path string) string {
 	return strings.TrimRight(path, "/")
+}
+
+// containsID checks whether the expected ID exists in the list of provider IDs
+func containsID(ids []string, expected string) bool {
+	expected = strings.TrimSpace(expected)
+	for _, id := range ids {
+		if strings.TrimSpace(id) == expected {
+			return true
+		}
+	}
+	return false
 }

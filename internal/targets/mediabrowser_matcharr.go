@@ -88,13 +88,13 @@ func (s *MediaBrowserTarget) GetLibraryItemsWithProviderIDs(ctx context.Context,
 				ItemID:      item.ID,
 				Title:       item.Name,
 				Path:        item.Path,
-				ProviderIDs: make(map[string]string),
+				ProviderIDs: make(map[string][]string),
 			}
 
 			// Copy and normalize provider IDs (Emby/Jellyfin use "Tmdb", "Tvdb", "Imdb")
 			for key, value := range item.ProviderIDs {
 				normalizedKey := strings.ToLower(key)
-				msItem.ProviderIDs[normalizedKey] = value
+				msItem.ProviderIDs[normalizedKey] = append(msItem.ProviderIDs[normalizedKey], strings.TrimSpace(value))
 			}
 
 			allItems = append(allItems, msItem)

@@ -121,7 +121,7 @@ func (s *PlexTarget) GetLibraryItemsWithProviderIDs(ctx context.Context, library
 			ServerType:  "plex",
 			ItemID:      meta.RatingKey,
 			Title:       meta.Title,
-			ProviderIDs: make(map[string]string),
+			ProviderIDs: make(map[string][]string),
 		}
 
 		// Extract path from media (movies)
@@ -180,7 +180,7 @@ func (s *PlexTarget) GetLibraryItemsWithProviderIDs(ctx context.Context, library
 }
 
 // parseProviderID parses a GUID string like "tmdb://12345" into the provider IDs map
-func parseProviderID(guid string, providerIDs map[string]string) {
+func parseProviderID(guid string, providerIDs map[string][]string) {
 	// Handle formats like "tmdb://12345", "tvdb://12345", "imdb://tt12345"
 	// Also handle legacy format like "com.plexapp.agents.themoviedb://12345?lang=en"
 
@@ -191,15 +191,15 @@ func parseProviderID(guid string, providerIDs map[string]string) {
 
 	// Modern format: "provider://id"
 	if after, ok := strings.CutPrefix(guid, "tmdb://"); ok {
-		providerIDs["tmdb"] = after
+		addProviderID(providerIDs, "tmdb", after)
 		return
 	}
 	if after, ok := strings.CutPrefix(guid, "tvdb://"); ok {
-		providerIDs["tvdb"] = after
+		addProviderID(providerIDs, "tvdb", after)
 		return
 	}
 	if after, ok := strings.CutPrefix(guid, "imdb://"); ok {
-		providerIDs["imdb"] = after
+		addProviderID(providerIDs, "imdb", after)
 		return
 	}
 
@@ -208,7 +208,7 @@ func parseProviderID(guid string, providerIDs map[string]string) {
 		parts := strings.Split(guid, "themoviedb://")
 		if len(parts) == 2 {
 			id := strings.Split(parts[1], "?")[0]
-			providerIDs["tmdb"] = id
+			addProviderID(providerIDs, "tmdb", id)
 		}
 		return
 	}
@@ -216,7 +216,7 @@ func parseProviderID(guid string, providerIDs map[string]string) {
 		parts := strings.Split(guid, "thetvdb://")
 		if len(parts) == 2 {
 			id := strings.Split(parts[1], "?")[0]
-			providerIDs["tvdb"] = id
+			addProviderID(providerIDs, "tvdb", id)
 		}
 		return
 	}
@@ -224,10 +224,24 @@ func parseProviderID(guid string, providerIDs map[string]string) {
 		parts := strings.Split(guid, "imdb://")
 		if len(parts) == 2 {
 			id := strings.Split(parts[1], "?")[0]
-			providerIDs["imdb"] = id
+			addProviderID(providerIDs, "imdb", id)
 		}
 		return
 	}
+}
+
+// addProviderID appends a provider ID while avoiding duplicates
+func addProviderID(providerIDs map[string][]string, key string, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	for _, existing := range providerIDs[key] {
+		if existing == value {
+			return
+		}
+	}
+	providerIDs[key] = append(providerIDs[key], value)
 }
 
 // MatchItem updates a Plex item's metadata to match a specific provider ID
