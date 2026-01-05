@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,12 +16,24 @@ import (
 	"github.com/saltyorg/autoplow/internal/matcharr"
 )
 
+type mismatchTargetOption struct {
+	ID   int64
+	Name string
+}
+
+type mismatchArrOption struct {
+	ID   int64
+	Name string
+}
+
 // MatcharrPage renders the main matcharr page
 func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 	tab := r.URL.Query().Get("tab")
 	if tab == "" {
 		tab = "overview"
 	}
+	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
+	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
 
 	var status matcharr.ManagerStatus
 	if h.matcharrMgr != nil {
@@ -53,6 +66,10 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 	if pendingMismatches == nil {
 		pendingMismatches = []*database.MatcharrMismatch{}
 	}
+	filteredMismatches := filterMatcharrMismatches(pendingMismatches, arrIDFilter, targetFilterID)
+	targetOptions := buildMismatchTargetOptions(pendingMismatches)
+	arrOptions := buildMismatchArrOptions(pendingMismatches)
+	filtersApplied := arrIDFilter > 0 || targetFilterID > 0
 	if arrGaps == nil {
 		arrGaps = []*database.MatcharrGap{}
 	}
@@ -73,19 +90,25 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 	matcharrTargets, _ := h.db.ListMatcharrEnabledTargets()
 
 	h.render(w, r, "matcharr.html", map[string]any{
-		"Tab":               tab,
-		"Status":            status,
-		"Arrs":              arrs,
-		"EnabledArrs":       enabledArrs,
-		"LatestRun":         latestRun,
-		"PendingMismatches": pendingMismatches,
-		"ArrGaps":           arrGaps,
-		"TargetGaps":        targetGaps,
-		"Runs":              runs,
-		"FixHistory":        fixHistory,
-		"Targets":           targets,
-		"MatcharrTargets":   len(matcharrTargets),
-		"CanRun":            enabledArrs > 0 && len(matcharrTargets) > 0,
+		"Tab":                tab,
+		"Status":             status,
+		"Arrs":               arrs,
+		"EnabledArrs":        enabledArrs,
+		"LatestRun":          latestRun,
+		"PendingMismatches":  pendingMismatches,
+		"FilteredMismatches": filteredMismatches,
+		"ArrGaps":            arrGaps,
+		"TargetGaps":         targetGaps,
+		"Runs":               runs,
+		"FixHistory":         fixHistory,
+		"Targets":            targets,
+		"MatcharrTargets":    len(matcharrTargets),
+		"CanRun":             enabledArrs > 0 && len(matcharrTargets) > 0,
+		"SelectedArrID":      arrIDFilter,
+		"SelectedTargetID":   targetFilterID,
+		"TargetOptions":      targetOptions,
+		"ArrOptions":         arrOptions,
+		"FiltersApplied":     filtersApplied,
 	})
 }
 
@@ -308,6 +331,8 @@ func (h *Handlers) MatcharrRunStatus(w http.ResponseWriter, r *http.Request) {
 
 // MatcharrMismatchesPartial returns the mismatches table as HTML
 func (h *Handlers) MatcharrMismatchesPartial(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
+	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
 	latestRun, _ := h.db.GetLatestMatcharrRun()
 	var mismatches []*database.MatcharrMismatch
 	if latestRun != nil {
@@ -317,10 +342,21 @@ func (h *Handlers) MatcharrMismatchesPartial(w http.ResponseWriter, r *http.Requ
 	if mismatches == nil {
 		mismatches = []*database.MatcharrMismatch{}
 	}
+	filteredMismatches := filterMatcharrMismatches(mismatches, arrIDFilter, targetFilterID)
+	targetOptions := buildMismatchTargetOptions(mismatches)
+	arrOptions := buildMismatchArrOptions(mismatches)
+	filtersApplied := arrIDFilter > 0 || targetFilterID > 0
 
 	h.renderPartial(w, "matcharr.html", "mismatches_block", map[string]any{
-		"Mismatches": mismatches,
-		"LatestRun":  latestRun,
+		"Mismatches":         mismatches,
+		"PendingMismatches":  mismatches,
+		"FilteredMismatches": filteredMismatches,
+		"LatestRun":          latestRun,
+		"SelectedArrID":      arrIDFilter,
+		"SelectedTargetID":   targetFilterID,
+		"TargetOptions":      targetOptions,
+		"ArrOptions":         arrOptions,
+		"FiltersApplied":     filtersApplied,
 	})
 }
 
@@ -630,6 +666,98 @@ func (h *Handlers) MatcharrRunDetails(w http.ResponseWriter, r *http.Request) {
 		"Run":        run,
 		"Mismatches": mismatches,
 	})
+}
+
+func parseIDFilter(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if id, err := strconv.ParseInt(value, 10, 64); err == nil && id > 0 {
+		return id
+	}
+	return 0
+}
+
+func filterMatcharrMismatches(mismatches []*database.MatcharrMismatch, arrID int64, targetID int64) []*database.MatcharrMismatch {
+	if arrID == 0 && targetID == 0 {
+		return mismatches
+	}
+
+	filtered := make([]*database.MatcharrMismatch, 0, len(mismatches))
+	for _, mismatch := range mismatches {
+		if arrID > 0 && mismatch.ArrID != arrID {
+			continue
+		}
+		if targetID > 0 && mismatch.TargetID != targetID {
+			continue
+		}
+		filtered = append(filtered, mismatch)
+	}
+
+	return filtered
+}
+
+func buildMismatchTargetOptions(mismatches []*database.MatcharrMismatch) []mismatchTargetOption {
+	targets := make(map[int64]string)
+	for _, mismatch := range mismatches {
+		if mismatch.TargetID == 0 {
+			continue
+		}
+		if _, exists := targets[mismatch.TargetID]; exists {
+			continue
+		}
+		name := mismatch.TargetName
+		if name == "" {
+			name = fmt.Sprintf("Target #%d", mismatch.TargetID)
+		}
+		targets[mismatch.TargetID] = name
+	}
+
+	options := make([]mismatchTargetOption, 0, len(targets))
+	for id, name := range targets {
+		options = append(options, mismatchTargetOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
+}
+
+func buildMismatchArrOptions(mismatches []*database.MatcharrMismatch) []mismatchArrOption {
+	arrs := make(map[int64]string)
+	for _, mismatch := range mismatches {
+		if mismatch.ArrID == 0 {
+			continue
+		}
+		if _, exists := arrs[mismatch.ArrID]; exists {
+			continue
+		}
+		name := mismatch.ArrName
+		if name == "" {
+			name = fmt.Sprintf("Arr #%d", mismatch.ArrID)
+		}
+		arrs[mismatch.ArrID] = name
+	}
+
+	options := make([]mismatchArrOption, 0, len(arrs))
+	for id, name := range arrs {
+		options = append(options, mismatchArrOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
 }
 
 // parseMatcharrPathMappings parses path mapping form fields for matcharr

@@ -379,7 +379,7 @@
     {{if eq .Content.Tab "mismatches"}}
     <!-- Mismatches Tab -->
     <div class="space-y-6">
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg" id="matcharr-mismatches" hx-get="/matcharr/mismatches" hx-trigger="sse-refresh" hx-target="#matcharr-mismatches" hx-swap="innerHTML" data-sse-polling-fallback="5s">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg" id="matcharr-mismatches" hx-get="/matcharr/mismatches" hx-trigger="sse-refresh" hx-target="#matcharr-mismatches" hx-swap="innerHTML" hx-include="#mismatch-arr-filter, #mismatch-target-filter" data-sse-polling-fallback="5s">
             {{template "mismatches_block" .Content}}
         </div>
     </div>
@@ -596,33 +596,79 @@
 {{end}}
 
 {{define "mismatches_block"}}
-{{$mismatches := .PendingMismatches}}
-{{if not $mismatches}}
+{{$filtersApplied := .FiltersApplied}}
+{{$mismatches := .FilteredMismatches}}
+{{if and (not $filtersApplied) (not $mismatches)}}
+    {{$mismatches = .PendingMismatches}}
+{{end}}
+{{if and (not $filtersApplied) (not $mismatches)}}
     {{$mismatches = .Mismatches}}
 {{end}}
-<div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+{{$selectedArrID := .SelectedArrID}}
+{{$selectedTargetID := .SelectedTargetID}}
+<div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <div>
         <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Pending Mismatches</h3>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Items with metadata ID mismatches between Arr and media servers.</p>
     </div>
-    {{if $mismatches}}
-    {{if gt (len $mismatches) 0}}
-    <form action="/matcharr/mismatches/fix-all" method="POST">
-        <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
-            Fix All ({{len $mismatches}})
-        </button>
-    </form>
-    {{end}}
-    {{end}}
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+        <div class="flex items-center">
+            <label for="mismatch-arr-filter" class="sr-only">Arr filter</label>
+            <select
+                id="mismatch-arr-filter"
+                name="arr_id"
+                class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                hx-get="/matcharr/mismatches"
+                hx-target="#matcharr-mismatches"
+                hx-swap="innerHTML"
+                hx-include="#mismatch-arr-filter, #mismatch-target-filter"
+            >
+                <option value="0" {{if not $selectedArrID}}selected{{end}}>All Arrs</option>
+                {{range .ArrOptions}}
+                <option value="{{.ID}}" {{if and $selectedArrID (eq $.SelectedArrID .ID)}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="flex items-center">
+            <label for="mismatch-target-filter" class="sr-only">Media server filter</label>
+            <select
+                id="mismatch-target-filter"
+                name="target_id"
+                class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                hx-get="/matcharr/mismatches"
+                hx-target="#matcharr-mismatches"
+                hx-swap="innerHTML"
+                hx-include="#mismatch-arr-filter, #mismatch-target-filter"
+            >
+                <option value="0" {{if not $selectedTargetID}}selected{{end}}>All Media Servers</option>
+                {{range .TargetOptions}}
+                <option value="{{.ID}}" {{if and $selectedTargetID (eq $.SelectedTargetID .ID)}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+            </select>
+        </div>
+        {{if .PendingMismatches}}
+        {{if gt (len .PendingMismatches) 0}}
+        <form action="/matcharr/mismatches/fix-all" method="POST">
+            <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+                Fix All ({{len .PendingMismatches}})
+            </button>
+        </form>
+        {{end}}
+        {{end}}
+    </div>
 </div>
 <div class="px-4 py-5 sm:p-6">
-    {{template "mismatches_table" (dict "PendingMismatches" $mismatches "Mismatches" .Mismatches)}}
+    {{template "mismatches_table" (dict "FilteredMismatches" $mismatches "PendingMismatches" .PendingMismatches "Mismatches" .Mismatches "FiltersApplied" $filtersApplied)}}
 </div>
 {{end}}
 
 {{define "mismatches_table"}}
-{{$mismatches := .PendingMismatches}}
-{{if not $mismatches}}
+{{$filtersApplied := .FiltersApplied}}
+{{$mismatches := .FilteredMismatches}}
+{{if and (not $filtersApplied) (not $mismatches)}}
+    {{$mismatches = .PendingMismatches}}
+{{end}}
+{{if and (not $filtersApplied) (not $mismatches)}}
     {{$mismatches = .Mismatches}}
 {{end}}
 {{if $mismatches}}
