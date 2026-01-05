@@ -80,6 +80,42 @@ func TestCompareArrToTarget_MatchesMappedFolderExactly(t *testing.T) {
 	}
 }
 
+func TestCompareArrToTarget_AllowsDotsInDirectoryName(t *testing.T) {
+	arr := &database.MatcharrArr{
+		ID:   3,
+		Name: "Sonarr",
+		Type: database.ArrTypeSonarr,
+	}
+	arrMedia := []ArrMedia{{
+		Title:  "Taylor Swift vs. Scooter Braun: Bad Blood",
+		Path:   "/mnt/media/TV/Taylor Swift vs. Scooter Braun - Bad Blood (2024) (tvdb-451309)",
+		TVDBID: 451309,
+	}}
+	target := &database.Target{
+		ID:   30,
+		Name: "Plex",
+	}
+	targetItems := []MediaServerItem{{
+		Title: "Taylor Swift vs. Scooter Braun: Bad Blood",
+		Path:  "/mnt/media/TV/Taylor Swift vs. Scooter Braun - Bad Blood (2024) (tvdb-451309)",
+		ProviderIDs: map[string]string{
+			"tvdb": "451309",
+		},
+	}}
+
+	result := CompareArrToTarget(context.Background(), arr, arrMedia, target, targetItems)
+
+	if result.Compared != 1 {
+		t.Fatalf("expected 1 item compared, got %d", result.Compared)
+	}
+	if len(result.MissingArr) != 0 || len(result.MissingSrv) != 0 {
+		t.Fatalf("expected no gaps, got missing_arr=%d missing_srv=%d", len(result.MissingArr), len(result.MissingSrv))
+	}
+	if len(result.Mismatches) != 0 {
+		t.Fatalf("expected no mismatches, got %d", len(result.Mismatches))
+	}
+}
+
 func TestMapPath_RespectsPathBoundaries(t *testing.T) {
 	mappings := []database.MatcharrPathMapping{{
 		ArrPath:    "/mnt/media",
