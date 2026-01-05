@@ -445,6 +445,17 @@ func templateFuncMap() template.FuncMap {
 			}
 			return string(b)
 		},
+		"dict": func(values ...any) map[string]any {
+			m := make(map[string]any, len(values)/2)
+			for i := 0; i+1 < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					continue
+				}
+				m[key] = values[i+1]
+			}
+			return m
+		},
 		"truncate": func(s string, maxLen int) string {
 			if len(s) <= maxLen {
 				return s

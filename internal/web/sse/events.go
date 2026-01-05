@@ -34,9 +34,10 @@ const (
 	EventThrottleChanged EventType = "throttle_changed"
 	EventHeartbeat       EventType = "heartbeat"
 
-	EventMatcharrRunStarted   EventType = "matcharr_run_started"
-	EventMatcharrRunCompleted EventType = "matcharr_run_completed"
-	EventMatcharrRunFailed    EventType = "matcharr_run_failed"
+	EventMatcharrRunStarted      EventType = "matcharr_run_started"
+	EventMatcharrRunCompleted    EventType = "matcharr_run_completed"
+	EventMatcharrRunFailed       EventType = "matcharr_run_failed"
+	EventMatcharrMismatchUpdated EventType = "matcharr_mismatch_updated"
 
 	EventPlexAutoLanguagesTrackChanged EventType = "plex_auto_languages_track_changed"
 )

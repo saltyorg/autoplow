@@ -60,6 +60,11 @@ func (db *DB) Migrate() error {
 	}
 
 	log.Info().Msg("Database migrations complete")
+
+	// Ensure critical columns exist even if migration tracking was skipped or failed
+	if err := db.ensureMatcharrMismatchSchema(); err != nil {
+		return fmt.Errorf("failed to verify matcharr schema: %w", err)
+	}
 	return nil
 }
 
@@ -536,8 +541,10 @@ var migrations = []migration{
 				arr_type TEXT NOT NULL,
 				arr_name TEXT NOT NULL,
 				target_name TEXT NOT NULL,
+				target_title TEXT NOT NULL DEFAULT '',
 				media_title TEXT NOT NULL,
 				media_path TEXT NOT NULL,
+				target_path TEXT NOT NULL DEFAULT '',
 				arr_id_type TEXT NOT NULL,
 				arr_id_value TEXT NOT NULL,
 				target_id_type TEXT NOT NULL,
@@ -672,4 +679,87 @@ var migrations = []migration{
 			ALTER TABLE scans ADD COLUMN file_paths TEXT;
 		`,
 	},
+	{
+		Version: 21,
+		Name:    "matcharr_mismatch_paths_titles",
+		SQL: `
+			-- No-op: columns are now handled by ensureMatcharrMismatchSchema to avoid duplicate column errors
+		`,
+	},
+	{
+		Version: 22,
+		Name:    "matcharr_gaps",
+		SQL: `
+			-- Paths present in Arr but missing on a media server, and vice versa
+			CREATE TABLE matcharr_gaps (
+				id INTEGER PRIMARY KEY,
+				run_id INTEGER REFERENCES matcharr_runs(id) ON DELETE CASCADE,
+				arr_id INTEGER REFERENCES matcharr_arrs(id) ON DELETE CASCADE,
+				target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
+				source TEXT NOT NULL, -- 'arr' (missing on server) or 'target' (missing in Arr)
+				title TEXT DEFAULT '',
+				arr_name TEXT DEFAULT '',
+				target_name TEXT DEFAULT '',
+				arr_path TEXT DEFAULT '',
+				target_path TEXT DEFAULT '',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+
+			CREATE INDEX idx_matcharr_gaps_run ON matcharr_gaps(run_id);
+			CREATE INDEX idx_matcharr_gaps_source ON matcharr_gaps(source);
+		`,
+	},
+}
+
+// ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped
+func (db *DB) ensureMatcharrMismatchSchema() error {
+	cols, err := db.tableColumns("matcharr_mismatches")
+	if err != nil {
+		return err
+	}
+
+	required := []struct {
+		name       string
+		definition string
+	}{
+		{"target_title", "TEXT DEFAULT ''"},
+		{"target_path", "TEXT DEFAULT ''"},
+	}
+
+	for _, col := range required {
+		if _, exists := cols[col.name]; exists {
+			continue
+		}
+		log.Warn().Str("table", "matcharr_mismatches").Str("column", col.name).Msg("Adding missing column")
+		if _, err := db.Exec(fmt.Sprintf("ALTER TABLE matcharr_mismatches ADD COLUMN %s %s", col.name, col.definition)); err != nil {
+			return fmt.Errorf("failed to add column %s: %w", col.name, err)
+		}
+	}
+
+	return nil
+}
+
+// tableColumns returns a set of column names for a given table
+func (db *DB) tableColumns(table string) (map[string]struct{}, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table info for %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	cols := make(map[string]struct{})
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notnull, &dflt, &pk); err != nil {
+			return nil, fmt.Errorf("failed to scan table info for %s: %w", table, err)
+		}
+		cols[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate table info for %s: %w", table, err)
+	}
+	return cols, nil
 }

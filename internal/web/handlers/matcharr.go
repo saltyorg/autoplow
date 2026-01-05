@@ -43,8 +43,21 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 
 	// Get actionable mismatches from latest run (pending + failed)
 	var pendingMismatches []*database.MatcharrMismatch
+	var arrGaps []*database.MatcharrGap
+	var targetGaps []*database.MatcharrGap
 	if latestRun != nil {
 		pendingMismatches, _ = h.db.GetActionableMatcharrMismatches(latestRun.ID)
+		arrGaps, _ = h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceArr)
+		targetGaps, _ = h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceTarget)
+	}
+	if pendingMismatches == nil {
+		pendingMismatches = []*database.MatcharrMismatch{}
+	}
+	if arrGaps == nil {
+		arrGaps = []*database.MatcharrGap{}
+	}
+	if targetGaps == nil {
+		targetGaps = []*database.MatcharrGap{}
 	}
 
 	// Get run history
@@ -66,6 +79,8 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 		"EnabledArrs":       enabledArrs,
 		"LatestRun":         latestRun,
 		"PendingMismatches": pendingMismatches,
+		"ArrGaps":           arrGaps,
+		"TargetGaps":        targetGaps,
 		"Runs":              runs,
 		"FixHistory":        fixHistory,
 		"Targets":           targets,
@@ -296,10 +311,14 @@ func (h *Handlers) MatcharrMismatchesPartial(w http.ResponseWriter, r *http.Requ
 	latestRun, _ := h.db.GetLatestMatcharrRun()
 	var mismatches []*database.MatcharrMismatch
 	if latestRun != nil {
-		mismatches, _ = h.db.ListMatcharrMismatches(latestRun.ID)
+		// Only show actionable rows (pending + failed) so fixed/skipped don't reappear after SSE refresh
+		mismatches, _ = h.db.GetActionableMatcharrMismatches(latestRun.ID)
+	}
+	if mismatches == nil {
+		mismatches = []*database.MatcharrMismatch{}
 	}
 
-	h.renderPartial(w, "matcharr.html", "mismatches_table", map[string]any{
+	h.renderPartial(w, "matcharr.html", "mismatches_block", map[string]any{
 		"Mismatches": mismatches,
 		"LatestRun":  latestRun,
 	})
@@ -476,6 +495,9 @@ func (h *Handlers) MatcharrQuickActionsPartial(w http.ResponseWriter, r *http.Re
 	var pendingMismatches []*database.MatcharrMismatch
 	if latestRun, _ := h.db.GetLatestMatcharrRun(); latestRun != nil {
 		pendingMismatches, _ = h.db.GetActionableMatcharrMismatches(latestRun.ID)
+	}
+	if pendingMismatches == nil {
+		pendingMismatches = []*database.MatcharrMismatch{}
 	}
 
 	h.renderPartial(w, "matcharr.html", "quick_actions", map[string]any{

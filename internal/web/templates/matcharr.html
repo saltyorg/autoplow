@@ -19,6 +19,12 @@
             <a href="/matcharr?tab=servers" class="{{if eq .Content.Tab "servers"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 Media Servers ({{.Content.MatcharrTargets}})
             </a>
+            <a href="/matcharr?tab=arr-gaps" class="{{if eq .Content.Tab "arr-gaps"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Missing on Server ({{len .Content.ArrGaps}})
+            </a>
+            <a href="/matcharr?tab=target-gaps" class="{{if eq .Content.Tab "target-gaps"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Missing in Arrs ({{len .Content.TargetGaps}})
+            </a>
             <a href="/matcharr?tab=mismatches" class="{{if eq .Content.Tab "mismatches"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 Mismatches (<span id="mismatches-count">{{len .Content.PendingMismatches}}</span>)
             </a>
@@ -359,26 +365,41 @@
     </div>
     {{end}}
 
+    {{if eq .Content.Tab "arr-gaps"}}
+    <!-- Missing on Server Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing on Server</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths that Arr reported but were not found on any media server.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{template "gap_table" (dict "Rows" .Content.ArrGaps "Type" "arr")}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "target-gaps"}}
+    <!-- Missing in Arrs Tab -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing in Arrs</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths found on media servers that were not reported by any Arr instance.</p>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {{template "gap_table" (dict "Rows" .Content.TargetGaps "Type" "target")}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
     {{if eq .Content.Tab "mismatches"}}
     <!-- Mismatches Tab -->
     <div class="space-y-6">
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                <div>
-                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Pending Mismatches</h3>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Items with metadata ID mismatches between Arr and media servers.</p>
-                </div>
-                {{if gt (len .Content.PendingMismatches) 0}}
-                <form action="/matcharr/mismatches/fix-all" method="POST">
-                    <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
-                        Fix All ({{len .Content.PendingMismatches}})
-                    </button>
-                </form>
-                {{end}}
-            </div>
-            <div class="px-4 py-5 sm:p-6" id="mismatches-container">
-                {{template "mismatches_table" .Content}}
-            </div>
+        <div class="bg-white dark:bg-gray-800 shadow rounded-lg" id="matcharr-mismatches" hx-get="/matcharr/mismatches" hx-trigger="sse-refresh" hx-target="#matcharr-mismatches" hx-swap="innerHTML" data-sse-polling-fallback="5s">
+            {{template "mismatches_block" .Content}}
         </div>
     </div>
     {{end}}
@@ -593,8 +614,37 @@
 </div>
 {{end}}
 
+{{define "mismatches_block"}}
+{{$mismatches := .PendingMismatches}}
+{{if not $mismatches}}
+    {{$mismatches = .Mismatches}}
+{{end}}
+<div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+    <div>
+        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Pending Mismatches</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Items with metadata ID mismatches between Arr and media servers.</p>
+    </div>
+    {{if $mismatches}}
+    {{if gt (len $mismatches) 0}}
+    <form action="/matcharr/mismatches/fix-all" method="POST">
+        <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+            Fix All ({{len $mismatches}})
+        </button>
+    </form>
+    {{end}}
+    {{end}}
+</div>
+<div class="px-4 py-5 sm:p-6">
+    {{template "mismatches_table" (dict "PendingMismatches" $mismatches "Mismatches" .Mismatches)}}
+</div>
+{{end}}
+
 {{define "mismatches_table"}}
-{{if .PendingMismatches}}
+{{$mismatches := .PendingMismatches}}
+{{if not $mismatches}}
+    {{$mismatches = .Mismatches}}
+{{end}}
+{{if $mismatches}}
 <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
         <thead>
@@ -610,9 +660,15 @@
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-            {{range .PendingMismatches}}
-            <tr id="mismatch-{{.ID}}" class="{{if eq .Status "failed"}}bg-red-50 dark:bg-red-900/20{{end}}">
-                <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.MediaTitle}}</td>
+            {{range $mismatches}}
+            <tr id="mismatch-{{.ID}}" class="hover:bg-gray-50 dark:hover:bg-gray-800/40 {{if eq .Status "failed"}}bg-red-50 dark:bg-red-900/20{{end}}">
+                <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">
+                    <div>{{.MediaTitle}}</div>
+                    <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span class="font-medium text-gray-700 dark:text-gray-300">Server:</span>
+                        {{if .TargetTitle}}{{.TargetTitle}}{{else}}<em class="text-gray-400 dark:text-gray-500">Unknown</em>{{end}}
+                    </div>
+                </td>
                 <td class="px-3 py-4 text-sm">
                     {{if eq .Status "pending"}}
                     <span class="inline-flex items-center rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-2 py-1 text-xs font-medium text-yellow-700 dark:text-yellow-400">Pending</span>
@@ -625,17 +681,139 @@
                 <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 uppercase">{{.ArrIDType}}</td>
                 <td class="px-3 py-4 text-sm font-mono text-green-600 dark:text-green-400">{{.ArrIDValue}}</td>
                 <td class="px-3 py-4 text-sm font-mono text-red-600 dark:text-red-400">{{if .TargetIDValue}}{{.TargetIDValue}}{{else}}<em class="text-gray-400">empty</em>{{end}}</td>
-                <td class="px-3 py-4 text-sm text-right space-x-2">
-                    <button
-                        hx-post="/matcharr/mismatches/{{.ID}}/fix"
-                        hx-target="#mismatch-{{.ID}}"
-                        hx-swap="outerHTML"
-                        class="text-green-600 dark:text-green-400 hover:text-green-500">{{if eq .Status "failed"}}Retry{{else}}Fix{{end}}</button>
-                    <button
-                        hx-post="/matcharr/mismatches/{{.ID}}/skip"
-                        hx-target="#mismatch-{{.ID}}"
-                        hx-swap="outerHTML"
-                        class="text-gray-600 dark:text-gray-400 hover:text-gray-500">Skip</button>
+                <td class="px-3 py-4 text-sm">
+                    <div class="flex justify-end gap-2">
+                        <button
+                            hx-post="/matcharr/mismatches/{{.ID}}/fix"
+                            hx-target="#mismatch-{{.ID}}"
+                            hx-swap="none"
+                            hx-on::afterRequest="handleMismatchAction(event, {{.ID}})"
+                            class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:opacity-60 disabled:cursor-not-allowed">
+                            {{if eq .Status "failed"}}Retry{{else}}Fix{{end}}
+                        </button>
+                        <button
+                            hx-post="/matcharr/mismatches/{{.ID}}/skip"
+                            hx-target="#mismatch-{{.ID}}"
+                            hx-swap="none"
+                            hx-on::afterRequest="handleMismatchAction(event, {{.ID}})"
+                            class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed">
+                            Skip
+                        </button>
+                        <button
+                            type="button"
+                            data-mismatch-toggle="{{.ID}}"
+                            aria-expanded="false"
+                            aria-controls="mismatch-{{.ID}}-details"
+                            onclick="toggleMismatchDetails({{.ID}})"
+                            class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                            View
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            <tr id="mismatch-{{.ID}}-details" class="hidden bg-gray-50 dark:bg-gray-900/40">
+                <td colspan="8" class="px-3 py-4 text-sm text-gray-900 dark:text-white">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-semibold">Detailed Report</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Paths and IDs captured during the last comparison.</p>
+                        </div>
+                        <button
+                            type="button"
+                            onclick="toggleMismatchDetails({{.ID}})"
+                            class="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                            Hide
+                        </button>
+                    </div>
+                    <div class="mt-3 grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Arr Path</p>
+                            <p class="mt-1 font-mono text-sm break-all text-gray-900 dark:text-gray-100">{{.MediaPath}}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Media Server Path</p>
+                            <p class="mt-1 font-mono text-sm break-all text-gray-900 dark:text-gray-100">{{if .TargetPath}}{{.TargetPath}}{{else}}<em class="text-gray-400 dark:text-gray-500">Unknown</em>{{end}}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Expected ID</p>
+                            <p class="mt-1 font-mono text-sm text-green-600 dark:text-green-400">{{.ArrIDType}}: {{.ArrIDValue}}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Current Server ID</p>
+                            <p class="mt-1 font-mono text-sm text-red-600 dark:text-red-400">{{if .TargetIDValue}}{{.TargetIDValue}}{{else}}<em class="text-gray-400 dark:text-gray-500">empty</em>{{end}}</p>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+<script>
+function toggleMismatchDetails(id) {
+    const detailsRow = document.getElementById(`mismatch-${id}-details`);
+    const toggleBtn = document.querySelector(`[data-mismatch-toggle="${id}"]`);
+    if (!detailsRow) {
+        return;
+    }
+    const isHidden = detailsRow.classList.contains('hidden');
+    detailsRow.classList.toggle('hidden');
+    if (toggleBtn) {
+        toggleBtn.setAttribute('aria-expanded', String(isHidden));
+        toggleBtn.textContent = isHidden ? 'Hide' : 'View';
+    }
+}
+
+function handleMismatchAction(event, id) {
+    const successful = event.detail && (event.detail.successful !== false) && (!event.detail.xhr || event.detail.xhr.status < 400);
+    if (!successful) {
+        return;
+    }
+    const mainRow = document.getElementById(`mismatch-${id}`);
+    const detailRow = document.getElementById(`mismatch-${id}-details`);
+    if (mainRow) {
+        mainRow.remove();
+    }
+    if (detailRow) {
+        detailRow.remove();
+    }
+}
+</script>
+{{else}}
+<div class="text-center py-12">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No pending mismatches.</p>
+    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Run a comparison to check for mismatches.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "gap_table"}}
+{{if .Rows}}
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead>
+            <tr>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Path</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {{range .Rows}}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.Title}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.ArrName}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.TargetName}}</td>
+                <td class="px-3 py-4 text-sm font-mono text-gray-900 dark:text-gray-100 break-all">
+                    {{if eq $.Type "arr"}}
+                        {{.ArrPath}}{{if .TargetPath}} <span class="text-xs text-gray-500 dark:text-gray-400">(mapped: {{.TargetPath}})</span>{{end}}
+                    {{else}}
+                        {{.TargetPath}}
+                    {{end}}
                 </td>
             </tr>
             {{end}}
@@ -647,8 +825,8 @@
     <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
     </svg>
-    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No pending mismatches.</p>
-    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Run a comparison to check for mismatches.</p>
+    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No gaps detected.</p>
+    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Run a comparison to populate this list.</p>
 </div>
 {{end}}
 {{end}}

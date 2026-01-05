@@ -18,6 +18,8 @@ type CompareResult struct {
 	TargetName string
 	Compared   int
 	Mismatches []Mismatch
+	MissingArr []MissingPath // Present in Arr, missing on server
+	MissingSrv []MissingPath // Present on server, missing in Arr
 	Errors     []error
 }
 
@@ -46,6 +48,7 @@ func CompareArrToTarget(
 		}
 		targetByPath[matchPath] = item
 	}
+	matchedTargetPaths := make(map[string]struct{})
 
 	log.Debug().
 		Str("arr", arr.Name).
@@ -75,9 +78,16 @@ func CompareArrToTarget(
 				Str("path", mappedPath).
 				Str("normalized_path", normalizedPath).
 				Msg("No matching target item found")
+
+			result.MissingArr = append(result.MissingArr, MissingPath{
+				ArrInstance: arr,
+				Target:      target,
+				ArrMedia:    media,
+			})
 			continue
 		}
 
+		matchedTargetPaths[itemMatchPath(targetItem.Path)] = struct{}{}
 		result.Compared++
 
 		// Get expected ID from Arr
@@ -119,7 +129,25 @@ func CompareArrToTarget(
 		}
 	}
 
+	result.MissingSrv = findMissingTargetItems(arr, target, targetByPath, matchedTargetPaths)
+
 	return result
+}
+
+// findMissingTargetItems returns items not matched during comparison
+func findMissingTargetItems(arr *database.MatcharrArr, target *database.Target, targetByPath map[string]*MediaServerItem, matched map[string]struct{}) []MissingPath {
+	var missing []MissingPath
+	for path, item := range targetByPath {
+		if _, ok := matched[path]; ok {
+			continue
+		}
+		missing = append(missing, MissingPath{
+			ArrInstance: arr,
+			Target:      target,
+			ServerItem:  *item,
+		})
+	}
+	return missing
 }
 
 // findMatchingTargetItem finds a target item that matches the given path

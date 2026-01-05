@@ -467,8 +467,10 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 					ArrType:          arr.Type,
 					ArrName:          arr.Name,
 					TargetName:       target.Name,
+					TargetTitle:      mismatch.ServerItem.Title,
 					MediaTitle:       mismatch.ArrMedia.Title,
 					MediaPath:        mismatch.ArrMedia.Path,
+					TargetPath:       mismatch.ServerItem.Path,
 					ArrIDType:        mismatch.ExpectedIDType,
 					ArrIDValue:       mismatch.ExpectedID,
 					TargetIDType:     mismatch.ExpectedIDType,
@@ -512,6 +514,44 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 							}
 						}
 					}
+				}
+			}
+
+			// Store missing paths (Arr present, server missing)
+			for _, gap := range compareResult.MissingArr {
+				dbGap := &database.MatcharrGap{
+					RunID:      run.ID,
+					ArrID:      arr.ID,
+					TargetID:   target.ID,
+					Source:     database.MatcharrGapSourceArr,
+					Title:      gap.ArrMedia.Title,
+					ArrName:    arr.Name,
+					TargetName: target.Name,
+					ArrPath:    gap.ArrMedia.Path,
+					TargetPath: mapPath(gap.ArrMedia.Path, arr.PathMappings),
+				}
+				if err := m.db.CreateMatcharrGap(dbGap); err != nil {
+					runLog.Warn("Failed to save missing Arr path %s: %v", gap.ArrMedia.Path, err)
+					log.Warn().Err(err).Str("arr_path", gap.ArrMedia.Path).Msg("Failed to save missing Arr path")
+				}
+			}
+
+			// Store missing paths (on server but not in Arr)
+			for _, gap := range compareResult.MissingSrv {
+				dbGap := &database.MatcharrGap{
+					RunID:      run.ID,
+					ArrID:      arr.ID,
+					TargetID:   target.ID,
+					Source:     database.MatcharrGapSourceTarget,
+					Title:      gap.ServerItem.Title,
+					ArrName:    arr.Name,
+					TargetName: target.Name,
+					ArrPath:    "",
+					TargetPath: gap.ServerItem.Path,
+				}
+				if err := m.db.CreateMatcharrGap(dbGap); err != nil {
+					runLog.Warn("Failed to save missing server path %s: %v", gap.ServerItem.Path, err)
+					log.Warn().Err(err).Str("server_path", gap.ServerItem.Path).Msg("Failed to save missing server path")
 				}
 			}
 		}
@@ -825,12 +865,31 @@ func (m *Manager) FixMismatchByID(ctx context.Context, mismatchID int64) error {
 	// Increment fixed count in the run
 	_ = m.db.IncrementMatcharrRunFixed(mismatch.RunID)
 
+	// Notify UI to refresh mismatches
+	m.broadcastEvent(sse.EventMatcharrMismatchUpdated, map[string]any{
+		"mismatch_id": mismatchID,
+		"run_id":      mismatch.RunID,
+		"status":      database.MatcharrMismatchStatusFixed,
+	})
+
 	return nil
 }
 
 // SkipMismatch marks a mismatch as skipped
 func (m *Manager) SkipMismatch(mismatchID int64) error {
-	return m.db.UpdateMatcharrMismatchStatus(mismatchID, database.MatcharrMismatchStatusSkipped, "")
+	if err := m.db.UpdateMatcharrMismatchStatus(mismatchID, database.MatcharrMismatchStatusSkipped, ""); err != nil {
+		return err
+	}
+
+	if mismatch, _ := m.db.GetMatcharrMismatch(mismatchID); mismatch != nil {
+		m.broadcastEvent(sse.EventMatcharrMismatchUpdated, map[string]any{
+			"mismatch_id": mismatchID,
+			"run_id":      mismatch.RunID,
+			"status":      database.MatcharrMismatchStatusSkipped,
+		})
+	}
+
+	return nil
 }
 
 // FixAllPending fixes all pending mismatches from the latest run

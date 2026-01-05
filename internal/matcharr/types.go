@@ -69,6 +69,14 @@ type Mismatch struct {
 	ActualID       string
 }
 
+// MissingPath captures an unmatched path between Arr and target
+type MissingPath struct {
+	ArrInstance *database.MatcharrArr
+	Target      *database.Target
+	ArrMedia    ArrMedia
+	ServerItem  MediaServerItem
+}
+
 // RunResult contains the result of a matcharr comparison run
 type RunResult struct {
 	RunID           int64

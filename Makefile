@@ -23,6 +23,7 @@ BUILD_DIR=build
 VERSION?=0.0.0-dev
 GIT_COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME?=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+GOCACHE_DIR=$(CURDIR)/.cache/go-build
 
 # Build flags
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(GIT_COMMIT) -X main.date=$(BUILD_TIME)"
@@ -57,17 +58,17 @@ clean:
 ## test: Run all tests
 test:
 	@echo "$(GREEN)Running tests...$(NC)"
-	$(GOTEST) -v ./...
+	GOCACHE=$(GOCACHE_DIR) $(GOTEST) -v ./...
 
 ## test-short: Run short tests
 test-short:
 	@echo "Running short tests..."
-	$(GOTEST) -short -v ./...
+	GOCACHE=$(GOCACHE_DIR) $(GOTEST) -short -v ./...
 
 ## test-coverage: Run tests with coverage report
 test-coverage:
 	@echo "$(GREEN)Running tests with coverage...$(NC)"
-	$(GOTEST) -coverprofile=coverage.out ./...
+	GOCACHE=$(GOCACHE_DIR) $(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@$(GOCMD) tool cover -func=coverage.out | grep total | awk '{print "Total coverage: " $$3}'

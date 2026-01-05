@@ -75,8 +75,10 @@ type MatcharrMismatch struct {
 	ArrType          ArrType                `json:"arr_type"`
 	ArrName          string                 `json:"arr_name"`
 	TargetName       string                 `json:"target_name"`
+	TargetTitle      string                 `json:"target_title"`
 	MediaTitle       string                 `json:"media_title"`
 	MediaPath        string                 `json:"media_path"`
+	TargetPath       string                 `json:"target_path"`
 	ArrIDType        string                 `json:"arr_id_type"` // 'tmdb', 'tvdb', 'imdb'
 	ArrIDValue       string                 `json:"arr_id_value"`
 	TargetIDType     string                 `json:"target_id_type"`
@@ -86,6 +88,28 @@ type MatcharrMismatch struct {
 	FixedAt          *time.Time             `json:"fixed_at,omitempty"`
 	Error            string                 `json:"error,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
+}
+
+type MatcharrGapSource string
+
+const (
+	MatcharrGapSourceArr    MatcharrGapSource = "arr"    // Present in Arr, missing on server
+	MatcharrGapSourceTarget MatcharrGapSource = "target" // Present on server, missing in Arr
+)
+
+// MatcharrGap represents a missing path detected during comparison
+type MatcharrGap struct {
+	ID         int64             `json:"id"`
+	RunID      int64             `json:"run_id"`
+	ArrID      int64             `json:"arr_id"`
+	TargetID   int64             `json:"target_id"`
+	Source     MatcharrGapSource `json:"source"`
+	Title      string            `json:"title"`
+	ArrName    string            `json:"arr_name"`
+	TargetName string            `json:"target_name"`
+	ArrPath    string            `json:"arr_path"`
+	TargetPath string            `json:"target_path"`
+	CreatedAt  time.Time         `json:"created_at"`
 }
 
 // CreateMatcharrArr creates a new Arr instance
@@ -392,12 +416,12 @@ func (db *DB) CreateMatcharrMismatch(mismatch *MatcharrMismatch) error {
 	result, err := db.Exec(`
 		INSERT INTO matcharr_mismatches (
 			run_id, arr_id, target_id, arr_type, arr_name, target_name,
-			media_title, media_path, arr_id_type, arr_id_value,
+			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`,
 		mismatch.RunID, mismatch.ArrID, mismatch.TargetID, mismatch.ArrType, mismatch.ArrName, mismatch.TargetName,
-		mismatch.MediaTitle, mismatch.MediaPath, mismatch.ArrIDType, mismatch.ArrIDValue,
+		mismatch.TargetTitle, mismatch.MediaTitle, mismatch.MediaPath, mismatch.TargetPath, mismatch.ArrIDType, mismatch.ArrIDValue,
 		mismatch.TargetIDType, mismatch.TargetIDValue, mismatch.TargetMetadataID, mismatch.Status,
 	)
 	if err != nil {
@@ -409,6 +433,25 @@ func (db *DB) CreateMatcharrMismatch(mismatch *MatcharrMismatch) error {
 		return fmt.Errorf("failed to get last insert id: %w", err)
 	}
 	mismatch.ID = id
+
+	return nil
+}
+
+// CreateMatcharrGap creates a missing-path record
+func (db *DB) CreateMatcharrGap(gap *MatcharrGap) error {
+	result, err := db.Exec(`
+		INSERT INTO matcharr_gaps (run_id, arr_id, target_id, source, title, arr_name, target_name, arr_path, target_path)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, gap.RunID, gap.ArrID, gap.TargetID, gap.Source, gap.Title, gap.ArrName, gap.TargetName, gap.ArrPath, gap.TargetPath)
+	if err != nil {
+		return fmt.Errorf("failed to create matcharr gap: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert id: %w", err)
+	}
+	gap.ID = id
 
 	return nil
 }
@@ -439,13 +482,13 @@ func (db *DB) GetMatcharrMismatch(id int64) (*MatcharrMismatch, error) {
 
 	err := db.QueryRow(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
-			media_title, media_path, arr_id_type, arr_id_value,
+			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
 		FROM matcharr_mismatches WHERE id = ?
 	`, id).Scan(
 		&mismatch.ID, &mismatch.RunID, &mismatch.ArrID, &mismatch.TargetID,
 		&mismatch.ArrType, &mismatch.ArrName, &mismatch.TargetName,
-		&mismatch.MediaTitle, &mismatch.MediaPath, &mismatch.ArrIDType, &mismatch.ArrIDValue,
+		&mismatch.TargetTitle, &mismatch.MediaTitle, &mismatch.MediaPath, &mismatch.TargetPath, &mismatch.ArrIDType, &mismatch.ArrIDValue,
 		&mismatch.TargetIDType, &targetIDValue, &mismatch.TargetMetadataID,
 		&mismatch.Status, &fixedAt, &errorStr, &mismatch.CreatedAt,
 	)
@@ -473,7 +516,7 @@ func (db *DB) GetMatcharrMismatch(id int64) (*MatcharrMismatch, error) {
 func (db *DB) ListMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
 	rows, err := db.Query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
-			media_title, media_path, arr_id_type, arr_id_value,
+			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
 		FROM matcharr_mismatches WHERE run_id = ? ORDER BY media_title
 	`, runID)
@@ -489,7 +532,7 @@ func (db *DB) ListMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
 func (db *DB) GetPendingMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
 	rows, err := db.Query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
-			media_title, media_path, arr_id_type, arr_id_value,
+			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
 		FROM matcharr_mismatches WHERE run_id = ? AND status = ? ORDER BY media_title
 	`, runID, MatcharrMismatchStatusPending)
@@ -518,7 +561,7 @@ func (db *DB) GetLatestPendingMatcharrMismatches() ([]*MatcharrMismatch, error) 
 func (db *DB) GetActionableMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
 	rows, err := db.Query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
-			media_title, media_path, arr_id_type, arr_id_value,
+			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
 		FROM matcharr_mismatches WHERE run_id = ? AND status IN (?, ?) ORDER BY status DESC, media_title
 	`, runID, MatcharrMismatchStatusPending, MatcharrMismatchStatusFailed)
@@ -528,6 +571,31 @@ func (db *DB) GetActionableMatcharrMismatches(runID int64) ([]*MatcharrMismatch,
 	defer rows.Close()
 
 	return scanMatcharrMismatches(rows)
+}
+
+// GetMatcharrGaps retrieves gaps for a run filtered by source
+func (db *DB) GetMatcharrGaps(runID int64, source MatcharrGapSource) ([]*MatcharrGap, error) {
+	rows, err := db.Query(`
+		SELECT id, run_id, arr_id, target_id, source, title, arr_name, target_name, arr_path, target_path, created_at
+		FROM matcharr_gaps
+		WHERE run_id = ? AND source = ?
+		ORDER BY title
+	`, runID, source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list matcharr gaps: %w", err)
+	}
+	defer rows.Close()
+
+	var gaps []*MatcharrGap
+	for rows.Next() {
+		var gap MatcharrGap
+		if err := rows.Scan(&gap.ID, &gap.RunID, &gap.ArrID, &gap.TargetID, &gap.Source, &gap.Title, &gap.ArrName, &gap.TargetName, &gap.ArrPath, &gap.TargetPath, &gap.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan matcharr gap: %w", err)
+		}
+		gaps = append(gaps, &gap)
+	}
+
+	return gaps, rows.Err()
 }
 
 // GetLatestActionableMatcharrMismatches retrieves pending and failed mismatches from the latest run
@@ -572,8 +640,8 @@ func scanMatcharrMismatches(rows *sql.Rows) ([]*MatcharrMismatch, error) {
 
 		if err := rows.Scan(
 			&mismatch.ID, &mismatch.RunID, &mismatch.ArrID, &mismatch.TargetID,
-			&mismatch.ArrType, &mismatch.ArrName, &mismatch.TargetName,
-			&mismatch.MediaTitle, &mismatch.MediaPath, &mismatch.ArrIDType, &mismatch.ArrIDValue,
+			&mismatch.ArrType, &mismatch.ArrName, &mismatch.TargetName, &mismatch.TargetTitle,
+			&mismatch.MediaTitle, &mismatch.MediaPath, &mismatch.TargetPath, &mismatch.ArrIDType, &mismatch.ArrIDValue,
 			&mismatch.TargetIDType, &targetIDValue, &mismatch.TargetMetadataID,
 			&mismatch.Status, &fixedAt, &errorStr, &mismatch.CreatedAt,
 		); err != nil {
@@ -625,6 +693,11 @@ func (db *DB) ClearMatcharrHistory() error {
 	_, err := db.Exec(`DELETE FROM matcharr_mismatches`)
 	if err != nil {
 		return fmt.Errorf("failed to clear matcharr mismatches: %w", err)
+	}
+
+	// Delete gaps
+	if _, err := db.Exec(`DELETE FROM matcharr_gaps`); err != nil {
+		return fmt.Errorf("failed to clear matcharr gaps: %w", err)
 	}
 
 	// Then delete runs

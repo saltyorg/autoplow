@@ -33,6 +33,7 @@
         'matcharr_run_started': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#quick-actions'],
         'matcharr_run_completed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-mismatches', '#quick-actions'],
         'matcharr_run_failed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#quick-actions'],
+        'matcharr_mismatch_updated': ['#matcharr-mismatches', '#matcharr-status', '#quick-actions'],
 
         // Plex Auto Languages events
         'plex_auto_languages_track_changed': ['#pal-recent-activity', '#pal-history', '#pal-preferences', '#pal-status']
