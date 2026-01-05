@@ -14,7 +14,7 @@ import (
 type ArrMedia struct {
 	Title     string `json:"title"`
 	Path      string `json:"path"`
-	TMDBID    int    `json:"tmdb_id,omitempty"` // Radarr movies
+	TMDBID    int    `json:"tmdb_id,omitempty"` // Movies (Radarr) and some Sonarr series
 	TVDBID    int    `json:"tvdb_id,omitempty"` // Sonarr series
 	IMDBID    string `json:"imdb_id,omitempty"` // Both
 	TitleSlug string `json:"title_slug,omitempty"`

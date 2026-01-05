@@ -152,6 +152,7 @@ type sonarrSeries struct {
 	Title      string                  `json:"title"`
 	Path       string                  `json:"path"`
 	TvdbID     int                     `json:"tvdbId"`
+	TmdbID     int                     `json:"tmdbId"`
 	ImdbID     string                  `json:"imdbId"`
 	TitleSlug  string                  `json:"titleSlug"`
 	Statistics *sonarrSeriesStatistics `json:"statistics"`
@@ -189,6 +190,7 @@ func (c *ArrClient) parseSonarrResponse(body []byte) ([]ArrMedia, error) {
 			Title:     s.Title,
 			Path:      s.Path,
 			TVDBID:    s.TvdbID,
+			TMDBID:    s.TmdbID,
 			IMDBID:    s.ImdbID,
 			TitleSlug: s.TitleSlug,
 			HasFile:   hasFiles,

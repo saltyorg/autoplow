@@ -143,6 +143,117 @@ func TestCompareArrToTarget_AllowsDotsInDirectoryName(t *testing.T) {
 	}
 }
 
+func TestCompareArrToTarget_FallsBackToIMDBWhenTMDBMissing(t *testing.T) {
+	arr := &database.MatcharrArr{
+		ID:   4,
+		Name: "Radarr",
+		Type: database.ArrTypeRadarr,
+	}
+	arrMedia := []ArrMedia{{
+		Title:   "Die Hart: Die Harter",
+		Path:    "/mnt/media/Movies/Die Hart 2 Die Harter",
+		TMDBID:  32094375, // TMDB ID expected but missing on target
+		IMDBID:  "tt32094375",
+		HasFile: true,
+	}}
+	target := &database.Target{
+		ID:   40,
+		Name: "Plex",
+	}
+	targetItems := []MediaServerItem{{
+		Title: "Die Hart: Die Harter",
+		Path:  "/mnt/media/Movies/Die Hart 2 Die Harter/Die Hart 2 Die Harter.mkv",
+		ProviderIDs: map[string]string{
+			"imdb": "tt32094375",
+		},
+	}}
+
+	result := CompareArrToTarget(context.Background(), arr, arrMedia, target, targetItems)
+
+	if result.Compared != 1 {
+		t.Fatalf("expected 1 item compared, got %d", result.Compared)
+	}
+	if len(result.Mismatches) != 0 {
+		t.Fatalf("expected no mismatches when imdb fallback matches, got %d", len(result.Mismatches))
+	}
+}
+
+func TestCompareArrToTarget_DoesNotFallbackWhenIMDBMissing(t *testing.T) {
+	arr := &database.MatcharrArr{
+		ID:   5,
+		Name: "Radarr",
+		Type: database.ArrTypeRadarr,
+	}
+	arrMedia := []ArrMedia{{
+		Title:   "Another Movie",
+		Path:    "/mnt/media/Movies/Another Movie",
+		TMDBID:  12345,
+		IMDBID:  "",
+		HasFile: true,
+	}}
+	target := &database.Target{
+		ID:   50,
+		Name: "Plex",
+	}
+	targetItems := []MediaServerItem{{
+		Title: "Another Movie",
+		Path:  "/mnt/media/Movies/Another Movie/Another Movie.mkv",
+		ProviderIDs: map[string]string{
+			// TMDB missing, IMDB present on server only
+			"imdb": "tt0123456",
+		},
+	}}
+
+	result := CompareArrToTarget(context.Background(), arr, arrMedia, target, targetItems)
+
+	if result.Compared != 1 {
+		t.Fatalf("expected 1 item compared, got %d", result.Compared)
+	}
+	if len(result.Mismatches) != 1 {
+		t.Fatalf("expected mismatch when Arr has no IMDB fallback, got %d", len(result.Mismatches))
+	}
+	if result.Mismatches[0].ActualID != "" {
+		t.Fatalf("expected empty actual ID when TMDB missing and IMDB fallback not used, got %s", result.Mismatches[0].ActualID)
+	}
+}
+
+func TestCompareArrToTarget_SonarrFallsBackToTMDB(t *testing.T) {
+	arr := &database.MatcharrArr{
+		ID:   6,
+		Name: "Sonarr",
+		Type: database.ArrTypeSonarr,
+	}
+	arrMedia := []ArrMedia{{
+		Title:   "Show With TMDB",
+		Path:    "/mnt/media/TV/Show With TMDB",
+		TVDBID:  999,
+		TMDBID:  888,
+		IMDBID:  "",
+		HasFile: true,
+	}}
+	target := &database.Target{
+		ID:   60,
+		Name: "Plex",
+	}
+	targetItems := []MediaServerItem{{
+		Title: "Show With TMDB",
+		Path:  "/mnt/media/TV/Show With TMDB/Show With TMDB.mkv",
+		ProviderIDs: map[string]string{
+			// TVDB missing/mismatched, tmdb present and should be used as fallback
+			"tmdb": "888",
+		},
+	}}
+
+	result := CompareArrToTarget(context.Background(), arr, arrMedia, target, targetItems)
+
+	if result.Compared != 1 {
+		t.Fatalf("expected 1 item compared, got %d", result.Compared)
+	}
+	if len(result.Mismatches) != 0 {
+		t.Fatalf("expected no mismatches when tmdb fallback matches, got %d", len(result.Mismatches))
+	}
+}
+
 func TestMapPath_RespectsPathBoundaries(t *testing.T) {
 	mappings := []database.MatcharrPathMapping{{
 		ArrPath:    "/mnt/media",
