@@ -26,6 +26,11 @@ type mismatchArrOption struct {
 	Name string
 }
 
+type gapOption struct {
+	ID   int64
+	Name string
+}
+
 // MatcharrPage renders the main matcharr page
 func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 	tab := r.URL.Query().Get("tab")
@@ -77,6 +82,13 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 		targetGaps = []*database.MatcharrGap{}
 	}
 
+	filteredArrGaps := filterMatcharrGaps(arrGaps, arrIDFilter, targetFilterID)
+	filteredTargetGaps := filterMatcharrGaps(targetGaps, arrIDFilter, targetFilterID)
+	arrGapArrOptions := buildGapArrOptions(arrGaps)
+	arrGapTargetOptions := buildGapTargetOptions(arrGaps)
+	targetGapArrOptions := buildGapArrOptions(targetGaps)
+	targetGapTargetOptions := buildGapTargetOptions(targetGaps)
+
 	// Get run history
 	runs, _ := h.db.ListMatcharrRuns(10, 0)
 
@@ -90,25 +102,29 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 	matcharrTargets, _ := h.db.ListMatcharrEnabledTargets()
 
 	h.render(w, r, "matcharr.html", map[string]any{
-		"Tab":                tab,
-		"Status":             status,
-		"Arrs":               arrs,
-		"EnabledArrs":        enabledArrs,
-		"LatestRun":          latestRun,
-		"PendingMismatches":  pendingMismatches,
-		"FilteredMismatches": filteredMismatches,
-		"ArrGaps":            arrGaps,
-		"TargetGaps":         targetGaps,
-		"Runs":               runs,
-		"FixHistory":         fixHistory,
-		"Targets":            targets,
-		"MatcharrTargets":    len(matcharrTargets),
-		"CanRun":             enabledArrs > 0 && len(matcharrTargets) > 0,
-		"SelectedArrID":      arrIDFilter,
-		"SelectedTargetID":   targetFilterID,
-		"TargetOptions":      targetOptions,
-		"ArrOptions":         arrOptions,
-		"FiltersApplied":     filtersApplied,
+		"Tab":                    tab,
+		"Status":                 status,
+		"Arrs":                   arrs,
+		"EnabledArrs":            enabledArrs,
+		"LatestRun":              latestRun,
+		"PendingMismatches":      pendingMismatches,
+		"FilteredMismatches":     filteredMismatches,
+		"ArrGaps":                filteredArrGaps,
+		"TargetGaps":             filteredTargetGaps,
+		"Runs":                   runs,
+		"FixHistory":             fixHistory,
+		"Targets":                targets,
+		"MatcharrTargets":        len(matcharrTargets),
+		"CanRun":                 enabledArrs > 0 && len(matcharrTargets) > 0,
+		"SelectedArrID":          arrIDFilter,
+		"SelectedTargetID":       targetFilterID,
+		"TargetOptions":          targetOptions,
+		"ArrOptions":             arrOptions,
+		"ArrGapArrOptions":       arrGapArrOptions,
+		"ArrGapTargetOptions":    arrGapTargetOptions,
+		"TargetGapArrOptions":    targetGapArrOptions,
+		"TargetGapTargetOptions": targetGapTargetOptions,
+		"FiltersApplied":         filtersApplied,
 	})
 }
 
@@ -362,6 +378,8 @@ func (h *Handlers) MatcharrMismatchesPartial(w http.ResponseWriter, r *http.Requ
 
 // MatcharrArrGapsPartial returns the Missing on Server section as HTML
 func (h *Handlers) MatcharrArrGapsPartial(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
+	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
 	latestRun, _ := h.db.GetLatestMatcharrRun()
 
 	var gaps []*database.MatcharrGap
@@ -372,14 +390,24 @@ func (h *Handlers) MatcharrArrGapsPartial(w http.ResponseWriter, r *http.Request
 		gaps = []*database.MatcharrGap{}
 	}
 
+	filteredGaps := filterMatcharrGaps(gaps, arrIDFilter, targetFilterID)
+	arrOptions := buildGapArrOptions(gaps)
+	targetOptions := buildGapTargetOptions(gaps)
+
 	h.renderPartial(w, "matcharr.html", "arr_gaps_section", map[string]any{
-		"Rows":      gaps,
-		"IsPartial": true,
+		"Rows":             filteredGaps,
+		"ArrOptions":       arrOptions,
+		"TargetOptions":    targetOptions,
+		"SelectedArrID":    arrIDFilter,
+		"SelectedTargetID": targetFilterID,
+		"IsPartial":        true,
 	})
 }
 
 // MatcharrTargetGapsPartial returns the Missing in Arrs section as HTML
 func (h *Handlers) MatcharrTargetGapsPartial(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
+	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
 	latestRun, _ := h.db.GetLatestMatcharrRun()
 
 	var gaps []*database.MatcharrGap
@@ -390,9 +418,17 @@ func (h *Handlers) MatcharrTargetGapsPartial(w http.ResponseWriter, r *http.Requ
 		gaps = []*database.MatcharrGap{}
 	}
 
+	filteredGaps := filterMatcharrGaps(gaps, arrIDFilter, targetFilterID)
+	arrOptions := buildGapArrOptions(gaps)
+	targetOptions := buildGapTargetOptions(gaps)
+
 	h.renderPartial(w, "matcharr.html", "target_gaps_section", map[string]any{
-		"Rows":      gaps,
-		"IsPartial": true,
+		"Rows":             filteredGaps,
+		"ArrOptions":       arrOptions,
+		"TargetOptions":    targetOptions,
+		"SelectedArrID":    arrIDFilter,
+		"SelectedTargetID": targetFilterID,
+		"IsPartial":        true,
 	})
 }
 
@@ -748,6 +784,87 @@ func buildMismatchArrOptions(mismatches []*database.MatcharrMismatch) []mismatch
 	options := make([]mismatchArrOption, 0, len(arrs))
 	for id, name := range arrs {
 		options = append(options, mismatchArrOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
+}
+
+func filterMatcharrGaps(gaps []*database.MatcharrGap, arrID int64, targetID int64) []*database.MatcharrGap {
+	if arrID == 0 && targetID == 0 {
+		return gaps
+	}
+
+	filtered := make([]*database.MatcharrGap, 0, len(gaps))
+	for _, gap := range gaps {
+		if arrID > 0 && gap.ArrID != arrID {
+			continue
+		}
+		if targetID > 0 && gap.TargetID != targetID {
+			continue
+		}
+		filtered = append(filtered, gap)
+	}
+
+	return filtered
+}
+
+func buildGapArrOptions(gaps []*database.MatcharrGap) []gapOption {
+	arrs := make(map[int64]string)
+	for _, gap := range gaps {
+		if gap.ArrID == 0 {
+			continue
+		}
+		if _, exists := arrs[gap.ArrID]; exists {
+			continue
+		}
+		name := gap.ArrName
+		if name == "" {
+			name = fmt.Sprintf("Arr #%d", gap.ArrID)
+		}
+		arrs[gap.ArrID] = name
+	}
+
+	options := make([]gapOption, 0, len(arrs))
+	for id, name := range arrs {
+		options = append(options, gapOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
+}
+
+func buildGapTargetOptions(gaps []*database.MatcharrGap) []gapOption {
+	targets := make(map[int64]string)
+	for _, gap := range gaps {
+		if gap.TargetID == 0 {
+			continue
+		}
+		if _, exists := targets[gap.TargetID]; exists {
+			continue
+		}
+		name := gap.TargetName
+		if name == "" {
+			name = fmt.Sprintf("Target #%d", gap.TargetID)
+		}
+		targets[gap.TargetID] = name
+	}
+
+	options := make([]gapOption, 0, len(targets))
+	for id, name := range targets {
+		options = append(options, gapOption{ID: id, Name: name})
 	}
 
 	sort.Slice(options, func(i, j int) bool {

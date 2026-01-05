@@ -368,12 +368,12 @@
 
     {{if eq .Content.Tab "arr-gaps"}}
     <!-- Missing on Server Tab -->
-    {{template "arr_gaps_section" (dict "Rows" .Content.ArrGaps "IsPartial" false)}}
+    {{template "arr_gaps_section" (dict "Rows" .Content.ArrGaps "IsPartial" false "ArrOptions" .Content.ArrGapArrOptions "TargetOptions" .Content.ArrGapTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID)}}
     {{end}}
 
     {{if eq .Content.Tab "target-gaps"}}
     <!-- Missing in Arrs Tab -->
-    {{template "target_gaps_section" (dict "Rows" .Content.TargetGaps "IsPartial" false)}}
+    {{template "target_gaps_section" (dict "Rows" .Content.TargetGaps "IsPartial" false "ArrOptions" .Content.TargetGapArrOptions "TargetOptions" .Content.TargetGapTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID)}}
     {{end}}
 
     {{if eq .Content.Tab "mismatches"}}
@@ -679,7 +679,7 @@
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr</th>
-                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Server</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Type</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Expected</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actual</th>
@@ -818,13 +818,47 @@ function handleMismatchAction(event, id) {
 {{end}}
 
 {{define "arr_gaps_section"}}
-<div id="matcharr-arr-gaps" class="space-y-6" hx-get="/matcharr/gaps/arr" hx-trigger="sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+<div id="matcharr-arr-gaps" class="space-y-6" hx-get="/matcharr/gaps/arr" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".arr-gaps-filters select" data-sse-polling-fallback="5s">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing on Server</h3>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths that Arr reported but were not found on any media server.</p>
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing on Server</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths that Arr reported but were not found on any media server.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 arr-gaps-filters">
+                <div class="flex items-center">
+                    <label for="arr-gaps-arr-filter" class="sr-only">Arr filter</label>
+                    <select id="arr-gaps-arr-filter"
+                            name="arr_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/gaps/arr"
+                            hx-target="#matcharr-arr-gaps"
+                            hx-swap="outerHTML"
+                            hx-include=".arr-gaps-filters select">
+                        <option value="0" {{if not $.SelectedArrID}}selected{{end}}>All Arrs</option>
+                        {{range .ArrOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedArrID (eq $.SelectedArrID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="flex items-center">
+                    <label for="arr-gaps-target-filter" class="sr-only">Media server filter</label>
+                    <select id="arr-gaps-target-filter"
+                            name="target_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/gaps/arr"
+                            hx-target="#matcharr-arr-gaps"
+                            hx-swap="outerHTML"
+                            hx-include=".arr-gaps-filters select">
+                        <option value="0" {{if not $.SelectedTargetID}}selected{{end}}>All Media Servers</option>
+                        {{range .TargetOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedTargetID (eq $.SelectedTargetID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
         </div>
-        <div class="px-4 py-5 sm:p-6">
+        <div class="px-4 py-5 sm:p-6 space-y-4">
             {{template "gap_table" (dict "Rows" .Rows "Type" "arr")}}
         </div>
     </div>
@@ -835,13 +869,47 @@ function handleMismatchAction(event, id) {
 {{end}}
 
 {{define "target_gaps_section"}}
-<div id="matcharr-target-gaps" class="space-y-6" hx-get="/matcharr/gaps/target" hx-trigger="sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+<div id="matcharr-target-gaps" class="space-y-6" hx-get="/matcharr/gaps/target" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".target-gaps-filters select" data-sse-polling-fallback="5s">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing in Arrs</h3>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths found on media servers that were not reported by any Arr instance.</p>
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing in Arrs</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths found on media servers that were not reported by any Arr instance.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 target-gaps-filters">
+                <div class="flex items-center">
+                    <label for="target-gaps-arr-filter" class="sr-only">Arr filter</label>
+                    <select id="target-gaps-arr-filter"
+                            name="arr_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/gaps/target"
+                            hx-target="#matcharr-target-gaps"
+                            hx-swap="outerHTML"
+                            hx-include=".target-gaps-filters select">
+                        <option value="0" {{if not $.SelectedArrID}}selected{{end}}>All Arrs</option>
+                        {{range .ArrOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedArrID (eq $.SelectedArrID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="flex items-center">
+                    <label for="target-gaps-target-filter" class="sr-only">Media server filter</label>
+                    <select id="target-gaps-target-filter"
+                            name="target_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/gaps/target"
+                            hx-target="#matcharr-target-gaps"
+                            hx-swap="outerHTML"
+                            hx-include=".target-gaps-filters select">
+                        <option value="0" {{if not $.SelectedTargetID}}selected{{end}}>All Media Servers</option>
+                        {{range .TargetOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedTargetID (eq $.SelectedTargetID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
         </div>
-        <div class="px-4 py-5 sm:p-6">
+        <div class="px-4 py-5 sm:p-6 space-y-4">
             {{template "gap_table" (dict "Rows" .Rows "Type" "target")}}
         </div>
     </div>
