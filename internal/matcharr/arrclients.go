@@ -149,11 +149,17 @@ func (c *ArrClient) GetRootFolders(ctx context.Context) ([]RootFolder, error) {
 
 // sonarrSeries represents a series from Sonarr API
 type sonarrSeries struct {
-	Title     string `json:"title"`
-	Path      string `json:"path"`
-	TvdbID    int    `json:"tvdbId"`
-	ImdbID    string `json:"imdbId"`
-	TitleSlug string `json:"titleSlug"`
+	Title      string                  `json:"title"`
+	Path       string                  `json:"path"`
+	TvdbID     int                     `json:"tvdbId"`
+	ImdbID     string                  `json:"imdbId"`
+	TitleSlug  string                  `json:"titleSlug"`
+	Statistics *sonarrSeriesStatistics `json:"statistics"`
+}
+
+type sonarrSeriesStatistics struct {
+	EpisodeFileCount int   `json:"episodeFileCount"`
+	SizeOnDisk       int64 `json:"sizeOnDisk"`
 }
 
 // radarrMovie represents a movie from Radarr API
@@ -163,6 +169,7 @@ type radarrMovie struct {
 	TmdbID    int    `json:"tmdbId"`
 	ImdbID    string `json:"imdbId"`
 	TitleSlug string `json:"titleSlug"`
+	HasFile   bool   `json:"hasFile"`
 }
 
 func (c *ArrClient) parseSonarrResponse(body []byte) ([]ArrMedia, error) {
@@ -173,12 +180,18 @@ func (c *ArrClient) parseSonarrResponse(body []byte) ([]ArrMedia, error) {
 
 	media := make([]ArrMedia, 0, len(series))
 	for _, s := range series {
+		hasFiles := false
+		if s.Statistics != nil {
+			hasFiles = s.Statistics.EpisodeFileCount > 0 || s.Statistics.SizeOnDisk > 0
+		}
+
 		media = append(media, ArrMedia{
 			Title:     s.Title,
 			Path:      s.Path,
 			TVDBID:    s.TvdbID,
 			IMDBID:    s.ImdbID,
 			TitleSlug: s.TitleSlug,
+			HasFile:   hasFiles,
 		})
 	}
 
@@ -199,6 +212,7 @@ func (c *ArrClient) parseRadarrResponse(body []byte) ([]ArrMedia, error) {
 			TMDBID:    m.TmdbID,
 			IMDBID:    m.ImdbID,
 			TitleSlug: m.TitleSlug,
+			HasFile:   m.HasFile,
 		})
 	}
 

@@ -40,6 +40,33 @@ func TestCompareArrToTarget_RequiresExactFolderMatch(t *testing.T) {
 	}
 }
 
+func TestCompareArrToTarget_SkipsMissingWhenNoFiles(t *testing.T) {
+	arr := &database.MatcharrArr{
+		ID:   11,
+		Name: "Radarr",
+		Type: database.ArrTypeRadarr,
+	}
+	arrMedia := []ArrMedia{{
+		Title:   "Unreleased Movie",
+		Path:    "/mnt/media/Movies/Unreleased Movie",
+		TMDBID:  9999,
+		HasFile: false,
+	}}
+	target := &database.Target{
+		ID:   110,
+		Name: "Plex",
+	}
+
+	result := CompareArrToTarget(context.Background(), arr, arrMedia, target, nil)
+
+	if len(result.MissingArr) != 0 {
+		t.Fatalf("expected no missing entries for Arr item without files, got %d", len(result.MissingArr))
+	}
+	if result.Compared != 0 {
+		t.Fatalf("expected no items compared when skipping missing check, got %d", result.Compared)
+	}
+}
+
 func TestCompareArrToTarget_MatchesMappedFolderExactly(t *testing.T) {
 	arr := &database.MatcharrArr{
 		ID:   2,

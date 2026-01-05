@@ -18,6 +18,7 @@ type ArrMedia struct {
 	TVDBID    int    `json:"tvdb_id,omitempty"` // Sonarr series
 	IMDBID    string `json:"imdb_id,omitempty"` // Both
 	TitleSlug string `json:"title_slug,omitempty"`
+	HasFile   bool   `json:"has_file"`
 }
 
 // GetPrimaryID returns the primary ID for this media item based on Arr type

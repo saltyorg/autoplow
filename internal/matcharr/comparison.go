@@ -72,6 +72,15 @@ func CompareArrToTarget(
 		// Try to find matching target item
 		targetItem := findMatchingTargetItem(normalizedPath, targetByPath)
 		if targetItem == nil {
+			if !media.HasFile {
+				log.Trace().
+					Str("arr", arr.Name).
+					Str("title", media.Title).
+					Str("path", mappedPath).
+					Msg("Skipping missing check for Arr item without files")
+				continue
+			}
+
 			log.Trace().
 				Str("arr", arr.Name).
 				Str("title", media.Title).
