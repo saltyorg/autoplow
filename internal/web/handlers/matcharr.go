@@ -324,6 +324,42 @@ func (h *Handlers) MatcharrMismatchesPartial(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// MatcharrArrGapsPartial returns the Missing on Server section as HTML
+func (h *Handlers) MatcharrArrGapsPartial(w http.ResponseWriter, r *http.Request) {
+	latestRun, _ := h.db.GetLatestMatcharrRun()
+
+	var gaps []*database.MatcharrGap
+	if latestRun != nil {
+		gaps, _ = h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceArr)
+	}
+	if gaps == nil {
+		gaps = []*database.MatcharrGap{}
+	}
+
+	h.renderPartial(w, "matcharr.html", "arr_gaps_section", map[string]any{
+		"Rows":      gaps,
+		"IsPartial": true,
+	})
+}
+
+// MatcharrTargetGapsPartial returns the Missing in Arrs section as HTML
+func (h *Handlers) MatcharrTargetGapsPartial(w http.ResponseWriter, r *http.Request) {
+	latestRun, _ := h.db.GetLatestMatcharrRun()
+
+	var gaps []*database.MatcharrGap
+	if latestRun != nil {
+		gaps, _ = h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceTarget)
+	}
+	if gaps == nil {
+		gaps = []*database.MatcharrGap{}
+	}
+
+	h.renderPartial(w, "matcharr.html", "target_gaps_section", map[string]any{
+		"Rows":      gaps,
+		"IsPartial": true,
+	})
+}
+
 // MatcharrFixOne fixes a single mismatch
 func (h *Handlers) MatcharrFixOne(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)

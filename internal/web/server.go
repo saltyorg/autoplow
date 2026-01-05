@@ -755,6 +755,8 @@ func (s *Server) setupRoutes() {
 			r.Post("/arrs/{id}", h.MatcharrArrUpdate)
 			r.Delete("/arrs/{id}", h.MatcharrArrDelete)
 			r.Post("/arrs/{id}/test", h.MatcharrArrTest)
+			r.Get("/gaps/arr", h.MatcharrArrGapsPartial)
+			r.Get("/gaps/target", h.MatcharrTargetGapsPartial)
 			r.Post("/run", h.MatcharrRunNow)
 			r.Get("/run/status", h.MatcharrRunStatus)
 			r.Get("/mismatches", h.MatcharrMismatchesPartial)

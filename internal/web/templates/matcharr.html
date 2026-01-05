@@ -20,10 +20,10 @@
                 Media Servers ({{.Content.MatcharrTargets}})
             </a>
             <a href="/matcharr?tab=arr-gaps" class="{{if eq .Content.Tab "arr-gaps"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
-                Missing on Server ({{len .Content.ArrGaps}})
+                Missing on Server (<span id="arr-gaps-count">{{len .Content.ArrGaps}}</span>)
             </a>
             <a href="/matcharr?tab=target-gaps" class="{{if eq .Content.Tab "target-gaps"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
-                Missing in Arrs ({{len .Content.TargetGaps}})
+                Missing in Arrs (<span id="target-gaps-count">{{len .Content.TargetGaps}}</span>)
             </a>
             <a href="/matcharr?tab=mismatches" class="{{if eq .Content.Tab "mismatches"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 Mismatches (<span id="mismatches-count">{{len .Content.PendingMismatches}}</span>)
@@ -367,32 +367,12 @@
 
     {{if eq .Content.Tab "arr-gaps"}}
     <!-- Missing on Server Tab -->
-    <div class="space-y-6">
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing on Server</h3>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths that Arr reported but were not found on any media server.</p>
-            </div>
-            <div class="px-4 py-5 sm:p-6">
-                {{template "gap_table" (dict "Rows" .Content.ArrGaps "Type" "arr")}}
-            </div>
-        </div>
-    </div>
+    {{template "arr_gaps_section" (dict "Rows" .Content.ArrGaps "IsPartial" false)}}
     {{end}}
 
     {{if eq .Content.Tab "target-gaps"}}
     <!-- Missing in Arrs Tab -->
-    <div class="space-y-6">
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing in Arrs</h3>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths found on media servers that were not reported by any Arr instance.</p>
-            </div>
-            <div class="px-4 py-5 sm:p-6">
-                {{template "gap_table" (dict "Rows" .Content.TargetGaps "Type" "target")}}
-            </div>
-        </div>
-    </div>
+    {{template "target_gaps_section" (dict "Rows" .Content.TargetGaps "IsPartial" false)}}
     {{end}}
 
     {{if eq .Content.Tab "mismatches"}}
@@ -788,6 +768,40 @@ function handleMismatchAction(event, id) {
     <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Run a comparison to check for mismatches.</p>
 </div>
 {{end}}
+{{end}}
+
+{{define "arr_gaps_section"}}
+<div id="matcharr-arr-gaps" class="space-y-6" hx-get="/matcharr/gaps/arr" hx-trigger="sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing on Server</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths that Arr reported but were not found on any media server.</p>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            {{template "gap_table" (dict "Rows" .Rows "Type" "arr")}}
+        </div>
+    </div>
+    {{if .IsPartial}}
+    <span id="arr-gaps-count" hx-swap-oob="true">{{len .Rows}}</span>
+    {{end}}
+</div>
+{{end}}
+
+{{define "target_gaps_section"}}
+<div id="matcharr-target-gaps" class="space-y-6" hx-get="/matcharr/gaps/target" hx-trigger="sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing in Arrs</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths found on media servers that were not reported by any Arr instance.</p>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            {{template "gap_table" (dict "Rows" .Rows "Type" "target")}}
+        </div>
+    </div>
+    {{if .IsPartial}}
+    <span id="target-gaps-count" hx-swap-oob="true">{{len .Rows}}</span>
+    {{end}}
+</div>
 {{end}}
 
 {{define "gap_table"}}
