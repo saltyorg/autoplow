@@ -20,6 +20,7 @@ type PlexTargetInterface interface {
 	DBTarget() *database.Target
 	RegisterNotificationCallbackAny(cb func(notification any))
 	GetEpisodeWithStreams(ctx context.Context, ratingKey string) (*Episode, error)
+	GetSessionEpisodeWithStreams(ctx context.Context, clientIdentifier string, ratingKey string) (*Episode, error)
 	GetShowEpisodes(ctx context.Context, showKey string) ([]Episode, error)
 	GetSeasonEpisodes(ctx context.Context, seasonKey string) ([]Episode, error)
 	SetStreams(ctx context.Context, partID int, audioStreamID, subtitleStreamID int) error
@@ -246,12 +247,7 @@ func (m *Manager) handlePlayingNotification(targetID int64, target PlexTargetInt
 
 	// Check if this is a state transition we care about
 	sessionKey := playing.SessionKey
-	prevState, hadPrevState := cache.GetSessionState(sessionKey)
-
-	// Skip if state is unchanged
-	if hadPrevState && prevState == playing.State {
-		return
-	}
+	prevState, _ := cache.GetSessionState(sessionKey)
 
 	log.Debug().
 		Str("target", target.Name()).
@@ -287,11 +283,15 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	defer cancel()
 
-	// Get the episode with streams to see what is currently selected
-	episode, err := target.GetEpisodeWithStreams(ctx, ratingKey)
+	// Try to get live stream selections from sessions first (captures in-play changes)
+	episode, err := target.GetSessionEpisodeWithStreams(ctx, clientIdentifier, ratingKey)
 	if err != nil {
-		log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode")
-		return
+		log.Trace().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get live session episode, falling back to library metadata")
+		episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
+		if err != nil {
+			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode")
+			return
+		}
 	}
 
 	if episode.GrandparentKey == "" || len(episode.Parts) == 0 {
@@ -328,6 +328,13 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 
 	// If this is the first time seeing this episode, just cache it and return
 	if !hasCached {
+		// Warm the user cache so we can identify the user if the session stops before tracks change
+		if user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier); err == nil && cache != nil {
+			cache.SetUserClient(clientIdentifier, user.ID, user.Name)
+		} else if err != nil {
+			log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: Failed to warm user cache")
+		}
+
 		log.Debug().
 			Str("show", episode.GrandparentTitle).
 			Str("episode", episode.Title).
@@ -413,11 +420,17 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	defer cancel()
 
-	// Get the episode with streams to see what was selected
-	episode, err := target.GetEpisodeWithStreams(ctx, ratingKey)
+	// Get the episode with streams to see what was selected (prefer live session data)
+	liveData := true
+	episode, err := target.GetSessionEpisodeWithStreams(ctx, clientIdentifier, ratingKey)
 	if err != nil {
-		log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Failed to get episode")
-		return
+		liveData = false
+		log.Trace().Err(err).Str("ratingKey", ratingKey).Msg("Failed to get live session episode, falling back to library metadata")
+		episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
+		if err != nil {
+			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Failed to get episode")
+			return
+		}
 	}
 
 	if episode.GrandparentKey == "" || len(episode.Parts) == 0 {
@@ -444,6 +457,15 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	pref, err := m.db.GetPlexAutoLanguagesPreference(targetID, user.ID, episode.GrandparentKey)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get preference")
+		return
+	}
+
+	// If we only have fallback metadata and an existing preference, avoid overwriting it with possibly stale data
+	if !liveData && pref != nil {
+		log.Trace().
+			Str("show", episode.GrandparentTitle).
+			Str("user", user.Name).
+			Msg("Skipping preference update on stop because live session data was unavailable and preference already exists")
 		return
 	}
 

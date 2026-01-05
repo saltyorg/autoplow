@@ -735,5 +735,27 @@
         overlay.classList.remove('hidden');
     });
 })();
+
+// Convert any .pal-time elements from UTC to the browser's local timezone
+(function() {
+    function palConvertTimes(root) {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('.pal-time').forEach(function(node) {
+            const utc = node.dataset.utc;
+            if (!utc) return;
+            const d = new Date(utc);
+            if (isNaN(d.getTime())) return;
+            node.textContent = d.toLocaleString();
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        palConvertTimes(document);
+    });
+
+    document.addEventListener('htmx:afterSwap', function(e) {
+        palConvertTimes(e.target);
+    });
+})();
 </script>
 {{end}}

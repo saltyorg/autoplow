@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -93,6 +94,160 @@ type plexSystemAccount struct {
 	Key   string `json:"key"`
 	Name  string `json:"name"`
 	Thumb string `json:"thumb,omitempty"`
+}
+
+// GetSessionEpisodeWithStreams fetches the current playing item's streams from /status/sessions for a client
+// This captures the user's live selections, which may differ from library metadata
+func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIdentifier string, ratingKey string) (*plexautolang.Episode, error) {
+	sessionsURL := s.dbTarget.URL + "/status/sessions"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", sessionsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plex returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse sessions to locate the matching client/ratingKey
+	var sessionsResp struct {
+		MediaContainer struct {
+			Metadata []struct {
+				RatingKey        string `json:"ratingKey"`
+				Key              string `json:"key"`
+				Title            string `json:"title"`
+				GrandparentTitle string `json:"grandparentTitle"`
+				GrandparentKey   string `json:"grandparentKey"`
+				ParentIndex      int    `json:"parentIndex"`
+				Index            int    `json:"index"`
+				AddedAt          int64  `json:"addedAt"`
+				UpdatedAt        int64  `json:"updatedAt"`
+				Media            []struct {
+					Part []struct {
+						ID     string `json:"id"`
+						Key    string `json:"key"`
+						File   string `json:"file"`
+						Stream []struct {
+							ID                   string `json:"id"`
+							StreamType           int    `json:"streamType"`
+							Default              bool   `json:"default"`
+							Selected             bool   `json:"selected"`
+							LanguageCode         string `json:"languageCode"`
+							LanguageTag          string `json:"languageTag"`
+							Codec                string `json:"codec"`
+							Channels             int    `json:"channels"`
+							AudioChannelLayout   string `json:"audioChannelLayout"`
+							Title                string `json:"title"`
+							DisplayTitle         string `json:"displayTitle"`
+							ExtendedDisplayTitle string `json:"extendedDisplayTitle"`
+							Forced               bool   `json:"forced"`
+							HearingImpaired      bool   `json:"hearingImpaired"`
+							VisualImpaired       bool   `json:"visualImpaired"`
+							Index                int    `json:"index"`
+						} `json:"Stream"`
+					} `json:"Part"`
+				} `json:"Media"`
+				Player struct {
+					MachineIdentifier string `json:"machineIdentifier"`
+				} `json:"Player"`
+			} `json:"Metadata"`
+		} `json:"MediaContainer"`
+	}
+
+	if err := json.Unmarshal(body, &sessionsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	for _, meta := range sessionsResp.MediaContainer.Metadata {
+		if meta.RatingKey != ratingKey {
+			continue
+		}
+		if meta.Player.MachineIdentifier != clientIdentifier {
+			continue
+		}
+
+		// Convert to Episode using the live stream selection
+		ep := &plexautolang.Episode{
+			RatingKey:        meta.RatingKey,
+			Key:              meta.Key,
+			Title:            meta.Title,
+			GrandparentTitle: meta.GrandparentTitle,
+			GrandparentKey:   meta.GrandparentKey,
+			ParentIndex:      meta.ParentIndex,
+			Index:            meta.Index,
+			AddedAt:          meta.AddedAt,
+			UpdatedAt:        meta.UpdatedAt,
+		}
+
+		for _, media := range meta.Media {
+			for _, part := range media.Part {
+				mediaPart := plexautolang.MediaPart{
+					ID:   parseStringID(part.ID),
+					Key:  part.Key,
+					File: part.File,
+				}
+
+				for _, stream := range part.Stream {
+					switch stream.StreamType {
+					case 2:
+						mediaPart.AudioStreams = append(mediaPart.AudioStreams, plexautolang.AudioStream{
+							ID:                   parseStringID(stream.ID),
+							StreamType:           stream.StreamType,
+							LanguageCode:         stream.LanguageCode,
+							LanguageTag:          stream.LanguageTag,
+							Codec:                stream.Codec,
+							Channels:             stream.Channels,
+							AudioChannelLayout:   stream.AudioChannelLayout,
+							Title:                stream.Title,
+							DisplayTitle:         stream.DisplayTitle,
+							ExtendedDisplayTitle: stream.ExtendedDisplayTitle,
+							VisualImpaired:       stream.VisualImpaired,
+							Selected:             stream.Selected,
+							Default:              stream.Default,
+							Index:                stream.Index,
+						})
+					case 3:
+						mediaPart.SubtitleStreams = append(mediaPart.SubtitleStreams, plexautolang.SubtitleStream{
+							ID:                   parseStringID(stream.ID),
+							StreamType:           stream.StreamType,
+							LanguageCode:         stream.LanguageCode,
+							LanguageTag:          stream.LanguageTag,
+							Codec:                stream.Codec,
+							Title:                stream.Title,
+							DisplayTitle:         stream.DisplayTitle,
+							ExtendedDisplayTitle: stream.ExtendedDisplayTitle,
+							Forced:               stream.Forced,
+							HearingImpaired:      stream.HearingImpaired,
+							Selected:             stream.Selected,
+							Default:              stream.Default,
+							Index:                stream.Index,
+						})
+					}
+				}
+
+				ep.Parts = append(ep.Parts, mediaPart)
+			}
+		}
+
+		return ep, nil
+	}
+
+	return nil, fmt.Errorf("no matching session for client %s and ratingKey %s", clientIdentifier, ratingKey)
 }
 
 // GetEpisodeWithStreams fetches episode metadata including all audio/subtitle streams
@@ -527,4 +682,13 @@ func (s *PlexTarget) GetSessionUserMapping(ctx context.Context) (map[string]plex
 // DBTarget returns the underlying database target for external access
 func (s *PlexTarget) DBTarget() *database.Target {
 	return s.dbTarget
+}
+
+// parseStringID safely converts a string numeric ID to int, returning 0 on error
+func parseStringID(id string) int {
+	v, err := strconv.Atoi(id)
+	if err != nil {
+		return 0
+	}
+	return v
 }
