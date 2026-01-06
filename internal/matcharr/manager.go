@@ -689,29 +689,29 @@ func (m *Manager) determineRequiredLibraries(
 			}
 
 			for _, lib := range targetMeta.libraries {
-				libPath := normalizePath(lib.Path)
+				libPaths := normalizedLibraryPaths(lib)
+				if len(libPaths) == 0 {
+					continue
+				}
 
-				// Check if library path overlaps with any mapped root folder
-				for _, mappedPath := range mappedPaths {
-					if pathsOverlap(libPath, mappedPath) {
-						key := fmt.Sprintf("%d:%s", targetMeta.target.ID, lib.ID)
-						spec := libraryFetchSpec{
-							target:  targetMeta.target,
-							fixer:   targetMeta.fixer,
-							library: lib,
-						}
-
-						// Add to unique set
-						if _, exists := uniqueLibraries[key]; !exists {
-							uniqueLibraries[key] = spec
-							runLog.Info("Library %s/%s (path: %s) matches Arr %s",
-								targetMeta.target.Name, lib.Name, lib.Path, arr.Name)
-						}
-
-						// Add to arr's library list
-						arrLibraryMap[arr.ID] = append(arrLibraryMap[arr.ID], spec)
-						break // Don't add same library multiple times for same arr
+				// Check if any library path overlaps with any mapped root folder
+				if libraryOverlaps(libPaths, mappedPaths) {
+					key := fmt.Sprintf("%d:%s", targetMeta.target.ID, lib.ID)
+					spec := libraryFetchSpec{
+						target:  targetMeta.target,
+						fixer:   targetMeta.fixer,
+						library: lib,
 					}
+
+					// Add to unique set
+					if _, exists := uniqueLibraries[key]; !exists {
+						uniqueLibraries[key] = spec
+						runLog.Info("Library %s/%s (paths: %s) matches Arr %s",
+							targetMeta.target.Name, lib.Name, strings.Join(libPaths, ", "), arr.Name)
+					}
+
+					// Add to arr's library list
+					arrLibraryMap[arr.ID] = append(arrLibraryMap[arr.ID], spec)
 				}
 			}
 		}
@@ -740,6 +740,53 @@ func pathsOverlap(path1, path2 string) bool {
 	}
 	if strings.HasPrefix(path2, path1+"/") {
 		return true
+	}
+	return false
+}
+
+// libraryOverlaps returns true if any library path overlaps with any mapped Arr root
+func libraryOverlaps(libraryPaths, mappedPaths []string) bool {
+	for _, libPath := range libraryPaths {
+		for _, mappedPath := range mappedPaths {
+			if pathsOverlap(libPath, mappedPath) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// normalizedLibraryPaths returns all normalized paths for a library, including legacy Path.
+func normalizedLibraryPaths(lib Library) []string {
+	paths := make([]string, 0, len(lib.Paths)+1)
+	for _, p := range lib.Paths {
+		if np := normalizePath(p); np != "" && !containsString(paths, np) {
+			paths = append(paths, np)
+		}
+	}
+	if lib.Path != "" {
+		if np := normalizePath(lib.Path); np != "" && !containsString(paths, np) {
+			paths = append(paths, np)
+		}
+	}
+	return paths
+}
+
+// pathListForLog returns a human-friendly list of library paths for logging
+func pathListForLog(lib Library) string {
+	paths := normalizedLibraryPaths(lib)
+	if len(paths) == 0 && lib.Path != "" {
+		return normalizePath(lib.Path)
+	}
+	return strings.Join(paths, ", ")
+}
+
+// containsString checks if slice contains string s
+func containsString(list []string, s string) bool {
+	for _, item := range list {
+		if item == s {
+			return true
+		}
 	}
 	return false
 }
@@ -794,7 +841,7 @@ func (m *Manager) fetchLibraryItems(ctx context.Context, specs []libraryFetchSpe
 				}
 			}()
 
-			runLog.Info("Fetching items from %s/%s (path: %s)", spec.target.Name, spec.library.Name, spec.library.Path)
+			runLog.Info("Fetching items from %s/%s (paths: %s)", spec.target.Name, spec.library.Name, pathListForLog(spec.library))
 
 			items, err := spec.fixer.GetLibraryItemsWithProviderIDs(ctx, spec.library.ID)
 			if err != nil {
@@ -930,12 +977,13 @@ func (m *Manager) FixAllPending(ctx context.Context) (int, error) {
 	return fixed, nil
 }
 
-// Library represents a media server library
+// Library represents a media server library (supports multiple root paths)
 type Library struct {
-	ID   string
-	Name string
-	Type string
-	Path string
+	ID    string
+	Name  string
+	Type  string
+	Path  string   // First path for compatibility/logging
+	Paths []string // All root paths for this library
 }
 
 // getTargetLibraries returns the libraries from a target
@@ -946,20 +994,32 @@ func (m *Manager) getTargetLibraries(_ context.Context, target *database.Target)
 		return nil, err
 	}
 
-	// Deduplicate by library ID
-	seen := make(map[string]bool)
-	var libraries []Library
+	// Aggregate paths by library ID
+	libraryMap := make(map[string]*Library)
 	for _, lib := range cached {
-		if seen[lib.LibraryID] {
+		entry, exists := libraryMap[lib.LibraryID]
+		if !exists {
+			entry = &Library{
+				ID:   lib.LibraryID,
+				Name: lib.Name,
+				Type: lib.Type,
+			}
+			libraryMap[lib.LibraryID] = entry
+		}
+
+		path := normalizePath(lib.Path)
+		if path == "" || containsString(entry.Paths, path) {
 			continue
 		}
-		seen[lib.LibraryID] = true
-		libraries = append(libraries, Library{
-			ID:   lib.LibraryID,
-			Name: lib.Name,
-			Type: lib.Type,
-			Path: lib.Path,
-		})
+		entry.Paths = append(entry.Paths, path)
+	}
+
+	var libraries []Library
+	for _, lib := range libraryMap {
+		if lib.Path == "" && len(lib.Paths) > 0 {
+			lib.Path = lib.Paths[0]
+		}
+		libraries = append(libraries, *lib)
 	}
 
 	return libraries, nil
