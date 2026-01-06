@@ -1042,7 +1042,7 @@ function handleMismatchAction(event, id) {
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {{range .Runs}}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-3 py-4 text-sm text-gray-900 dark:text-white">{{formatTime .StartedAt}}</td>
+                <td class="px-3 py-4 text-sm text-gray-900 dark:text-white"><span class="pal-time" data-utc="{{isoTime .StartedAt}}">{{formatTime .StartedAt}}</span></td>
                 <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{runDuration .StartedAt .CompletedAt}}</td>
                 <td class="px-3 py-4 text-sm">
                     {{if eq .Status "completed"}}
@@ -1109,7 +1109,7 @@ function handleMismatchAction(event, id) {
                 <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.TargetName}}</td>
                 <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 uppercase">{{.ArrIDType}}</td>
                 <td class="px-3 py-4 text-sm font-mono text-green-600 dark:text-green-400">{{.ArrIDValue}}</td>
-                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{if .FixedAt}}{{formatTimePtr .FixedAt}}{{else}}{{formatTime .CreatedAt}}{{end}}</td>
+                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{if .FixedAt}}<span class="pal-time" data-utc="{{isoTimePtr .FixedAt}}">{{formatTimePtr .FixedAt}}</span>{{else}}<span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span>{{end}}</td>
             </tr>
             {{end}}
         </tbody>
@@ -1207,7 +1207,7 @@ function handleMismatchAction(event, id) {
             <dl class="grid grid-cols-2 gap-4 sm:grid-cols-5">
                 <div>
                     <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Started</dt>
-                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{formatTime .LatestRun.StartedAt}}</dd>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white"><span class="pal-time" data-utc="{{isoTime .LatestRun.StartedAt}}">{{formatTime .LatestRun.StartedAt}}</span></dd>
                 </div>
                 <div>
                     <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Duration</dt>

@@ -84,7 +84,7 @@
                             {{if eq .Status "failed"}}bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-400{{end}}
                         ">{{.Status}}</span>
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.CreatedAt}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{if .Duration}}{{.Duration}}{{else}}-{{end}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if eq .Status "failed"}}

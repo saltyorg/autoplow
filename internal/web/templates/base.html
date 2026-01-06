@@ -736,16 +736,56 @@
     });
 })();
 
-// Convert any .pal-time elements from UTC to the browser's local timezone
+// Convert any .pal-time elements to the configured date/time format
 (function() {
+    var dateFormat = '{{.DateFormat}}';
+    var timeFormat = '{{.TimeFormat}}';
+
+    function formatDateTime(d) {
+        var year = d.getFullYear();
+        var month = String(d.getMonth() + 1).padStart(2, '0');
+        var day = String(d.getDate()).padStart(2, '0');
+
+        // Build date part based on format
+        var datePart;
+        switch (dateFormat) {
+            case 'dmy':
+                datePart = day + '/' + month + '/' + year;
+                break;
+            case 'mdy':
+                datePart = month + '/' + day + '/' + year;
+                break;
+            default: // ymd
+                datePart = year + '-' + month + '-' + day;
+        }
+
+        // Build time part based on format
+        var timePart;
+        if (timeFormat === '12h') {
+            var h = d.getHours();
+            var ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            var mins = String(d.getMinutes()).padStart(2, '0');
+            var secs = String(d.getSeconds()).padStart(2, '0');
+            timePart = h + ':' + mins + ':' + secs + ' ' + ampm;
+        } else { // 24h
+            var hours = String(d.getHours()).padStart(2, '0');
+            var mins = String(d.getMinutes()).padStart(2, '0');
+            var secs = String(d.getSeconds()).padStart(2, '0');
+            timePart = hours + ':' + mins + ':' + secs;
+        }
+
+        return datePart + ' ' + timePart;
+    }
+
     function palConvertTimes(root) {
         if (!root || !root.querySelectorAll) return;
         root.querySelectorAll('.pal-time').forEach(function(node) {
-            const utc = node.dataset.utc;
+            var utc = node.dataset.utc;
             if (!utc) return;
-            const d = new Date(utc);
+            var d = new Date(utc);
             if (isNaN(d.getTime())) return;
-            node.textContent = d.toLocaleString();
+            node.textContent = formatDateTime(d);
         });
     }
 

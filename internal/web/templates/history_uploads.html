@@ -98,7 +98,7 @@
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.RemoteName}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{formatBytes .SizeBytes}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.CompletedAt}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CompletedAt}}">{{formatTime .CompletedAt}}</span></td>
                 </tr>
                 {{end}}
                 {{else}}

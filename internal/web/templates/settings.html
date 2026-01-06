@@ -19,6 +19,7 @@
             {{if .UploadsEnabled}}
             <a href="/settings/rclone" class="{{if eq .Content.Tab "rclone"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Rclone</a>
             {{end}}
+            <a href="/settings/logging" class="{{if eq .Content.Tab "logging"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Logging</a>
             <a href="/settings/about" class="{{if eq .Content.Tab "about"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">About</a>
         </nav>
     </div>
@@ -30,18 +31,8 @@
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">General Settings</h3>
         </div>
         <div class="px-4 py-5 sm:p-6">
-            <form action="/settings" method="POST" class="space-y-6">
-                <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Log Level</label>
-                        <select name="log_level" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                            <option value="info" {{if eq .Content.Settings.LogLevel "info"}}selected{{end}}>Info</option>
-                            <option value="debug" {{if eq .Content.Settings.LogLevel "debug"}}selected{{end}}>Debug</option>
-                            <option value="trace" {{if eq .Content.Settings.LogLevel "trace"}}selected{{end}}>Trace</option>
-                        </select>
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Application logging verbosity</p>
-                    </div>
-
+            <form action="/settings" method="POST" class="space-y-6 max-w-3xl">
+                <div class="grid grid-cols-2 gap-6">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Retries</label>
                         <input type="text" inputmode="numeric" name="max_retries" value="{{.Content.Settings.MaxRetries}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
@@ -55,37 +46,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Log Size (MB)</label>
-                        <input type="text" inputmode="numeric" name="log_max_size_mb" value="{{.Content.Settings.LogMaxSizeMB}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Rotate the log file when it exceeds this size</p>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Rotated Files</label>
-                        <input type="text" inputmode="numeric" name="log_max_backups" value="{{.Content.Settings.LogMaxBackups}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How many rotated log files to keep (0 = keep all)</p>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Log Age (days)</label>
-                        <input type="text" inputmode="numeric" name="log_max_age_days" value="{{.Content.Settings.LogMaxAgeDays}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delete rotated logs older than this (0 = keep forever)</p>
-                    </div>
-                </div>
-
                 <div class="space-y-4">
-                    <div class="flex items-start">
-                        <div class="flex items-center h-5">
-                            <input type="checkbox" name="log_compress" id="log_compress" {{if .Content.Settings.LogCompress}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
-                        </div>
-                        <div class="ml-2">
-                            <label for="log_compress" class="block text-sm text-gray-900 dark:text-white">Compress rotated logs</label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400">Gzip rotated log files to save disk space</p>
-                        </div>
-                    </div>
-
                     <div class="flex items-start">
                         <div class="flex items-center h-5">
                             <input type="checkbox" name="scanning_enabled" id="scanning_enabled" {{if .Content.Settings.ScanningEnabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
@@ -124,6 +85,24 @@
                             <label for="use_bits_for_bitrate" class="block text-sm text-gray-900 dark:text-white">Use bits for streaming bitrates</label>
                             <p class="text-xs text-gray-500 dark:text-gray-400">Display streaming bitrates as Mbps (bits) instead of MiB/s (bytes). Matches Tautulli/Plex format.</p>
                         </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-6 max-w-md">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Date Format</label>
+                        <select name="date_format" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <option value="ymd" {{if eq .Content.Settings.DateFormat "ymd"}}selected{{end}}>2024-12-31</option>
+                            <option value="dmy" {{if eq .Content.Settings.DateFormat "dmy"}}selected{{end}}>31/12/2024</option>
+                            <option value="mdy" {{if eq .Content.Settings.DateFormat "mdy"}}selected{{end}}>12/31/2024</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Time Format</label>
+                        <select name="time_format" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <option value="24h" {{if eq .Content.Settings.TimeFormat "24h"}}selected{{end}}>23:59:59</option>
+                            <option value="12h" {{if eq .Content.Settings.TimeFormat "12h"}}selected{{end}}>11:59:59 PM</option>
+                        </select>
                     </div>
                 </div>
 
@@ -182,8 +161,8 @@
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Configure scan batching and processing settings.</p>
             </div>
             <div class="px-4 py-5 sm:p-6">
-                <form action="/settings/processor" method="POST" class="space-y-6">
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <form action="/settings/processor" method="POST" class="space-y-6 max-w-3xl">
+                    <div class="grid grid-cols-2 gap-6">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum Age (seconds)</label>
                             <input type="text" inputmode="numeric" name="minimum_age_seconds" value="{{.Content.Settings.MinimumAgeSeconds}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
@@ -314,13 +293,13 @@
                 <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Throttle Configuration</h3>
             </div>
             <div class="px-4 py-5 sm:p-6">
-                <form action="/settings/throttle" method="POST" class="space-y-6">
+                <form action="/settings/throttle" method="POST" class="space-y-6 max-w-3xl">
                     <div class="flex items-center">
                         <input type="checkbox" name="enabled" id="throttle_enabled" {{if .Content.ThrottleConfig.Enabled}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
                         <label for="throttle_enabled" class="ml-2 block text-sm text-gray-900 dark:text-white">Enable bandwidth throttling</label>
                     </div>
 
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div class="grid grid-cols-2 gap-6">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Bandwidth</label>
                             <div class="mt-1 flex rounded-md shadow-sm">
@@ -711,7 +690,7 @@
                         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                             {{range .Content.Logs}}
                             <tr>
-                                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{formatTime .CreatedAt}}</td>
+                                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
                                 <td class="px-3 py-2 text-xs text-gray-900 dark:text-white">{{.Provider}}</td>
                                 <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{{.EventType}}</td>
                                 <td class="px-3 py-2 text-xs">
@@ -893,7 +872,7 @@
                 <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Rclone Configuration</h3>
             </div>
             <div class="px-4 py-5 sm:p-6">
-                <form action="/settings/rclone" method="POST" class="space-y-6">
+                <form action="/settings/rclone" method="POST" class="space-y-6 max-w-3xl">
                     <!-- Managed/Unmanaged Toggle -->
                     <div class="flex items-center mb-4">
                         <input type="checkbox" name="managed" id="managed" {{if or (not .Content.RcloneConfig) .Content.RcloneConfig.Managed}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
@@ -905,7 +884,7 @@
 
                     <!-- Managed Mode Fields -->
                     <div id="managed-fields" class="space-y-6">
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        <div class="grid grid-cols-2 gap-6">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Binary Path</label>
                                 <input type="text" name="binary_path" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.BinaryPath}}{{else}}rclone{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="/usr/bin/rclone">
@@ -940,7 +919,7 @@
 
                     <!-- Unmanaged Mode Fields -->
                     <div id="unmanaged-fields" class="space-y-6 hidden">
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        <div class="grid grid-cols-2 gap-6">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">RCD Address</label>
                                 <input type="text" name="address" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.Address}}{{else}}127.0.0.1:5572{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="127.0.0.1:5572">
@@ -952,7 +931,7 @@
                     <!-- Credentials (both modes) -->
                     <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
                         <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">Authentication</h4>
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        <div class="grid grid-cols-2 gap-6">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
                                 <input type="text" name="username" value="{{if .Content.RcloneConfig}}{{.Content.RcloneConfig.Username}}{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="Auto-generated if empty">
@@ -1016,6 +995,69 @@
         }
     }
     </script>
+    {{end}}
+
+    {{if eq .Content.Tab "logging"}}
+    <!-- Logging Settings -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Logging Settings</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Configure application logging and log rotation.</p>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="/settings/logging" method="POST" class="space-y-6 max-w-3xl">
+                <div class="grid grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Log Level</label>
+                        <select name="log_level" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <option value="info" {{if eq .Content.Settings.LogLevel "info"}}selected{{end}}>Info</option>
+                            <option value="debug" {{if eq .Content.Settings.LogLevel "debug"}}selected{{end}}>Debug</option>
+                            <option value="trace" {{if eq .Content.Settings.LogLevel "trace"}}selected{{end}}>Trace</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Application logging verbosity</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Log Size (MB)</label>
+                        <input type="text" inputmode="numeric" name="log_max_size_mb" value="{{.Content.Settings.LogMaxSizeMB}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Rotate the log file when it exceeds this size</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Rotated Files</label>
+                        <input type="text" inputmode="numeric" name="log_max_backups" value="{{.Content.Settings.LogMaxBackups}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How many rotated log files to keep (0 = keep all)</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Log Age (days)</label>
+                        <input type="text" inputmode="numeric" name="log_max_age_days" value="{{.Content.Settings.LogMaxAgeDays}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Delete rotated logs older than this (0 = keep forever)</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input type="checkbox" name="log_compress" id="log_compress" {{if .Content.Settings.LogCompress}}checked{{end}} class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        </div>
+                        <div class="ml-2">
+                            <label for="log_compress" class="block text-sm text-gray-900 dark:text-white">Compress rotated logs</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Gzip rotated log files to save disk space</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <button type="submit" class="inline-flex justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                        Save Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
     {{end}}
 
     {{if eq .Content.Tab "about"}}

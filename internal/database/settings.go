@@ -112,10 +112,12 @@ var DefaultSettings = map[string]any{
 	"processor.cleanup_days":                 7, // 0 = disabled, keeps scan history forever
 	"processor.path_not_found_retries":       0, // 0 = fail immediately (default)
 	"processor.path_not_found_delay_seconds": 5,
-	"scanning.enabled":                       true, // Enable media server scanning
-	"uploads.enabled":                        true, // Enable cloud uploads
-	"display.use_binary_units":               true, // true = MiB/s (1024), false = MB/s (1000)
-	"display.use_bits_for_bitrate":           true, // true = Mbps (bits), false = MiB/s (bytes) for streaming
+	"scanning.enabled":                       true,  // Enable media server scanning
+	"uploads.enabled":                        true,  // Enable cloud uploads
+	"display.use_binary_units":               true,  // true = MiB/s (1024), false = MB/s (1000)
+	"display.use_bits_for_bitrate":           true,  // true = Mbps (bits), false = MiB/s (bytes) for streaming
+	"display.date_format":                    "ymd", // ymd, dmy, mdy
+	"display.time_format":                    "24h", // 24h, 12h
 	"throttle.enabled":                       false,
 	"throttle.pause_below_speed":             "1M",
 	"throttle.idle_speed":                    "0",

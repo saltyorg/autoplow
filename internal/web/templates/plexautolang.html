@@ -315,7 +315,7 @@
                     {{if .SubtitleDisplayTitle}}{{.SubtitleDisplayTitle}}{{else}}None{{end}}
                 </td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
-                    <span class="pal-time" data-utc="{{.UpdatedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{formatTime .UpdatedAt}}</span>
+                    <span class="pal-time" data-utc="{{isoTime .UpdatedAt}}">{{formatTime .UpdatedAt}}</span>
                 </td>
                 <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
                     <button
@@ -361,7 +361,7 @@
             {{range .History}}
             <tr>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
-                    <span class="pal-time" data-utc="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{formatTime .CreatedAt}}</span>
+                    <span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span>
                 </td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.TargetName}}</td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 dark:text-white">{{.PlexUsername}}</td>
@@ -492,7 +492,7 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
                             </p>
                         </div>
                         <div class="whitespace-nowrap text-right text-sm text-gray-500 dark:text-gray-400">
-                            <time class="pal-time" data-utc="{{ $h.CreatedAt.Format "2006-01-02T15:04:05Z07:00" }}">{{formatTime $h.CreatedAt}}</time>
+                            <time class="pal-time" data-utc="{{isoTime $h.CreatedAt}}">{{formatTime $h.CreatedAt}}</time>
                         </div>
                     </div>
                 </div>
@@ -571,7 +571,7 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.EpisodesUpdated}}</td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
-                        <span class="pal-time" data-utc="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{formatTime .CreatedAt}}</span>
+                        <span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span>
                     </td>
                 </tr>
                 {{end}}
@@ -680,7 +680,7 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
                     {{if .SubtitleDisplayTitle}}{{.SubtitleDisplayTitle}}{{else}}None{{end}}
                 </td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
-                    <span class="pal-time" data-utc="{{.UpdatedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{formatTime .UpdatedAt}}</span>
+                    <span class="pal-time" data-utc="{{isoTime .UpdatedAt}}">{{formatTime .UpdatedAt}}</span>
                 </td>
                 <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
                     <button

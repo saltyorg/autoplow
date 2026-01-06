@@ -9,22 +9,18 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/config"
-	"github.com/saltyorg/autoplow/internal/logging"
 )
 
 // GeneralSettings holds the general configuration for display
 type GeneralSettings struct {
-	LogLevel          string
-	LogMaxSizeMB      int
-	LogMaxBackups     int
-	LogMaxAgeDays     int
-	LogCompress       bool
 	MaxRetries        int
 	CleanupDays       int
 	ScanningEnabled   bool
 	UploadsEnabled    bool
 	UseBinaryUnits    bool
 	UseBitsForBitrate bool
+	DateFormat        string
+	TimeFormat        string
 }
 
 // SettingsPage renders the general settings page
@@ -32,17 +28,14 @@ func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
 	loader := config.NewLoader(h.db)
 
 	settings := GeneralSettings{
-		LogLevel:          loader.String("log.level", "info"),
-		LogMaxSizeMB:      loader.Int("log.max_size_mb", logging.DefaultMaxSizeMB),
-		LogMaxBackups:     loader.Int("log.max_backups", logging.DefaultMaxBackups),
-		LogMaxAgeDays:     loader.Int("log.max_age_days", logging.DefaultMaxAgeDays),
-		LogCompress:       loader.Bool("log.compress", logging.DefaultCompress),
 		MaxRetries:        loader.Int("processor.max_retries", 3),
 		CleanupDays:       loader.Int("processor.cleanup_days", 7),
 		ScanningEnabled:   loader.BoolDefaultTrue("scanning.enabled"),
 		UploadsEnabled:    loader.BoolDefaultTrue("uploads.enabled"),
 		UseBinaryUnits:    loader.BoolDefaultTrue("display.use_binary_units"),
 		UseBitsForBitrate: loader.BoolDefaultTrue("display.use_bits_for_bitrate"),
+		DateFormat:        loader.String("display.date_format", "ymd"),
+		TimeFormat:        loader.String("display.time_format", "24h"),
 	}
 
 	h.render(w, r, "settings.html", map[string]any{
@@ -64,24 +57,29 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	wasUploadsEnabled := loader.BoolDefaultTrue("uploads.enabled")
 
 	// Parse form values
-	logLevel := r.FormValue("log_level")
 	maxRetries, _ := strconv.Atoi(r.FormValue("max_retries"))
 	cleanupDays, _ := strconv.Atoi(r.FormValue("cleanup_days"))
 	scanningEnabled := r.FormValue("scanning_enabled") == "on"
 	uploadsEnabled := r.FormValue("uploads_enabled") == "on"
 	useBinaryUnits := r.FormValue("use_binary_units") == "on"
 	useBitsForBitrate := r.FormValue("use_bits_for_bitrate") == "on"
-	logMaxSizeMB, _ := strconv.Atoi(r.FormValue("log_max_size_mb"))
-	logMaxBackups, _ := strconv.Atoi(r.FormValue("log_max_backups"))
-	logMaxAgeDays, _ := strconv.Atoi(r.FormValue("log_max_age_days"))
-	logCompress := r.FormValue("log_compress") == "on"
+	dateFormat := r.FormValue("date_format")
+	timeFormat := r.FormValue("time_format")
 
-	// Validate log level
-	switch logLevel {
-	case "trace", "debug", "info":
+	// Validate date format
+	switch dateFormat {
+	case "ymd", "dmy", "mdy":
 		// valid
 	default:
-		logLevel = "info"
+		dateFormat = "ymd"
+	}
+
+	// Validate time format
+	switch timeFormat {
+	case "24h", "12h":
+		// valid
+	default:
+		timeFormat = "24h"
 	}
 
 	// Validate that at least one of scanning or uploads is enabled
@@ -98,33 +96,9 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	if cleanupDays < 0 {
 		cleanupDays = 0 // 0 = disabled
 	}
-	if logMaxSizeMB < 1 {
-		logMaxSizeMB = logging.DefaultMaxSizeMB
-	}
-	if logMaxBackups < 0 {
-		logMaxBackups = logging.DefaultMaxBackups
-	}
-	if logMaxAgeDays < 0 {
-		logMaxAgeDays = logging.DefaultMaxAgeDays
-	}
 
 	// Save to database
 	var saveErr error
-	if err := h.db.SetSetting("log.level", logLevel); err != nil {
-		saveErr = err
-	}
-	if err := h.db.SetSetting("log.max_size_mb", strconv.Itoa(logMaxSizeMB)); err != nil {
-		saveErr = err
-	}
-	if err := h.db.SetSetting("log.max_backups", strconv.Itoa(logMaxBackups)); err != nil {
-		saveErr = err
-	}
-	if err := h.db.SetSetting("log.max_age_days", strconv.Itoa(logMaxAgeDays)); err != nil {
-		saveErr = err
-	}
-	if err := h.db.SetSetting("log.compress", strconv.FormatBool(logCompress)); err != nil {
-		saveErr = err
-	}
 	if err := h.db.SetSetting("processor.max_retries", strconv.Itoa(maxRetries)); err != nil {
 		saveErr = err
 	}
@@ -143,15 +117,18 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.SetSetting("display.use_bits_for_bitrate", strconv.FormatBool(useBitsForBitrate)); err != nil {
 		saveErr = err
 	}
+	if err := h.db.SetSetting("display.date_format", dateFormat); err != nil {
+		saveErr = err
+	}
+	if err := h.db.SetSetting("display.time_format", timeFormat); err != nil {
+		saveErr = err
+	}
 
 	if saveErr != nil {
 		h.flashErr(w, "Failed to save some settings")
 		h.redirect(w, r, "/settings")
 		return
 	}
-
-	// Apply logging changes immediately (level + rotation settings)
-	logging.Apply(logLevel, loader, logging.FilePathForDB(h.db.Path()))
 
 	// Handle upload subsystem toggle
 	if h.uploadSubsystemToggler != nil {

@@ -260,8 +260,10 @@ type PageData struct {
 	Flash           string
 	FlashErr        string
 	Content         any
-	ScanningEnabled bool // Global setting to show/hide scanning functionality
-	UploadsEnabled  bool // Global setting to show/hide upload functionality
+	ScanningEnabled bool   // Global setting to show/hide scanning functionality
+	UploadsEnabled  bool   // Global setting to show/hide upload functionality
+	DateFormat      string // Display date format: ymd, dmy, mdy
+	TimeFormat      string // Display time format: 24h, 12h
 	Version         VersionInfo
 }
 
@@ -281,12 +283,26 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, name string, d
 		uploadsEnabled = false
 	}
 
+	// Get date format setting (default to ymd)
+	dateFormat := "ymd"
+	if val, _ := h.db.GetSetting("display.date_format"); val != "" {
+		dateFormat = val
+	}
+
+	// Get time format setting (default to 24h)
+	timeFormat := "24h"
+	if val, _ := h.db.GetSetting("display.time_format"); val != "" {
+		timeFormat = val
+	}
+
 	pageData := PageData{
 		Title:           "Autoplow",
 		User:            user,
 		Content:         data,
 		ScanningEnabled: scanningEnabled,
 		UploadsEnabled:  uploadsEnabled,
+		DateFormat:      dateFormat,
+		TimeFormat:      timeFormat,
 		Version:         h.getVersionInfo(),
 	}
 

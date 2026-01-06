@@ -389,6 +389,15 @@ func templateFuncMap() template.FuncMap {
 			}
 			return t.Format("2006-01-02 15:04:05")
 		},
+		"isoTime": func(t time.Time) string {
+			return t.Format("2006-01-02T15:04:05Z07:00")
+		},
+		"isoTimePtr": func(t *time.Time) string {
+			if t == nil {
+				return ""
+			}
+			return t.Format("2006-01-02T15:04:05Z07:00")
+		},
 		"formatBytes": formatBytes,
 		"formatSpeed": formatSpeed,
 		"formatDuration": func(d time.Duration) string {
@@ -695,6 +704,8 @@ func (s *Server) setupRoutes() {
 			r.Post("/clear-upload-history", h.ClearUploadHistory)
 			r.Post("/regenerate-trigger-key", h.RegenerateTriggerKey)
 			r.Get("/about", h.SettingsAboutPage)
+			r.Get("/logging", h.SettingsLoggingPage)
+			r.Post("/logging", h.SettingsLoggingUpdate)
 			r.Get("/processor", h.SettingsProcessorPage)
 			r.Post("/processor", h.SettingsProcessorUpdate)
 

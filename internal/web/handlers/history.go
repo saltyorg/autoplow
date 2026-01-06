@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
@@ -16,8 +17,8 @@ type ScanHistoryItem struct {
 	Path        string
 	TriggerName string
 	Status      string
-	CreatedAt   string
-	CompletedAt string
+	CreatedAt   time.Time
+	CompletedAt *time.Time
 	Duration    string
 	Error       string
 }
@@ -54,11 +55,12 @@ func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
 	var items []ScanHistoryItem
 	for _, s := range scans {
 		item := ScanHistoryItem{
-			ID:        s.ID,
-			Path:      s.Path,
-			Status:    string(s.Status),
-			CreatedAt: s.CreatedAt.Format("2006-01-02 15:04:05"),
-			Error:     s.LastError,
+			ID:          s.ID,
+			Path:        s.Path,
+			Status:      string(s.Status),
+			CreatedAt:   s.CreatedAt,
+			CompletedAt: s.CompletedAt,
+			Error:       s.LastError,
 		}
 		if s.TriggerID != nil {
 			if name, ok := triggers[*s.TriggerID]; ok {
@@ -69,12 +71,9 @@ func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
 		} else {
 			item.TriggerName = "Manual"
 		}
-		if s.CompletedAt != nil {
-			item.CompletedAt = s.CompletedAt.Format("2006-01-02 15:04:05")
-			if s.StartedAt != nil {
-				duration := s.CompletedAt.Sub(*s.StartedAt)
-				item.Duration = duration.Round(1e9).String() // Round to seconds
-			}
+		if s.CompletedAt != nil && s.StartedAt != nil {
+			duration := s.CompletedAt.Sub(*s.StartedAt)
+			item.Duration = duration.Round(1e9).String() // Round to seconds
 		}
 		items = append(items, item)
 	}
@@ -171,7 +170,7 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 		RemoteName  string
 		RemotePath  string
 		SizeBytes   int64
-		CompletedAt string
+		CompletedAt time.Time
 	}
 
 	var items []UploadHistoryItem
@@ -181,7 +180,7 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 			LocalPath:   hist.LocalPath,
 			RemoteName:  hist.RemoteName,
 			RemotePath:  hist.RemotePath,
-			CompletedAt: hist.CompletedAt.Format("2006-01-02 15:04:05"),
+			CompletedAt: hist.CompletedAt,
 		}
 		if hist.SizeBytes != nil {
 			item.SizeBytes = *hist.SizeBytes

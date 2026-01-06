@@ -13,8 +13,8 @@
     <div>
         <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Run Details</h1>
         <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
-            Started: {{formatTime .Content.Run.StartedAt}}
-            {{if .Content.Run.CompletedAt}} | Completed: {{formatTime .Content.Run.CompletedAt}}{{end}}
+            Started: <span class="pal-time" data-utc="{{isoTime .Content.Run.StartedAt}}">{{formatTime .Content.Run.StartedAt}}</span>
+            {{if .Content.Run.CompletedAt}} | Completed: <span class="pal-time" data-utc="{{isoTimePtr .Content.Run.CompletedAt}}">{{formatTimePtr .Content.Run.CompletedAt}}</span>{{end}}
         </p>
     </div>
 
