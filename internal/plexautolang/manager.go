@@ -437,6 +437,27 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		return // Not a TV episode or no media parts
 	}
 
+	// If live data is gone (session already stopped), try to reapply the last known stream
+	// selection from cache so we don't lose mid-playback changes.
+	if !liveData {
+		var cache *Cache
+		m.mu.RLock()
+		cache = m.caches[targetID]
+		m.mu.RUnlock()
+
+		if cache != nil {
+			if cachedStreams, ok := cache.GetDefaultStreams(ratingKey); ok {
+				part := &episode.Parts[0]
+				applyCachedSelection(part, cachedStreams)
+				log.Trace().
+					Str("ratingKey", ratingKey).
+					Int("audio_id", cachedStreams.AudioStreamID).
+					Int("subtitle_id", cachedStreams.SubtitleStreamID).
+					Msg("Applied cached stream selection after session stop")
+			}
+		}
+	}
+
 	// Get the user for this client
 	user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier)
 	if err != nil {
@@ -1090,4 +1111,35 @@ func audioDisplayTitle(s *AudioStream) string {
 		return s.DisplayTitle
 	}
 	return s.LanguageCode
+}
+
+// applyCachedSelection marks the given part's streams as selected based on cached IDs.
+// This is used when live session data is unavailable (e.g., after stop) but we saw the
+// selection earlier during playback.
+func applyCachedSelection(part *MediaPart, cached *StreamSelection) {
+	// Clear existing selections
+	for i := range part.AudioStreams {
+		part.AudioStreams[i].Selected = false
+	}
+	for i := range part.SubtitleStreams {
+		part.SubtitleStreams[i].Selected = false
+	}
+
+	// Apply audio
+	for i := range part.AudioStreams {
+		if part.AudioStreams[i].ID == cached.AudioStreamID {
+			part.AudioStreams[i].Selected = true
+			break
+		}
+	}
+
+	// Apply subtitle
+	if cached.SubtitleStreamID > 0 {
+		for i := range part.SubtitleStreams {
+			if part.SubtitleStreams[i].ID == cached.SubtitleStreamID {
+				part.SubtitleStreams[i].Selected = true
+				break
+			}
+		}
+	}
 }
