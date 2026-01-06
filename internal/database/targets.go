@@ -116,6 +116,10 @@ type TargetConfig struct {
 	// This allows configuring which triggers should notify which targets
 	ExcludeTriggers []string `json:"exclude_triggers,omitempty"`
 
+	// MatcharrExcludePaths is a list of path prefixes to ignore for Matcharr comparisons
+	// Useful when a library includes folders managed manually that should not be matched
+	MatcharrExcludePaths []string `json:"matcharr_exclude_paths,omitempty"`
+
 	// SessionMode controls how playback sessions are monitored for this target
 	// "websocket" (default) uses real-time WebSocket connection for instant updates
 	// "polling" uses HTTP polling at the global poll interval

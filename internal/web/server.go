@@ -771,6 +771,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/quick-actions", h.MatcharrQuickActionsPartial)
 			r.Get("/tab-counts", h.MatcharrTabCounts)
 			r.Post("/targets/{id}/toggle", h.MatcharrToggleTarget)
+			r.Post("/targets/{id}/ignore-paths", h.MatcharrUpdateTargetIgnorePaths)
 			r.Post("/history/clear", h.MatcharrClearHistory)
 		})
 

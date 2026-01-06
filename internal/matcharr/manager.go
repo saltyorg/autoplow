@@ -219,9 +219,10 @@ type targetMetadataResult struct {
 
 // libraryFetchSpec specifies a library that needs to be fetched
 type libraryFetchSpec struct {
-	target  *database.Target
-	fixer   TargetFixer
-	library Library
+	target       *database.Target
+	fixer        TargetFixer
+	library      Library
+	ignoredPaths []string
 }
 
 // Phase 3 result types - actual data
@@ -689,18 +690,26 @@ func (m *Manager) determineRequiredLibraries(
 			}
 
 			for _, lib := range targetMeta.libraries {
-				libPaths := normalizedLibraryPaths(lib)
+				ignorePaths := normalizeIgnorePaths(targetMeta.target.Config.MatcharrExcludePaths)
+				libPaths := filteredLibraryPaths(lib, ignorePaths)
 				if len(libPaths) == 0 {
 					continue
+				}
+
+				libCopy := lib
+				libCopy.Paths = libPaths
+				if libCopy.Path == "" && len(libPaths) > 0 {
+					libCopy.Path = libPaths[0]
 				}
 
 				// Check if any library path overlaps with any mapped root folder
 				if libraryOverlaps(libPaths, mappedPaths) {
 					key := fmt.Sprintf("%d:%s", targetMeta.target.ID, lib.ID)
 					spec := libraryFetchSpec{
-						target:  targetMeta.target,
-						fixer:   targetMeta.fixer,
-						library: lib,
+						target:       targetMeta.target,
+						fixer:        targetMeta.fixer,
+						library:      libCopy,
+						ignoredPaths: ignorePaths,
 					}
 
 					// Add to unique set
@@ -770,6 +779,62 @@ func normalizedLibraryPaths(lib Library) []string {
 		}
 	}
 	return paths
+}
+
+// filteredLibraryPaths returns normalized library paths with ignored prefixes removed
+func filteredLibraryPaths(lib Library, ignored []string) []string {
+	if len(ignored) == 0 {
+		return normalizedLibraryPaths(lib)
+	}
+
+	libPaths := normalizedLibraryPaths(lib)
+	var filtered []string
+	for _, p := range libPaths {
+		if pathIgnored(p, ignored) {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	return filtered
+}
+
+// normalizeIgnorePaths normalizes user-provided ignore prefixes
+func normalizeIgnorePaths(paths []string) []string {
+	var normalized []string
+	for _, p := range paths {
+		if np := normalizePath(p); np != "" && !containsString(normalized, np) {
+			normalized = append(normalized, np)
+		}
+	}
+	return normalized
+}
+
+// filterItemsByIgnoredPaths removes media items that live under ignored prefixes
+func filterItemsByIgnoredPaths(items []MediaServerItem, ignored []string) []MediaServerItem {
+	if len(ignored) == 0 {
+		return items
+	}
+
+	filtered := items[:0]
+	for _, item := range items {
+		path := normalizePath(item.Path)
+		matchPath := itemMatchPath(item.Path)
+		if pathIgnored(path, ignored) || pathIgnored(matchPath, ignored) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+// pathIgnored returns true if path is within an ignored prefix (boundary aware)
+func pathIgnored(path string, ignored []string) bool {
+	for _, prefix := range ignored {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // pathListForLog returns a human-friendly list of library paths for logging
@@ -853,6 +918,14 @@ func (m *Manager) fetchLibraryItems(ctx context.Context, specs []libraryFetchSpe
 					Msg("Failed to fetch library items")
 				results[i] = targetFetchResult{target: spec.target, fixer: spec.fixer, library: spec.library, err: err}
 				return
+			}
+
+			if len(spec.ignoredPaths) > 0 {
+				before := len(items)
+				items = filterItemsByIgnoredPaths(items, spec.ignoredPaths)
+				if removed := before - len(items); removed > 0 {
+					runLog.Info("Skipped %d item(s) in %s/%s due to matcharr ignore paths", removed, spec.target.Name, spec.library.Name)
+				}
 			}
 
 			runLog.Info("Fetched %d items from %s/%s", len(items), spec.target.Name, spec.library.Name)

@@ -337,15 +337,47 @@
                                 </td>
                                 <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono">{{.URL}}</td>
                                 <td class="px-3 py-4 text-sm text-right">
-                                    <button
-                                        hx-post="/matcharr/targets/{{.ID}}/toggle"
-                                        hx-swap="none"
-                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .MatcharrEnabled}}bg-indigo-600{{else}}bg-gray-200 dark:bg-gray-600{{end}}"
-                                        role="switch"
-                                        aria-checked="{{.MatcharrEnabled}}">
-                                        <span class="sr-only">Enable Matcharr</span>
-                                        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .MatcharrEnabled}}translate-x-5{{else}}translate-x-0{{end}}"></span>
-                                    </button>
+                                    <div class="flex items-center justify-end gap-3">
+                                        <button
+                                            hx-post="/matcharr/targets/{{.ID}}/toggle"
+                                            hx-swap="none"
+                                            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .MatcharrEnabled}}bg-indigo-600{{else}}bg-gray-200 dark:bg-gray-600{{end}}"
+                                            role="switch"
+                                            aria-checked="{{.MatcharrEnabled}}">
+                                            <span class="sr-only">Enable Matcharr</span>
+                                            <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .MatcharrEnabled}}translate-x-5{{else}}translate-x-0{{end}}"></span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            data-toggle="ignore-{{.ID}}"
+                                            class="btn-secondary text-xs">
+                                            Manage ignore paths
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr id="ignore-{{.ID}}" class="hidden bg-gray-50 dark:bg-gray-900/60">
+                                <td colspan="4" class="px-3 py-4">
+                                    <form hx-post="/matcharr/targets/{{.ID}}/ignore-paths" hx-swap="none" class="space-y-3">
+                                        <div class="flex items-start justify-between">
+                                            <div>
+                                                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Matcharr Ignore Paths</h4>
+                                                <p class="text-xs text-gray-500 dark:text-gray-400">Skip comparisons for items under these prefixes on {{.Name}}.</p>
+                                            </div>
+                                            <button type="button" class="btn-secondary text-xs" data-add-ignore="#ignore-list-{{.ID}}">Add Path</button>
+                                        </div>
+                                        <div id="ignore-list-{{.ID}}" class="space-y-2">
+                                            {{range $path := .Config.MatcharrExcludePaths}}
+                                            <div class="ignore-row flex items-center gap-2">
+                                                <input type="text" name="matcharr_exclude_paths[]" value="{{$path}}" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                                <button type="button" class="btn-secondary text-xs remove-ignore">Remove</button>
+                                            </div>
+                                            {{end}}
+                                        </div>
+                                        <div class="flex justify-end gap-2">
+                                            <button type="submit" class="btn-primary text-xs px-3 py-2">Save</button>
+                                        </div>
+                                    </form>
                                 </td>
                             </tr>
                             {{end}}
@@ -361,12 +393,43 @@
                     <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Configure targets in the <a href="/targets" class="text-indigo-600 dark:text-indigo-400 hover:underline">Targets</a> section.</p>
                 </div>
                 {{end}}
+                </div>
             </div>
-        </div>
-    </div>
-    {{end}}
+            <script>
+            document.addEventListener('click', function(e) {
+                const toggleBtn = e.target.closest('[data-toggle]');
+                if (toggleBtn) {
+                    const targetId = toggleBtn.getAttribute('data-toggle');
+                    const row = document.getElementById(targetId);
+                    if (row) {
+                        row.classList.toggle('hidden');
+                    }
+                }
 
-    {{if eq .Content.Tab "arr-gaps"}}
+                if (e.target.closest('.remove-ignore')) {
+                    e.target.closest('.ignore-row')?.remove();
+                }
+
+                const addBtn = e.target.closest('[data-add-ignore]');
+                if (addBtn) {
+                    const listSelector = addBtn.getAttribute('data-add-ignore');
+                    const list = document.querySelector(listSelector);
+                    if (list) {
+                        const div = document.createElement('div');
+                        div.className = 'ignore-row flex items-center gap-2';
+                        div.innerHTML = `
+                            <input type="text" name="matcharr_exclude_paths[]" placeholder="Path prefix to ignore (e.g., /mnt/media/manual)" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <button type="button" class="btn-secondary text-xs remove-ignore">Remove</button>
+                        `;
+                        list.appendChild(div);
+                    }
+                }
+            });
+            </script>
+        </div>
+        {{end}}
+
+        {{if eq .Content.Tab "arr-gaps"}}
     <!-- Missing on Server Tab -->
     {{template "arr_gaps_section" (dict "Rows" .Content.ArrGaps "IsPartial" false "ArrOptions" .Content.ArrGapArrOptions "TargetOptions" .Content.ArrGapTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID)}}
     {{end}}

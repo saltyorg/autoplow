@@ -667,6 +667,37 @@ func (h *Handlers) MatcharrToggleTarget(w http.ResponseWriter, r *http.Request) 
 	h.jsonSuccess(w, "Target updated")
 }
 
+// MatcharrUpdateTargetIgnorePaths updates matcharr ignore paths for a target
+func (h *Handlers) MatcharrUpdateTargetIgnorePaths(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.jsonError(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.jsonError(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	target, err := h.db.GetTarget(id)
+	if err != nil || target == nil {
+		h.jsonError(w, "Target not found", http.StatusNotFound)
+		return
+	}
+
+	target.Config.MatcharrExcludePaths = parseMatcharrExcludePaths(r)
+
+	if err := h.db.UpdateTarget(target); err != nil {
+		h.jsonError(w, "Failed to update target: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Refresh page to reflect updated paths
+	w.Header().Set("HX-Refresh", "true")
+	h.jsonSuccess(w, "Matcharr ignore paths updated")
+}
+
 // MatcharrClearHistory clears all matcharr run history
 func (h *Handlers) MatcharrClearHistory(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.ClearMatcharrHistory(); err != nil {
@@ -875,6 +906,19 @@ func buildGapTargetOptions(gaps []*database.MatcharrGap) []gapOption {
 	})
 
 	return options
+}
+
+// parseMatcharrExcludePaths extracts ignore paths for Matcharr
+func parseMatcharrExcludePaths(r *http.Request) []string {
+	rawPaths := r.Form["matcharr_exclude_paths[]"]
+	var paths []string
+	for _, path := range rawPaths {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 // parseMatcharrPathMappings parses path mapping form fields for matcharr
