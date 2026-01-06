@@ -20,12 +20,15 @@ type PlexTargetInterface interface {
 	DBTarget() *database.Target
 	RegisterNotificationCallbackAny(cb func(notification any))
 	GetEpisodeWithStreams(ctx context.Context, ratingKey string) (*Episode, error)
+	GetEpisodeWithStreamsAsUser(ctx context.Context, ratingKey string, userToken string) (*Episode, error)
 	GetSessionEpisodeWithStreams(ctx context.Context, clientIdentifier string, ratingKey string) (*Episode, error)
 	GetShowEpisodes(ctx context.Context, showKey string) ([]Episode, error)
 	GetSeasonEpisodes(ctx context.Context, seasonKey string) ([]Episode, error)
 	SetStreams(ctx context.Context, partID int, audioStreamID, subtitleStreamID int) error
 	GetSessionUserMapping(ctx context.Context) (map[string]PlexUser, error)
 	GetSystemAccounts(ctx context.Context) ([]PlexUser, error)
+	GetMachineIdentifier(ctx context.Context) (string, error)
+	GetUserTokenWithMachineID(ctx context.Context, userID string, machineID string) (string, error)
 }
 
 // PlexWebSocketNotification is the type alias for the WebSocket notification
@@ -271,6 +274,14 @@ func (m *Manager) handlePlayingNotification(targetID int64, target PlexTargetInt
 	// Process track changes for any non-stopped state
 	// We want to detect when user changes tracks during playback
 	if playing.State != "stopped" {
+		// Debounce rapid notifications - only process once per second per client/episode
+		if !cache.ShouldProcessPlaying(playing.ClientIdentifier, ratingKey, 1*time.Second) {
+			log.Trace().
+				Str("client", playing.ClientIdentifier).
+				Str("ratingKey", ratingKey).
+				Msg("Plex Auto Languages: Skipping rapid notification (debounced)")
+			return
+		}
 		go m.processPlayingSession(targetID, target, cache, playing.ClientIdentifier, ratingKey, config)
 	} else {
 		// Session stopped - cleanup but also check for final track changes
@@ -283,10 +294,60 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	defer cancel()
 
-	// Try to get live stream selections from sessions first (captures in-play changes)
-	episode, err := target.GetSessionEpisodeWithStreams(ctx, clientIdentifier, ratingKey)
+	// First, identify the user for this client - we need their token to fetch their stream preferences
+	user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier)
 	if err != nil {
-		log.Trace().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get live session episode, falling back to library metadata")
+		log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: Failed to get user for client")
+		return
+	}
+
+	// Cache the user for later use
+	cache.SetUserClient(clientIdentifier, user.ID, user.Name)
+
+	// Get or fetch the user's token
+	userToken, hasToken := cache.GetUserToken(user.ID)
+	if !hasToken {
+		// Get cached machine identifier or fetch it
+		machineID, hasMachineID := cache.GetMachineIdentifier()
+		if !hasMachineID {
+			machineID, err = target.GetMachineIdentifier(ctx)
+			if err != nil {
+				log.Debug().Err(err).Msg("Plex Auto Languages: Failed to get machine identifier")
+				machineID = ""
+			} else {
+				cache.SetMachineIdentifier(machineID)
+			}
+		}
+
+		if machineID != "" {
+			userToken, err = target.GetUserTokenWithMachineID(ctx, user.ID, machineID)
+			if err != nil {
+				log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, falling back to admin token")
+				// Fall back to admin token - won't see user's preferences but might still work
+				userToken = ""
+			} else {
+				cache.SetUserToken(user.ID, userToken)
+			}
+		}
+	}
+
+	// Fetch episode metadata using the user's token to see their stream preferences
+	var episode *Episode
+	if userToken != "" {
+		episode, err = target.GetEpisodeWithStreamsAsUser(ctx, ratingKey, userToken)
+		if err != nil {
+			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode as user, clearing token cache")
+			// Token might be invalid, clear it and try again next time
+			cache.ClearUserToken(user.ID)
+			// Fall back to admin token
+			episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
+			if err != nil {
+				log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode")
+				return
+			}
+		}
+	} else {
+		// No user token available, use admin token
 		episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
 		if err != nil {
 			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode")
@@ -318,23 +379,17 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 
 	// Check if streams have changed since we last saw this episode
 	cachedStreams, hasCached := cache.GetDefaultStreams(ratingKey)
+
+	// Always update cache with current selection to keep it fresh for stop handler
+	cache.SetDefaultStreams(ratingKey, audioID, subtitleID)
+
 	if hasCached && cachedStreams.AudioStreamID == audioID && cachedStreams.SubtitleStreamID == subtitleID {
 		// Streams unchanged, nothing to do
 		return
 	}
 
-	// Update cache with current selection
-	cache.SetDefaultStreams(ratingKey, audioID, subtitleID)
-
 	// If this is the first time seeing this episode, just cache it and return
 	if !hasCached {
-		// Warm the user cache so we can identify the user if the session stops before tracks change
-		if user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier); err == nil && cache != nil {
-			cache.SetUserClient(clientIdentifier, user.ID, user.Name)
-		} else if err != nil {
-			log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: Failed to warm user cache")
-		}
-
 		log.Debug().
 			Str("show", episode.GrandparentTitle).
 			Str("episode", episode.Title).
@@ -344,7 +399,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		return
 	}
 
-	// Streams have changed! Get the user and process the change
+	// Streams have changed! Log and process the change
 	log.Info().
 		Str("show", episode.GrandparentTitle).
 		Str("episode", episode.Title).
@@ -353,13 +408,6 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		Int("prev_subtitle", cachedStreams.SubtitleStreamID).
 		Int("new_subtitle", subtitleID).
 		Msg("Plex Auto Languages: Stream selection changed")
-
-	// Get the user for this client
-	user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier)
-	if err != nil {
-		log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: Failed to get user for client")
-		return
-	}
 
 	// Save the new preference
 	newPref := m.createPreference(targetID, user.ID, user.Name, episode, selectedAudio, selectedSubtitle)

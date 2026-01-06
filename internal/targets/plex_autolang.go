@@ -3,6 +3,7 @@ package targets
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -123,6 +124,13 @@ func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIde
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("plex returned status %d: %s", resp.StatusCode, string(body))
 	}
+
+	log.Trace().
+		Str("target", s.Name()).
+		Str("clientIdentifier", clientIdentifier).
+		Str("ratingKey", ratingKey).
+		RawJSON("response", body).
+		Msg("Fetched session data")
 
 	// Parse sessions to locate the matching client/ratingKey
 	var sessionsResp struct {
@@ -691,4 +699,150 @@ func parseStringID(id string) int {
 		return 0
 	}
 	return v
+}
+
+// GetMachineIdentifier returns the Plex server's machine identifier
+func (s *PlexTarget) GetMachineIdentifier(ctx context.Context) (string, error) {
+	identityURL := s.dbTarget.URL + "/identity"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", identityURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("plex returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var identityResp struct {
+		MediaContainer struct {
+			MachineIdentifier string `json:"machineIdentifier"`
+		} `json:"MediaContainer"`
+	}
+	if err := json.Unmarshal(body, &identityResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return identityResp.MediaContainer.MachineIdentifier, nil
+}
+
+// GetUserTokenWithMachineID retrieves the access token for a specific user from plex.tv
+// This token allows making API requests as that user to see their stream preferences
+// The machineID should be cached by the caller to avoid repeated /identity calls
+func (s *PlexTarget) GetUserTokenWithMachineID(ctx context.Context, userID string, machineID string) (string, error) {
+	// Query plex.tv for shared server tokens
+	sharedServersURL := fmt.Sprintf("https://plex.tv/api/servers/%s/shared_servers", machineID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", sharedServersURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
+	// Note: plex.tv always returns XML for this endpoint regardless of Accept header
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("plex.tv returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Trace().
+		Str("target", s.Name()).
+		Str("userID", userID).
+		Str("response", string(body)).
+		Msg("Fetched shared servers from plex.tv")
+
+	// Parse the response - plex.tv returns XML
+	var sharedResp struct {
+		XMLName      xml.Name `xml:"MediaContainer"`
+		SharedServer []struct {
+			UserID      int    `xml:"userID,attr"`
+			AccessToken string `xml:"accessToken,attr"`
+		} `xml:"SharedServer"`
+	}
+	if err := xml.Unmarshal(body, &sharedResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Find the matching user
+	userIDInt, _ := strconv.Atoi(userID)
+	for _, shared := range sharedResp.SharedServer {
+		if shared.UserID == userIDInt {
+			return shared.AccessToken, nil
+		}
+	}
+
+	return "", fmt.Errorf("no token found for user %s", userID)
+}
+
+// GetEpisodeWithStreamsAsUser fetches episode metadata using a specific user's token
+// This returns the stream selections as that user sees them (their preferences)
+func (s *PlexTarget) GetEpisodeWithStreamsAsUser(ctx context.Context, ratingKey string, userToken string) (*plexautolang.Episode, error) {
+	metadataURL := fmt.Sprintf("%s/library/metadata/%s", s.dbTarget.URL, ratingKey)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", metadataURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Use the user's token instead of the admin token
+	req.Header.Set("X-Plex-Token", userToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plex returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Trace().
+		Str("target", s.Name()).
+		Str("ratingKey", ratingKey).
+		RawJSON("response", body).
+		Msg("Fetched episode metadata as user")
+
+	var metaResp plexMetadataResponse
+	if err := json.Unmarshal(body, &metaResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(metaResp.MediaContainer.Metadata) == 0 {
+		return nil, fmt.Errorf("no metadata found for rating key %s", ratingKey)
+	}
+
+	meta := metaResp.MediaContainer.Metadata[0]
+	return s.convertToEpisode(&meta), nil
 }
