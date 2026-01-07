@@ -457,6 +457,9 @@ func (s *PlexTarget) setStreamsWithToken(ctx context.Context, partID int, audioS
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return fmt.Errorf("%w: plex returned status %d: %s", plexautolang.ErrInvalidUserToken, resp.StatusCode, string(body))
+		}
 		return fmt.Errorf("plex returned status %d: %s", resp.StatusCode, string(body))
 	}
 

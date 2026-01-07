@@ -3,6 +3,7 @@ package plexautolang
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -461,7 +462,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		Msg("Plex Auto Languages: User track preference saved")
 
 	// Apply preference to other episodes
-	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, episode, selectedAudio, selectedSubtitle, config)
+	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, cache, episode, selectedAudio, selectedSubtitle, config)
 
 	// Log history
 	if result.EpisodesChanged > 0 {
@@ -609,7 +610,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, skipping apply")
 		userToken = ""
 	}
-	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, episode, selectedAudio, selectedSubtitle, config)
+	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, cache, episode, selectedAudio, selectedSubtitle, config)
 
 	// Log history
 	if result.EpisodesChanged > 0 {
@@ -767,6 +768,9 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 
 		// Apply changes
 		if err := target.SetStreamsAsUser(ctx, part.ID, audioID, subtitleID, userToken); err != nil {
+			if cache != nil && errors.Is(err, ErrInvalidUserToken) {
+				cache.ClearUserToken(pref.PlexUserID)
+			}
 			log.Warn().Err(err).
 				Str("episode", episode.Title).
 				Str("user", pref.PlexUserID).
@@ -854,6 +858,7 @@ func (m *Manager) applyPreferenceToShow(
 	target PlexTargetInterface,
 	user PlexUser,
 	userToken string,
+	cache *Cache,
 	triggerEpisode *Episode,
 	refAudio *AudioStream,
 	refSubtitle *SubtitleStream,
@@ -932,7 +937,7 @@ func (m *Manager) applyPreferenceToShow(
 		}
 
 		part := &fullEpisode.Parts[0]
-		changed := m.applyPreferenceToEpisode(ctx, target, userToken, part, refAudio, refSubtitle)
+		changed := m.applyPreferenceToEpisode(ctx, target, user.ID, userToken, cache, part, refAudio, refSubtitle)
 
 		if changed.AudioChanged || changed.SubtitleChanged {
 			result.EpisodesChanged++
@@ -972,7 +977,9 @@ func (m *Manager) applyPreferenceToShow(
 func (m *Manager) applyPreferenceToEpisode(
 	ctx context.Context,
 	target PlexTargetInterface,
+	userID string,
 	userToken string,
+	cache *Cache,
 	part *MediaPart,
 	refAudio *AudioStream,
 	refSubtitle *SubtitleStream,
@@ -1025,6 +1032,9 @@ func (m *Manager) applyPreferenceToEpisode(
 
 	// Apply the changes
 	if err := target.SetStreamsAsUser(ctx, part.ID, audioID, subtitleID, userToken); err != nil {
+		if cache != nil && errors.Is(err, ErrInvalidUserToken) {
+			cache.ClearUserToken(userID)
+		}
 		log.Warn().Err(err).Int("partID", part.ID).Msg("Failed to set streams")
 		change.AudioChanged = false
 		change.SubtitleChanged = false

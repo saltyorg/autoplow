@@ -2,6 +2,11 @@
 // It monitors playback events and applies user preferences to other episodes in the same show.
 package plexautolang
 
+import "errors"
+
+// ErrInvalidUserToken indicates a Plex user token is invalid or unauthorized.
+var ErrInvalidUserToken = errors.New("plex user token invalid")
+
 // AudioStream represents a Plex audio stream
 type AudioStream struct {
 	ID                   int    `json:"id"`
