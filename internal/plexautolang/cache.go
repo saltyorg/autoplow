@@ -39,7 +39,7 @@ type Cache struct {
 	sessionStates map[string]string
 
 	// defaultStreams caches the default stream selections for episodes
-	// Key: rating key of episode
+	// Key: userID:ratingKey
 	defaultStreams map[string]*StreamSelection
 
 	// userClients maps client identifiers to users
@@ -95,30 +95,30 @@ func (c *Cache) SetSessionState(sessionKey, state string) {
 	}
 }
 
-// GetDefaultStreams returns the cached default streams for an episode
-func (c *Cache) GetDefaultStreams(ratingKey string) (*StreamSelection, bool) {
+// GetDefaultStreams returns the cached default streams for an episode and user
+func (c *Cache) GetDefaultStreams(userID, ratingKey string) (*StreamSelection, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	sel, ok := c.defaultStreams[ratingKey]
+	sel, ok := c.defaultStreams[defaultStreamKey(userID, ratingKey)]
 	return sel, ok
 }
 
-// SetDefaultStreams caches the default streams for an episode
-func (c *Cache) SetDefaultStreams(ratingKey string, audioID, subtitleID int) {
+// SetDefaultStreams caches the default streams for an episode and user
+func (c *Cache) SetDefaultStreams(userID, ratingKey string, audioID, subtitleID int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.defaultStreams[ratingKey] = &StreamSelection{
+	c.defaultStreams[defaultStreamKey(userID, ratingKey)] = &StreamSelection{
 		AudioStreamID:    audioID,
 		SubtitleStreamID: subtitleID,
 		CachedAt:         time.Now(),
 	}
 }
 
-// InvalidateDefaultStreams removes the cached default streams for an episode
-func (c *Cache) InvalidateDefaultStreams(ratingKey string) {
+// InvalidateDefaultStreams removes the cached default streams for an episode and user
+func (c *Cache) InvalidateDefaultStreams(userID, ratingKey string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.defaultStreams, ratingKey)
+	delete(c.defaultStreams, defaultStreamKey(userID, ratingKey))
 }
 
 // GetUserClient returns the cached user for a client identifier
@@ -310,4 +310,8 @@ func (c *Cache) Clear() {
 	c.newlyAdded = make(map[string]time.Time)
 	c.recentActivities = make(map[string]time.Time)
 	c.lastProcessed = make(map[string]time.Time)
+}
+
+func defaultStreamKey(userID, ratingKey string) string {
+	return userID + ":" + ratingKey
 }

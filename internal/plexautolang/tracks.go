@@ -47,9 +47,8 @@ func MatchAudioStream(reference *AudioStream, candidates []AudioStream) *AudioSt
 	return best
 }
 
-// MatchSubtitleStream finds the best matching subtitle stream
-// If reference is nil but audio is provided, matches forced subtitles for audio language
-// Returns nil to indicate "no subtitles"
+// MatchSubtitleStream finds the best matching subtitle stream.
+// Returns nil to indicate "no subtitles".
 func MatchSubtitleStream(reference *SubtitleStream, audio *AudioStream, candidates []SubtitleStream) *SubtitleStream {
 	if len(candidates) == 0 {
 		return nil
@@ -60,12 +59,7 @@ func MatchSubtitleStream(reference *SubtitleStream, audio *AudioStream, candidat
 	var matchHIOnly bool
 
 	if reference == nil {
-		if audio == nil {
-			return nil
-		}
-		// No subtitle was selected - only match forced subtitles for audio language
-		languageCode = audio.LanguageCode
-		matchForcedOnly = true
+		return nil
 	} else {
 		languageCode = reference.LanguageCode
 		matchForcedOnly = reference.Forced

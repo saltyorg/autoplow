@@ -53,6 +53,7 @@ type Episode struct {
 	Title            string      `json:"title"`
 	GrandparentTitle string      `json:"grandparentTitle"` // Show title
 	GrandparentKey   string      `json:"grandparentKey"`   // Show key
+	ParentKey        string      `json:"parentKey"`        // Season key
 	ParentIndex      int         `json:"parentIndex"`      // Season number
 	Index            int         `json:"index"`            // Episode number
 	AddedAt          int64       `json:"addedAt"`

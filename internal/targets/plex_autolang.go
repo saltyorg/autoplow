@@ -36,6 +36,7 @@ type plexDetailedMetadata struct {
 	Title            string              `json:"title"`
 	GrandparentTitle string              `json:"grandparentTitle,omitempty"` // Show title
 	GrandparentKey   string              `json:"grandparentKey,omitempty"`   // Show key
+	ParentKey        string              `json:"parentKey,omitempty"`        // Season key
 	ParentIndex      int                 `json:"parentIndex,omitempty"`      // Season number
 	Index            int                 `json:"index,omitempty"`            // Episode number
 	AddedAt          int64               `json:"addedAt"`
@@ -141,6 +142,7 @@ func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIde
 				Title            string `json:"title"`
 				GrandparentTitle string `json:"grandparentTitle"`
 				GrandparentKey   string `json:"grandparentKey"`
+				ParentKey        string `json:"parentKey"`
 				ParentIndex      int    `json:"parentIndex"`
 				Index            int    `json:"index"`
 				AddedAt          int64  `json:"addedAt"`
@@ -196,6 +198,7 @@ func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIde
 			Title:            meta.Title,
 			GrandparentTitle: meta.GrandparentTitle,
 			GrandparentKey:   meta.GrandparentKey,
+			ParentKey:        meta.ParentKey,
 			ParentIndex:      meta.ParentIndex,
 			Index:            meta.Index,
 			AddedAt:          meta.AddedAt,
@@ -409,6 +412,19 @@ func (s *PlexTarget) GetSeasonEpisodes(ctx context.Context, seasonKey string) ([
 // audioStreamID: the stream ID to set, or 0 to not change
 // subtitleStreamID: the stream ID to set, or 0 to disable subtitles, or -1 to not change
 func (s *PlexTarget) SetStreams(ctx context.Context, partID int, audioStreamID, subtitleStreamID int) error {
+	return s.setStreamsWithToken(ctx, partID, audioStreamID, subtitleStreamID, s.dbTarget.Token)
+}
+
+// SetStreamsAsUser sets the audio and/or subtitle streams for a media part using a user token.
+func (s *PlexTarget) SetStreamsAsUser(ctx context.Context, partID int, audioStreamID, subtitleStreamID int, userToken string) error {
+	return s.setStreamsWithToken(ctx, partID, audioStreamID, subtitleStreamID, userToken)
+}
+
+func (s *PlexTarget) setStreamsWithToken(ctx context.Context, partID int, audioStreamID, subtitleStreamID int, token string) error {
+	if token == "" {
+		return fmt.Errorf("missing plex token")
+	}
+
 	setURL := fmt.Sprintf("%s/library/parts/%d", s.dbTarget.URL, partID)
 
 	params := url.Values{}
@@ -431,7 +447,7 @@ func (s *PlexTarget) SetStreams(ctx context.Context, partID int, audioStreamID, 
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
+	req.Header.Set("X-Plex-Token", token)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -564,6 +580,7 @@ func (s *PlexTarget) convertToEpisode(meta *plexDetailedMetadata) *plexautolang.
 		Title:            meta.Title,
 		GrandparentTitle: meta.GrandparentTitle,
 		GrandparentKey:   meta.GrandparentKey,
+		ParentKey:        meta.ParentKey,
 		ParentIndex:      meta.ParentIndex,
 		Index:            meta.Index,
 		AddedAt:          meta.AddedAt,

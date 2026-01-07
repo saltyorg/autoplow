@@ -92,6 +92,13 @@ func (h *Handlers) PlexAutoLangToggleTarget(w http.ResponseWriter, r *http.Reque
 		config.Enabled = true
 		_ = h.db.UpsertPlexAutoLanguagesConfig(&config)
 	}
+	if h.plexAutoLangMgr != nil {
+		if target.PlexAutoLanguagesEnabled {
+			h.plexAutoLangMgr.EnableTarget(target.ID)
+		} else {
+			h.plexAutoLangMgr.DisableTarget(target.ID)
+		}
+	}
 
 	// Trigger page reload to update UI state
 	w.Header().Set("HX-Refresh", "true")
@@ -189,10 +196,16 @@ func (h *Handlers) PlexAutoLangPreferencesPartial(w http.ResponseWriter, r *http
 	userFilter := r.URL.Query().Get("user")
 	targetFilterStr := r.URL.Query().Get("target")
 	var targetFilter int64
+	targetFilterSet := false
 	if targetFilterStr != "" {
 		if parsed, err := strconv.ParseInt(targetFilterStr, 10, 64); err == nil && parsed >= 0 {
 			targetFilter = parsed
+			targetFilterSet = true
 		}
+	}
+	if !targetFilterSet {
+		targetFilter = id
+		targetFilterSet = true
 	}
 
 	if p := r.URL.Query().Get("page"); p != "" {
@@ -210,10 +223,12 @@ func (h *Handlers) PlexAutoLangPreferencesPartial(w http.ResponseWriter, r *http
 	targets, _ := h.db.ListPlexAutoLanguagesEnabledTargets()
 
 	targetIDForQuery := id
-	if targetFilter > 0 {
-		targetIDForQuery = targetFilter
-	} else if targetFilter == 0 {
-		targetIDForQuery = 0
+	if targetFilterSet {
+		if targetFilter > 0 {
+			targetIDForQuery = targetFilter
+		} else {
+			targetIDForQuery = 0
+		}
 	}
 
 	prefs, total, _ := h.db.ListPlexAutoLanguagesPreferencesFiltered(targetIDForQuery, userFilter, pageSize, offset)
@@ -222,16 +237,17 @@ func (h *Handlers) PlexAutoLangPreferencesPartial(w http.ResponseWriter, r *http
 	totalPages := max((total+pageSize-1)/pageSize, 1)
 
 	h.renderPartial(w, "plexautolang.html", "preferences_section", map[string]any{
-		"Preferences":  prefs,
-		"TargetID":     id,
-		"TargetFilter": targetFilter,
-		"Targets":      targets,
-		"Page":         page,
-		"PageSize":     pageSize,
-		"TotalPages":   totalPages,
-		"Total":        total,
-		"UserFilter":   userFilter,
-		"Users":        users,
+		"Preferences":     prefs,
+		"TargetID":        id,
+		"TargetFilter":    targetFilter,
+		"TargetFilterSet": targetFilterSet,
+		"Targets":         targets,
+		"Page":            page,
+		"PageSize":        pageSize,
+		"TotalPages":      totalPages,
+		"Total":           total,
+		"UserFilter":      userFilter,
+		"Users":           users,
 	})
 }
 
@@ -341,10 +357,10 @@ func (h *Handlers) PlexAutoLangClearHistory(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	} else {
-		// Clear all history - need to get all enabled targets
-		targets, _ := h.db.ListPlexAutoLanguagesEnabledTargets()
-		for _, t := range targets {
-			_ = h.db.ClearPlexAutoLanguagesHistory(t.ID)
+		if err := h.db.ClearAllPlexAutoLanguagesHistory(); err != nil {
+			h.flashErr(w, "Failed to clear history: "+err.Error())
+			h.redirect(w, r, "/plex-auto-languages?tab=history")
+			return
 		}
 	}
 

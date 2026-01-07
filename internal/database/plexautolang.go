@@ -259,15 +259,16 @@ func (db *DB) GetPlexAutoLanguagesPreference(targetID int64, plexUserID, showRat
 // ListPlexAutoLanguagesPreferences retrieves all preferences for a target
 func (db *DB) ListPlexAutoLanguagesPreferences(targetID int64) ([]*PlexAutoLanguagesPreference, error) {
 	rows, err := db.Query(`
-		SELECT id, target_id, plex_user_id, plex_username, show_rating_key, show_title,
-			audio_language_code, audio_codec, audio_channels, audio_channel_layout,
-			audio_title, audio_display_title, audio_visual_impaired,
-			subtitle_language_code, subtitle_forced, subtitle_hearing_impaired,
-			subtitle_codec, subtitle_title, subtitle_display_title,
-			created_at, updated_at
-		FROM plex_auto_languages_preferences
-		WHERE target_id = ?
-		ORDER BY show_title, plex_user_id
+		SELECT p.id, p.target_id, t.name as target_name, p.plex_user_id, p.plex_username, p.show_rating_key, p.show_title,
+			p.audio_language_code, p.audio_codec, p.audio_channels, p.audio_channel_layout,
+			p.audio_title, p.audio_display_title, p.audio_visual_impaired,
+			p.subtitle_language_code, p.subtitle_forced, p.subtitle_hearing_impaired,
+			p.subtitle_codec, p.subtitle_title, p.subtitle_display_title,
+			p.created_at, p.updated_at
+		FROM plex_auto_languages_preferences p
+		JOIN targets t ON p.target_id = t.id
+		WHERE p.target_id = ?
+		ORDER BY p.show_title, p.plex_user_id
 	`, targetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list plex auto languages preferences: %w", err)
@@ -280,15 +281,16 @@ func (db *DB) ListPlexAutoLanguagesPreferences(targetID int64) ([]*PlexAutoLangu
 // ListPlexAutoLanguagesPreferencesForShow retrieves all user preferences for a specific show
 func (db *DB) ListPlexAutoLanguagesPreferencesForShow(targetID int64, showRatingKey string) ([]*PlexAutoLanguagesPreference, error) {
 	rows, err := db.Query(`
-		SELECT id, target_id, plex_user_id, plex_username, show_rating_key, show_title,
-			audio_language_code, audio_codec, audio_channels, audio_channel_layout,
-			audio_title, audio_display_title, audio_visual_impaired,
-			subtitle_language_code, subtitle_forced, subtitle_hearing_impaired,
-			subtitle_codec, subtitle_title, subtitle_display_title,
-			created_at, updated_at
-		FROM plex_auto_languages_preferences
-		WHERE target_id = ? AND show_rating_key = ?
-		ORDER BY plex_user_id
+		SELECT p.id, p.target_id, t.name as target_name, p.plex_user_id, p.plex_username, p.show_rating_key, p.show_title,
+			p.audio_language_code, p.audio_codec, p.audio_channels, p.audio_channel_layout,
+			p.audio_title, p.audio_display_title, p.audio_visual_impaired,
+			p.subtitle_language_code, p.subtitle_forced, p.subtitle_hearing_impaired,
+			p.subtitle_codec, p.subtitle_title, p.subtitle_display_title,
+			p.created_at, p.updated_at
+		FROM plex_auto_languages_preferences p
+		JOIN targets t ON p.target_id = t.id
+		WHERE p.target_id = ? AND p.show_rating_key = ?
+		ORDER BY p.plex_user_id
 	`, targetID, showRatingKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list plex auto languages preferences for show: %w", err)
@@ -363,14 +365,15 @@ func (db *DB) CreatePlexAutoLanguagesHistory(h *PlexAutoLanguagesHistory) error 
 // ListPlexAutoLanguagesHistory retrieves history entries with pagination
 func (db *DB) ListPlexAutoLanguagesHistory(targetID int64, limit, offset int) ([]*PlexAutoLanguagesHistory, error) {
 	rows, err := db.Query(`
-		SELECT id, target_id, plex_user_id, plex_username, show_title, show_rating_key,
-			episode_title, episode_rating_key, event_type,
-			audio_changed, audio_from, audio_to,
-			subtitle_changed, subtitle_from, subtitle_to,
-			episodes_updated, created_at
-		FROM plex_auto_languages_history
-		WHERE target_id = ?
-		ORDER BY created_at DESC
+		SELECT h.id, h.target_id, t.name as target_name, h.plex_user_id, h.plex_username, h.show_title, h.show_rating_key,
+			h.episode_title, h.episode_rating_key, h.event_type,
+			h.audio_changed, h.audio_from, h.audio_to,
+			h.subtitle_changed, h.subtitle_from, h.subtitle_to,
+			h.episodes_updated, h.created_at
+		FROM plex_auto_languages_history h
+		JOIN targets t ON h.target_id = t.id
+		WHERE h.target_id = ?
+		ORDER BY h.created_at DESC
 		LIMIT ? OFFSET ?
 	`, targetID, limit, offset)
 	if err != nil {
@@ -436,6 +439,15 @@ func (db *DB) ClearPlexAutoLanguagesHistory(targetID int64) error {
 	_, err := db.Exec(`DELETE FROM plex_auto_languages_history WHERE target_id = ?`, targetID)
 	if err != nil {
 		return fmt.Errorf("failed to clear plex auto languages history: %w", err)
+	}
+	return nil
+}
+
+// ClearAllPlexAutoLanguagesHistory clears history across all targets
+func (db *DB) ClearAllPlexAutoLanguagesHistory() error {
+	_, err := db.Exec(`DELETE FROM plex_auto_languages_history`)
+	if err != nil {
+		return fmt.Errorf("failed to clear all plex auto languages history: %w", err)
 	}
 	return nil
 }

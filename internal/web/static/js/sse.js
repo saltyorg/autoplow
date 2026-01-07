@@ -36,7 +36,7 @@
         'matcharr_mismatch_updated': ['#matcharr-mismatches', '#matcharr-status', '#quick-actions', '#matcharr-tab-counts'],
 
         // Plex Auto Languages events
-        'plex_auto_languages_track_changed': ['#pal-recent-activity', '#pal-history', '#pal-preferences', '#pal-status']
+        'plex_auto_languages_track_changed': ['#pal-recent-activity', '#pal-history', '.pal-preferences-target', '#pal-status']
     };
 
     // Debounce refresh requests to avoid hammering the server
@@ -49,10 +49,13 @@
         }
         pendingRefreshes.set(selector, setTimeout(function() {
             pendingRefreshes.delete(selector);
-            const el = document.querySelector(selector);
-            if (el) {
-                htmx.trigger(el, 'sse-refresh');
+            const nodes = document.querySelectorAll(selector);
+            if (!nodes.length) {
+                return;
             }
+            nodes.forEach(function(el) {
+                htmx.trigger(el, 'sse-refresh');
+            });
         }, debounceMs));
     }
 

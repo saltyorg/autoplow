@@ -25,6 +25,7 @@ type PlexTargetInterface interface {
 	GetShowEpisodes(ctx context.Context, showKey string) ([]Episode, error)
 	GetSeasonEpisodes(ctx context.Context, seasonKey string) ([]Episode, error)
 	SetStreams(ctx context.Context, partID int, audioStreamID, subtitleStreamID int) error
+	SetStreamsAsUser(ctx context.Context, partID int, audioStreamID, subtitleStreamID int, userToken string) error
 	GetSessionUserMapping(ctx context.Context) (map[string]PlexUser, error)
 	GetSystemAccounts(ctx context.Context) ([]PlexUser, error)
 	GetMachineIdentifier(ctx context.Context) (string, error)
@@ -82,14 +83,17 @@ type Manager struct {
 
 	// Per-target state
 	caches map[int64]*Cache // targetID -> cache
+	// Enabled targets (callbacks registered or explicitly enabled)
+	enabledTargets map[int64]bool
 }
 
 // NewManager creates a new Plex Auto Languages manager
 func NewManager(db *database.DB, targetGetter TargetGetter) *Manager {
 	return &Manager{
-		db:           db,
-		targetGetter: targetGetter,
-		caches:       make(map[int64]*Cache),
+		db:             db,
+		targetGetter:   targetGetter,
+		caches:         make(map[int64]*Cache),
+		enabledTargets: make(map[int64]bool),
 	}
 }
 
@@ -154,6 +158,42 @@ func (m *Manager) IsRunning() bool {
 	return m.running
 }
 
+// EnableTarget registers callbacks for a target and marks it enabled.
+func (m *Manager) EnableTarget(targetID int64) {
+	m.mu.RLock()
+	if m.enabledTargets[targetID] {
+		m.mu.RUnlock()
+		return
+	}
+	running := m.running
+	m.mu.RUnlock()
+
+	if !running {
+		return
+	}
+
+	if err := m.registerTargetCallback(targetID); err != nil {
+		log.Warn().Err(err).Int64("target_id", targetID).Msg("Failed to register target callback")
+		return
+	}
+}
+
+// DisableTarget marks a target disabled and clears its cache.
+func (m *Manager) DisableTarget(targetID int64) {
+	m.mu.Lock()
+	delete(m.enabledTargets, targetID)
+	delete(m.caches, targetID)
+	m.mu.Unlock()
+}
+
+func (m *Manager) isTargetEnabled(targetID int64) bool {
+	m.mu.RLock()
+	enabled := m.enabledTargets[targetID]
+	running := m.running
+	m.mu.RUnlock()
+	return running && enabled
+}
+
 // registerTargetCallbacks registers notification callbacks for all enabled targets
 func (m *Manager) registerTargetCallbacks() error {
 	targets, err := m.db.ListPlexAutoLanguagesEnabledTargets()
@@ -173,6 +213,13 @@ func (m *Manager) registerTargetCallbacks() error {
 
 // registerTargetCallback registers a notification callback for a single target
 func (m *Manager) registerTargetCallback(targetID int64) error {
+	m.mu.RLock()
+	if m.enabledTargets[targetID] {
+		m.mu.RUnlock()
+		return nil
+	}
+	m.mu.RUnlock()
+
 	plexTarget, err := m.targetGetter.GetPlexTarget(targetID)
 	if err != nil {
 		return fmt.Errorf("failed to get plex target: %w", err)
@@ -202,12 +249,20 @@ func (m *Manager) registerTargetCallback(targetID int64) error {
 		m.handleNotification(targetID, plexTarget, notification)
 	})
 
+	m.mu.Lock()
+	m.enabledTargets[targetID] = true
+	m.mu.Unlock()
+
 	log.Debug().Int64("target_id", targetID).Str("target", plexTarget.Name()).Msg("Registered notification callback")
 	return nil
 }
 
 // handleNotification processes a WebSocket notification
 func (m *Manager) handleNotification(targetID int64, target PlexTargetInterface, notification PlexWebSocketNotification) {
+	if !m.isTargetEnabled(targetID) {
+		return
+	}
+
 	notifType := notification.NotificationContainer.Type
 
 	switch notifType {
@@ -304,31 +359,10 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	// Cache the user for later use
 	cache.SetUserClient(clientIdentifier, user.ID, user.Name)
 
-	// Get or fetch the user's token
-	userToken, hasToken := cache.GetUserToken(user.ID)
-	if !hasToken {
-		// Get cached machine identifier or fetch it
-		machineID, hasMachineID := cache.GetMachineIdentifier()
-		if !hasMachineID {
-			machineID, err = target.GetMachineIdentifier(ctx)
-			if err != nil {
-				log.Debug().Err(err).Msg("Plex Auto Languages: Failed to get machine identifier")
-				machineID = ""
-			} else {
-				cache.SetMachineIdentifier(machineID)
-			}
-		}
-
-		if machineID != "" {
-			userToken, err = target.GetUserTokenWithMachineID(ctx, user.ID, machineID)
-			if err != nil {
-				log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, falling back to admin token")
-				// Fall back to admin token - won't see user's preferences but might still work
-				userToken = ""
-			} else {
-				cache.SetUserToken(user.ID, userToken)
-			}
-		}
+	userToken, err := m.getUserToken(ctx, cache, target, user.ID)
+	if err != nil {
+		log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, falling back to admin token")
+		userToken = ""
 	}
 
 	// Fetch episode metadata using the user's token to see their stream preferences
@@ -339,6 +373,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode as user, clearing token cache")
 			// Token might be invalid, clear it and try again next time
 			cache.ClearUserToken(user.ID)
+			userToken = ""
 			// Fall back to admin token
 			episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
 			if err != nil {
@@ -378,10 +413,10 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	}
 
 	// Check if streams have changed since we last saw this episode
-	cachedStreams, hasCached := cache.GetDefaultStreams(ratingKey)
+	cachedStreams, hasCached := cache.GetDefaultStreams(user.ID, ratingKey)
 
 	// Always update cache with current selection to keep it fresh for stop handler
-	cache.SetDefaultStreams(ratingKey, audioID, subtitleID)
+	cache.SetDefaultStreams(user.ID, ratingKey, audioID, subtitleID)
 
 	if hasCached && cachedStreams.AudioStreamID == audioID && cachedStreams.SubtitleStreamID == subtitleID {
 		// Streams unchanged, nothing to do
@@ -426,7 +461,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		Msg("Plex Auto Languages: User track preference saved")
 
 	// Apply preference to other episodes
-	result := m.applyPreferenceToShow(ctx, targetID, target, *user, episode, selectedAudio, selectedSubtitle, config)
+	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, episode, selectedAudio, selectedSubtitle, config)
 
 	// Log history
 	if result.EpisodesChanged > 0 {
@@ -485,6 +520,13 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		return // Not a TV episode or no media parts
 	}
 
+	// Get the user for this client
+	user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier)
+	if err != nil {
+		log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Failed to get user for client")
+		return
+	}
+
 	// If live data is gone (session already stopped), try to reapply the last known stream
 	// selection from cache so we don't lose mid-playback changes.
 	if !liveData {
@@ -494,7 +536,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		m.mu.RUnlock()
 
 		if cache != nil {
-			if cachedStreams, ok := cache.GetDefaultStreams(ratingKey); ok {
+			if cachedStreams, ok := cache.GetDefaultStreams(user.ID, ratingKey); ok {
 				part := &episode.Parts[0]
 				applyCachedSelection(part, cachedStreams)
 				log.Trace().
@@ -504,13 +546,6 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 					Msg("Applied cached stream selection after session stop")
 			}
 		}
-	}
-
-	// Get the user for this client
-	user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier)
-	if err != nil {
-		log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Failed to get user for client")
-		return
 	}
 
 	// Get selected streams from the first part
@@ -565,7 +600,16 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		Msg("Plex Auto Languages: User track preference saved")
 
 	// Apply preference to other episodes
-	result := m.applyPreferenceToShow(ctx, targetID, target, *user, episode, selectedAudio, selectedSubtitle, config)
+	m.mu.RLock()
+	cache := m.caches[targetID]
+	m.mu.RUnlock()
+
+	userToken, err := m.getUserToken(ctx, cache, target, user.ID)
+	if err != nil {
+		log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, skipping apply")
+		userToken = ""
+	}
+	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, episode, selectedAudio, selectedSubtitle, config)
 
 	// Log history
 	if result.EpisodesChanged > 0 {
@@ -665,6 +709,10 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 		return // No preferences for this show
 	}
 
+	m.mu.RLock()
+	cache := m.caches[targetID]
+	m.mu.RUnlock()
+
 	log.Debug().
 		Str("show", episode.GrandparentTitle).
 		Str("episode", episode.Title).
@@ -708,8 +756,17 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 			continue
 		}
 
+		userToken, err := m.getUserToken(ctx, cache, target, pref.PlexUserID)
+		if err != nil {
+			log.Warn().Err(err).
+				Str("episode", episode.Title).
+				Str("user", pref.PlexUserID).
+				Msg("Failed to get user token for new episode preference")
+			continue
+		}
+
 		// Apply changes
-		if err := target.SetStreams(ctx, part.ID, audioID, subtitleID); err != nil {
+		if err := target.SetStreamsAsUser(ctx, part.ID, audioID, subtitleID, userToken); err != nil {
 			log.Warn().Err(err).
 				Str("episode", episode.Title).
 				Str("user", pref.PlexUserID).
@@ -759,13 +816,35 @@ func (m *Manager) handleActivityNotification(targetID int64, target PlexTargetIn
 		return
 	}
 
-	// Activity notifications are handled by the timeline handler
-	// This is just for logging/monitoring purposes
+	ratingKey := extractRatingKey(activity.Activity.Context.Key)
+	if ratingKey == "" {
+		return
+	}
+
+	// Get cache
+	m.mu.RLock()
+	cache, exists := m.caches[targetID]
+	m.mu.RUnlock()
+	if !exists {
+		return
+	}
+
+	// Check if recently processed to avoid duplicates
+	if cache.HasRecentActivity("activity", ratingKey, 5*time.Minute) {
+		return
+	}
+	cache.MarkRecentActivity("activity", ratingKey)
+	cache.MarkNewlyAdded(ratingKey)
+
 	log.Trace().
 		Int64("target_id", targetID).
 		Str("type", activity.Activity.Type).
 		Str("event", activity.Event).
+		Str("ratingKey", ratingKey).
 		Msg("Plex Auto Languages activity notification")
+
+	// Process asynchronously
+	go m.processNewEpisode(targetID, target, ratingKey, config)
 }
 
 // applyPreferenceToShow applies the user's preference to other episodes in the show
@@ -774,12 +853,22 @@ func (m *Manager) applyPreferenceToShow(
 	targetID int64,
 	target PlexTargetInterface,
 	user PlexUser,
+	userToken string,
 	triggerEpisode *Episode,
 	refAudio *AudioStream,
 	refSubtitle *SubtitleStream,
 	config *database.PlexAutoLanguagesConfig,
 ) *ChangeResult {
 	result := &ChangeResult{}
+
+	if userToken == "" {
+		result.Errors = append(result.Errors, "missing user token")
+		log.Debug().
+			Str("target", target.Name()).
+			Str("user", user.ID).
+			Msg("Plex Auto Languages: Missing user token for stream updates")
+		return result
+	}
 
 	// Get episodes based on update level
 	// Note: This returns lightweight episode metadata without stream info
@@ -788,9 +877,11 @@ func (m *Manager) applyPreferenceToShow(
 
 	switch config.UpdateLevel {
 	case database.PlexAutoLanguagesUpdateLevelSeason:
-		// TODO: Get season key from episode and fetch only that season's episodes
-		// For now, fall through to show level
-		episodes, err = target.GetShowEpisodes(ctx, triggerEpisode.GrandparentKey)
+		if triggerEpisode.ParentKey != "" {
+			episodes, err = target.GetSeasonEpisodes(ctx, triggerEpisode.ParentKey)
+		} else {
+			episodes, err = target.GetShowEpisodes(ctx, triggerEpisode.GrandparentKey)
+		}
 	default: // show
 		episodes, err = target.GetShowEpisodes(ctx, triggerEpisode.GrandparentKey)
 	}
@@ -841,7 +932,7 @@ func (m *Manager) applyPreferenceToShow(
 		}
 
 		part := &fullEpisode.Parts[0]
-		changed := m.applyPreferenceToEpisode(ctx, target, part, refAudio, refSubtitle)
+		changed := m.applyPreferenceToEpisode(ctx, target, userToken, part, refAudio, refSubtitle)
 
 		if changed.AudioChanged || changed.SubtitleChanged {
 			result.EpisodesChanged++
@@ -881,6 +972,7 @@ func (m *Manager) applyPreferenceToShow(
 func (m *Manager) applyPreferenceToEpisode(
 	ctx context.Context,
 	target PlexTargetInterface,
+	userToken string,
 	part *MediaPart,
 	refAudio *AudioStream,
 	refSubtitle *SubtitleStream,
@@ -932,7 +1024,7 @@ func (m *Manager) applyPreferenceToEpisode(
 	}
 
 	// Apply the changes
-	if err := target.SetStreams(ctx, part.ID, audioID, subtitleID); err != nil {
+	if err := target.SetStreamsAsUser(ctx, part.ID, audioID, subtitleID, userToken); err != nil {
 		log.Warn().Err(err).Int("partID", part.ID).Msg("Failed to set streams")
 		change.AudioChanged = false
 		change.SubtitleChanged = false
@@ -1002,6 +1094,42 @@ func (m *Manager) getUserForClient(ctx context.Context, targetID int64, target P
 	return nil, fmt.Errorf("no user found for client %s", clientIdentifier)
 }
 
+// getUserToken retrieves or fetches a user's token for this server.
+func (m *Manager) getUserToken(ctx context.Context, cache *Cache, target PlexTargetInterface, userID string) (string, error) {
+	if cache != nil {
+		if token, ok := cache.GetUserToken(userID); ok {
+			return token, nil
+		}
+	}
+
+	var machineID string
+	if cache != nil {
+		if cachedID, ok := cache.GetMachineIdentifier(); ok {
+			machineID = cachedID
+		}
+	}
+
+	if machineID == "" {
+		id, err := target.GetMachineIdentifier(ctx)
+		if err != nil {
+			return "", err
+		}
+		machineID = id
+		if cache != nil {
+			cache.SetMachineIdentifier(machineID)
+		}
+	}
+
+	token, err := target.GetUserTokenWithMachineID(ctx, userID, machineID)
+	if err != nil {
+		return "", err
+	}
+	if cache != nil {
+		cache.SetUserToken(userID, token)
+	}
+	return token, nil
+}
+
 // tracksMatchPreference checks if selected tracks match the stored preference
 func (m *Manager) tracksMatchPreference(audio *AudioStream, subtitle *SubtitleStream, pref *database.PlexAutoLanguagesPreference) bool {
 	if pref == nil {
@@ -1016,6 +1144,15 @@ func (m *Manager) tracksMatchPreference(audio *AudioStream, subtitle *SubtitleSt
 		return false
 	}
 	if audio.Channels != pref.AudioChannels {
+		return false
+	}
+	if pref.AudioChannelLayout != "" && audio.AudioChannelLayout != pref.AudioChannelLayout {
+		return false
+	}
+	if pref.AudioTitle != "" && audio.Title != pref.AudioTitle {
+		return false
+	}
+	if pref.AudioDisplayTitle != "" && audio.DisplayTitle != pref.AudioDisplayTitle {
 		return false
 	}
 	if audio.VisualImpaired != pref.AudioVisualImpaired {
@@ -1036,6 +1173,15 @@ func (m *Manager) tracksMatchPreference(audio *AudioStream, subtitle *SubtitleSt
 		return false
 	}
 	if subtitle.HearingImpaired != pref.SubtitleHearingImpaired {
+		return false
+	}
+	if pref.SubtitleCodec != nil && subtitle.Codec != *pref.SubtitleCodec {
+		return false
+	}
+	if pref.SubtitleTitle != nil && subtitle.Title != *pref.SubtitleTitle {
+		return false
+	}
+	if pref.SubtitleDisplayTitle != nil && subtitle.DisplayTitle != *pref.SubtitleDisplayTitle {
 		return false
 	}
 

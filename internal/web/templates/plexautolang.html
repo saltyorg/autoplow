@@ -162,7 +162,7 @@
                 <div class="space-y-6">
                     {{range .Content.EnabledTargets}}
                     <div>
-                        <div id="pal-preferences" class="pal-preferences-target" hx-get="/plex-auto-languages/targets/{{.ID}}/preferences/partial" hx-trigger="load, sse-refresh" hx-swap="innerHTML">
+                        <div id="pal-preferences-{{.ID}}" class="pal-preferences-target" hx-get="/plex-auto-languages/targets/{{.ID}}/preferences/partial" hx-trigger="load, sse-refresh" hx-swap="innerHTML">
                             <div class="animate-pulse flex space-x-4">
                                 <div class="flex-1 space-y-4 py-1">
                                     <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
@@ -257,7 +257,12 @@
             <div class="overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-700 px-4 py-5 sm:p-6">
                 <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
                 <dd class="mt-1 text-lg font-semibold tracking-tight text-gray-900 dark:text-white">
-                    {{if gt (len .EnabledTargets) 0}}
+                    {{if not .IsRunning}}
+                    <span class="inline-flex items-center">
+                        <span class="mr-2 h-2 w-2 rounded-full bg-red-500"></span>
+                        Stopped
+                    </span>
+                    {{else if gt (len .EnabledTargets) 0}}
                     <span class="inline-flex items-center">
                         <span class="mr-2 h-2 w-2 rounded-full bg-green-500"></span>
                         Enabled
@@ -265,7 +270,7 @@
                     {{else}}
                     <span class="inline-flex items-center">
                         <span class="mr-2 h-2 w-2 rounded-full bg-gray-400"></span>
-                        Disabled
+                        No Servers Enabled
                     </span>
                     {{end}}
                 </dd>
@@ -519,7 +524,7 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
                     hx-swap="innerHTML"
                     hx-include=".pal-history-filters select"
                     name="target">
-                <option value="">All Servers</option>
+                <option value="0">All Servers</option>
                 {{range .Targets}}
                 <option value="{{.ID}}" {{if and $.TargetFilter (eq $.TargetFilter .ID)}}selected{{end}}>{{.Name}}</option>
                 {{end}}
@@ -619,18 +624,18 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
 
 {{define "preferences_section"}}
 <!-- Filters -->
-<div class="mb-4 flex items-center gap-4 flex-wrap pal-preferences-filters">
+<div class="mb-4 flex items-center gap-4 flex-wrap pal-preferences-filters" data-target-id="{{.TargetID}}">
     <div class="flex items-center gap-2">
         <select id="prefs-server-filter-{{.TargetID}}"
                 class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
                 hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial"
                 hx-target="closest .pal-preferences-target"
                 hx-swap="innerHTML"
-                hx-include=".pal-preferences-filters select"
+                hx-include=".pal-preferences-filters[data-target-id='{{.TargetID}}'] select"
                 name="target">
-            <option value="">All Servers</option>
+            <option value="0" {{if and $.TargetFilterSet (eq $.TargetFilter 0)}}selected{{end}}>All Servers</option>
             {{range .Targets}}
-            <option value="{{.ID}}" {{if and $.TargetFilter (eq $.TargetFilter .ID)}}selected{{end}}>{{.Name}}</option>
+            <option value="{{.ID}}" {{if and $.TargetFilterSet (eq $.TargetFilter .ID)}}selected{{end}}>{{.Name}}</option>
             {{end}}
         </select>
     </div>
@@ -641,7 +646,7 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
                 hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial"
                 hx-target="closest .pal-preferences-target"
                 hx-swap="innerHTML"
-                hx-include=".pal-preferences-filters select"
+                hx-include=".pal-preferences-filters[data-target-id='{{.TargetID}}'] select"
                 name="user">
             <option value="">All Users</option>
             {{range .Users}}
@@ -704,7 +709,7 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
     </div>
     <div class="flex items-center gap-2">
         {{if gt .Page 1}}
-        <button hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial?page={{sub .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}{{if .TargetFilter}}&target={{.TargetFilter}}{{end}}"
+        <button hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial?page={{sub .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}{{if .TargetFilterSet}}&target={{.TargetFilter}}{{end}}"
                 hx-target="closest .pal-preferences-target"
                 hx-swap="innerHTML"
                 class="inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
@@ -712,7 +717,7 @@ document.addEventListener('htmx:afterSwap', (e) => palConvertTimes(e.target));
         </button>
         {{end}}
         {{if lt .Page .TotalPages}}
-        <button hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial?page={{add .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}{{if .TargetFilter}}&target={{.TargetFilter}}{{end}}"
+        <button hx-get="/plex-auto-languages/targets/{{.TargetID}}/preferences/partial?page={{add .Page 1}}{{if .UserFilter}}&user={{.UserFilter}}{{end}}{{if .TargetFilterSet}}&target={{.TargetFilter}}{{end}}"
                 hx-target="closest .pal-preferences-target"
                 hx-swap="innerHTML"
                 class="inline-flex items-center rounded-md bg-white dark:bg-gray-700 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
