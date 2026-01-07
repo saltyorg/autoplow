@@ -2,6 +2,7 @@ package matcharr
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,7 @@ type MediaServerItem struct {
 	ItemID      string              `json:"item_id"`     // Metadata ID for API calls
 	Title       string              `json:"title"`
 	Path        string              `json:"path"`
+	IsFile      bool                `json:"is_file,omitempty"`
 	ProviderIDs map[string][]string `json:"provider_ids"` // tmdb, tvdb, imdb -> values (supports multiple)
 }
 
@@ -57,6 +59,19 @@ func (m *MediaServerItem) GetProviderIDs(idType string) []string {
 		return nil
 	}
 	return m.ProviderIDs[idType]
+}
+
+// MatchPath returns the directory path to compare against Arr paths.
+// If the media server path is a file, use its parent directory; otherwise use the path as-is.
+func (m *MediaServerItem) MatchPath() string {
+	normalized := normalizePath(m.Path)
+	if normalized == "" {
+		return ""
+	}
+	if m.IsFile {
+		return normalizePath(filepath.Dir(normalized))
+	}
+	return normalized
 }
 
 // Mismatch represents a detected mismatch between Arr and media server

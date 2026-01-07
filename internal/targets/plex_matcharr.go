@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -127,6 +128,7 @@ func (s *PlexTarget) GetLibraryItemsWithProviderIDs(ctx context.Context, library
 		// Extract path from media (movies)
 		if len(meta.Media) > 0 && len(meta.Media[0].Part) > 0 {
 			item.Path = meta.Media[0].Part[0].File
+			item.IsFile = true
 		} else if len(meta.Location) > 0 {
 			item.Path = meta.Location[0].Path
 		}
@@ -236,10 +238,8 @@ func addProviderID(providerIDs map[string][]string, key string, value string) {
 	if value == "" {
 		return
 	}
-	for _, existing := range providerIDs[key] {
-		if existing == value {
-			return
-		}
+	if slices.Contains(providerIDs[key], value) {
+		return
 	}
 	providerIDs[key] = append(providerIDs[key], value)
 }

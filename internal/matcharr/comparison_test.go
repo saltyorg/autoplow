@@ -23,8 +23,9 @@ func TestCompareArrToTarget_RequiresExactFolderMatch(t *testing.T) {
 		Name: "Plex",
 	}
 	targetItems := []MediaServerItem{{
-		Title: "Avatar",
-		Path:  "/mnt/media/Movies/Avatar/Avatar.mkv",
+		Title:  "Avatar",
+		Path:   "/mnt/media/Movies/Avatar/Avatar.mkv",
+		IsFile: true,
 		ProviderIDs: map[string][]string{
 			"tmdb": {"2"},
 		},
@@ -87,8 +88,9 @@ func TestCompareArrToTarget_MatchesMappedFolderExactly(t *testing.T) {
 		Name: "Plex",
 	}
 	targetItems := []MediaServerItem{{
-		Title: "Avatar",
-		Path:  "/srv/movies/Avatar/Avatar.mkv",
+		Title:  "Avatar",
+		Path:   "/srv/movies/Avatar/Avatar.mkv",
+		IsFile: true,
 		ProviderIDs: map[string][]string{
 			"tmdb": {"999"}, // intentionally different to surface mismatch
 		},
@@ -161,8 +163,9 @@ func TestCompareArrToTarget_FallsBackToIMDBWhenTMDBMissing(t *testing.T) {
 		Name: "Plex",
 	}
 	targetItems := []MediaServerItem{{
-		Title: "Die Hart: Die Harter",
-		Path:  "/mnt/media/Movies/Die Hart 2 Die Harter/Die Hart 2 Die Harter.mkv",
+		Title:  "Die Hart: Die Harter",
+		Path:   "/mnt/media/Movies/Die Hart 2 Die Harter/Die Hart 2 Die Harter.mkv",
+		IsFile: true,
 		ProviderIDs: map[string][]string{
 			"imdb": {"tt32094375"},
 		},
@@ -196,8 +199,9 @@ func TestCompareArrToTarget_DoesNotFallbackWhenIMDBMissing(t *testing.T) {
 		Name: "Plex",
 	}
 	targetItems := []MediaServerItem{{
-		Title: "Another Movie",
-		Path:  "/mnt/media/Movies/Another Movie/Another Movie.mkv",
+		Title:  "Another Movie",
+		Path:   "/mnt/media/Movies/Another Movie/Another Movie.mkv",
+		IsFile: true,
 		ProviderIDs: map[string][]string{
 			// TMDB missing, IMDB present on server only
 			"imdb": {"tt0123456"},
@@ -236,8 +240,9 @@ func TestCompareArrToTarget_SonarrFallsBackToTMDB(t *testing.T) {
 		Name: "Plex",
 	}
 	targetItems := []MediaServerItem{{
-		Title: "Show With TMDB",
-		Path:  "/mnt/media/TV/Show With TMDB/Show With TMDB.mkv",
+		Title:  "Show With TMDB",
+		Path:   "/mnt/media/TV/Show With TMDB/Show With TMDB.mkv",
+		IsFile: true,
 		ProviderIDs: map[string][]string{
 			// TVDB missing/mismatched, tmdb present and should be used as fallback
 			"tmdb": {"888"},
@@ -272,8 +277,9 @@ func TestCompareArrToTarget_MatchesWhenIDInMultipleValues(t *testing.T) {
 		Name: "Plex",
 	}
 	targetItems := []MediaServerItem{{
-		Title: "Multi-ID Movie",
-		Path:  "/mnt/media/Movies/Multi-ID Movie/Multi-ID Movie.mkv",
+		Title:  "Multi-ID Movie",
+		Path:   "/mnt/media/Movies/Multi-ID Movie/Multi-ID Movie.mkv",
+		IsFile: true,
 		ProviderIDs: map[string][]string{
 			"tmdb": {"999", "1318297"},
 			"imdb": {"tt16478030"},
@@ -307,8 +313,9 @@ func TestCompareArrToTarget_MismatchShowsAllProviderIDs(t *testing.T) {
 		Name: "Plex",
 	}
 	targetItems := []MediaServerItem{{
-		Title: "Unmatched Show",
-		Path:  "/mnt/media/TV/Unmatched Show/Unmatched Show.mkv",
+		Title:  "Unmatched Show",
+		Path:   "/mnt/media/TV/Unmatched Show/Unmatched Show.mkv",
+		IsFile: true,
 		ProviderIDs: map[string][]string{
 			"tvdb": {"332107", "369019"},
 		},
@@ -343,5 +350,32 @@ func TestMapPath_RespectsPathBoundaries(t *testing.T) {
 	unchanged := mapPath("/mnt/mediabackup/Movie", mappings)
 	if unchanged != "/mnt/mediabackup/Movie" {
 		t.Fatalf("expected path to remain unchanged, got %s", unchanged)
+	}
+}
+
+func TestMediaServerItemMatchPath_DoesNotTreatDottedFolderAsFile(t *testing.T) {
+	item := MediaServerItem{
+		Path:   "/mnt/media/TV/Mr.Robot",
+		IsFile: false,
+	}
+
+	matched := item.MatchPath()
+
+	if matched != item.Path {
+		t.Fatalf("expected path to remain %s, got %s", item.Path, matched)
+	}
+}
+
+func TestMediaServerItemMatchPath_UsesParentForMediaFile(t *testing.T) {
+	item := MediaServerItem{
+		Path:   "/mnt/media/TV/Mr.Robot/Season 1/Mr.Robot.S01E01.mkv",
+		IsFile: true,
+	}
+	expected := "/mnt/media/TV/Mr.Robot/Season 1"
+
+	matched := item.MatchPath()
+
+	if matched != expected {
+		t.Fatalf("expected match path %s, got %s", expected, matched)
 	}
 }

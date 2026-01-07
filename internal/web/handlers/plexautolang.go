@@ -232,11 +232,7 @@ func (h *Handlers) PlexAutoLangPreferencesPartial(w http.ResponseWriter, r *http
 
 	targetIDForQuery := id
 	if targetFilterSet {
-		if targetFilter > 0 {
-			targetIDForQuery = targetFilter
-		} else {
-			targetIDForQuery = 0
-		}
+		targetIDForQuery = max(targetFilter, 0)
 	}
 
 	prefs, total, _ := h.db.ListPlexAutoLanguagesPreferencesFiltered(targetIDForQuery, userFilter, pageSize, offset)

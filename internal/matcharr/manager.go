@@ -3,6 +3,7 @@ package matcharr
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -154,6 +155,12 @@ func (m *Manager) Status() ManagerStatus {
 	return status
 }
 
+func (m *Manager) managerContext() context.Context {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.ctx
+}
+
 // GetConfig returns the current configuration
 func (m *Manager) GetConfig() ManagerConfig {
 	m.mu.RLock()
@@ -246,6 +253,23 @@ type targetFetchResult struct {
 // RunComparison runs a comparison between all Arr instances and all targets
 // If autoFix is true, mismatches will be automatically fixed
 func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy string) (*RunResult, error) {
+	if mgrCtx := m.managerContext(); mgrCtx != nil {
+		combinedCtx, cancel := context.WithCancel(ctx)
+		ctx = combinedCtx
+		defer cancel()
+		go func() {
+			select {
+			case <-mgrCtx.Done():
+				cancel()
+			case <-combinedCtx.Done():
+			}
+		}()
+	}
+
+	m.mu.RLock()
+	delayBetweenFixes := m.config.DelayBetweenFixes
+	m.mu.RUnlock()
+
 	m.mu.Lock()
 	if m.isComparing {
 		m.mu.Unlock()
@@ -506,12 +530,12 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 						result.MismatchesFixed++
 
 						// Add delay between fixes to avoid overwhelming the server
-						if m.config.DelayBetweenFixes > 0 {
+						if delayBetweenFixes > 0 {
 							select {
 							case <-ctx.Done():
 								m.finalizeRun(run, result, startTime, runLog)
 								return result, nil
-							case <-time.After(m.config.DelayBetweenFixes):
+							case <-time.After(delayBetweenFixes):
 							}
 						}
 					}
@@ -818,7 +842,7 @@ func filterItemsByIgnoredPaths(items []MediaServerItem, ignored []string) []Medi
 	filtered := items[:0]
 	for _, item := range items {
 		path := normalizePath(item.Path)
-		matchPath := itemMatchPath(item.Path)
+		matchPath := item.MatchPath()
 		if pathIgnored(path, ignored) || pathIgnored(matchPath, ignored) {
 			continue
 		}
@@ -848,12 +872,7 @@ func pathListForLog(lib Library) string {
 
 // containsString checks if slice contains string s
 func containsString(list []string, s string) bool {
-	for _, item := range list {
-		if item == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // Phase 3: Data fetching functions
@@ -1014,6 +1033,10 @@ func (m *Manager) SkipMismatch(mismatchID int64) error {
 
 // FixAllPending fixes all pending mismatches from the latest run
 func (m *Manager) FixAllPending(ctx context.Context) (int, error) {
+	m.mu.RLock()
+	delayBetweenFixes := m.config.DelayBetweenFixes
+	m.mu.RUnlock()
+
 	mismatches, err := m.db.GetLatestPendingMatcharrMismatches()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get pending mismatches: %w", err)
@@ -1038,11 +1061,11 @@ func (m *Manager) FixAllPending(ctx context.Context) (int, error) {
 		fixed++
 
 		// Add delay between fixes
-		if m.config.DelayBetweenFixes > 0 {
+		if delayBetweenFixes > 0 {
 			select {
 			case <-ctx.Done():
 				return fixed, ctx.Err()
-			case <-time.After(m.config.DelayBetweenFixes):
+			case <-time.After(delayBetweenFixes):
 			}
 		}
 	}

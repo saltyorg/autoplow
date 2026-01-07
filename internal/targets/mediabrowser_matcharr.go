@@ -88,6 +88,7 @@ func (s *MediaBrowserTarget) GetLibraryItemsWithProviderIDs(ctx context.Context,
 				ItemID:      item.ID,
 				Title:       item.Name,
 				Path:        item.Path,
+				IsFile:      strings.EqualFold(item.Type, "movie"),
 				ProviderIDs: make(map[string][]string),
 			}
 

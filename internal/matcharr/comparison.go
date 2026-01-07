@@ -2,7 +2,6 @@ package matcharr
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -42,7 +41,7 @@ func CompareArrToTarget(
 	targetByPath := make(map[string]*MediaServerItem)
 	for i := range targetItems {
 		item := &targetItems[i]
-		matchPath := itemMatchPath(item.Path)
+		matchPath := item.MatchPath()
 		if matchPath == "" {
 			continue
 		}
@@ -96,7 +95,7 @@ func CompareArrToTarget(
 			continue
 		}
 
-		matchedTargetPaths[itemMatchPath(targetItem.Path)] = struct{}{}
+		matchedTargetPaths[targetItem.MatchPath()] = struct{}{}
 		result.Compared++
 
 		// Get expected ID from Arr
@@ -230,48 +229,6 @@ func findMissingTargetItems(arr *database.MatcharrArr, target *database.Target, 
 // findMatchingTargetItem finds a target item that matches the given path
 func findMatchingTargetItem(path string, targetByPath map[string]*MediaServerItem) *MediaServerItem {
 	return targetByPath[path]
-}
-
-// itemMatchPath returns the directory path to compare against Arr paths.
-// If the media server path is a file, use its parent directory; otherwise use the path as-is.
-func itemMatchPath(path string) string {
-	normalized := normalizePath(path)
-	if normalized == "" {
-		return ""
-	}
-
-	base := filepath.Base(normalized)
-	// Treat a path with a media file extension as a file path and use its directory.
-	// Some series folders contain dots (e.g., "A.P. Bio"), so we only treat it as
-	// a file when the extension looks like an actual media file.
-	if looksLikeMediaFile(base) {
-		return normalizePath(filepath.Dir(normalized))
-	}
-
-	return normalized
-}
-
-// looksLikeMediaFile returns true if the base name has a common media file extension.
-func looksLikeMediaFile(base string) bool {
-	ext := filepath.Ext(base)
-	if ext == "" {
-		return false
-	}
-
-	// Ignore "extensions" that contain spaces or are unusually long (likely folder names)
-	ext = strings.TrimPrefix(ext, ".")
-	if ext == "" || len(ext) > 6 || strings.Contains(ext, " ") {
-		return false
-	}
-
-	// Only consider simple alphanumeric extensions (e.g., mkv, mp4, iso)
-	for _, r := range ext {
-		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') {
-			return false
-		}
-	}
-
-	return true
 }
 
 // mapPath applies path mappings to convert an Arr path to a media server path
