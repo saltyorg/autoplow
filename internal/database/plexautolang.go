@@ -90,6 +90,7 @@ type PlexAutoLanguagesConfig struct {
 	TriggerOnPlay     bool                            `json:"trigger_on_play"`
 	TriggerOnScan     bool                            `json:"trigger_on_scan"`
 	TriggerOnActivity bool                            `json:"trigger_on_activity"`
+	MaxConcurrent     int                             `json:"max_concurrency"`
 	IgnoreLabels      []string                        `json:"ignore_labels"`
 	IgnoreLibraries   []string                        `json:"ignore_libraries"`
 	Schedule          string                          `json:"schedule"`
@@ -107,6 +108,7 @@ func DefaultPlexAutoLanguagesConfig(targetID int64) PlexAutoLanguagesConfig {
 		TriggerOnPlay:     true,
 		TriggerOnScan:     true,
 		TriggerOnActivity: true,
+		MaxConcurrent:     2,
 		IgnoreLabels:      []string{},
 		IgnoreLibraries:   []string{},
 		Schedule:          "",
@@ -120,12 +122,12 @@ func (db *DB) GetPlexAutoLanguagesConfig(targetID int64) (*PlexAutoLanguagesConf
 
 	err := db.QueryRow(`
 		SELECT target_id, enabled, update_level, update_strategy, trigger_on_play, trigger_on_scan,
-			trigger_on_activity, ignore_labels, ignore_libraries, schedule, created_at, updated_at
+			trigger_on_activity, max_concurrency, ignore_labels, ignore_libraries, schedule, created_at, updated_at
 		FROM plex_auto_languages_config WHERE target_id = ?
 	`, targetID).Scan(
 		&config.TargetID, &config.Enabled, &config.UpdateLevel, &config.UpdateStrategy,
 		&config.TriggerOnPlay, &config.TriggerOnScan, &config.TriggerOnActivity,
-		&ignoreLabelsJSON, &ignoreLibrariesJSON, &config.Schedule,
+		&config.MaxConcurrent, &ignoreLabelsJSON, &ignoreLibrariesJSON, &config.Schedule,
 		&config.CreatedAt, &config.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -141,6 +143,9 @@ func (db *DB) GetPlexAutoLanguagesConfig(targetID int64) (*PlexAutoLanguagesConf
 	}
 	if err := unmarshalFromString(ignoreLibrariesJSON, &config.IgnoreLibraries); err != nil {
 		config.IgnoreLibraries = []string{}
+	}
+	if config.MaxConcurrent <= 0 {
+		config.MaxConcurrent = DefaultPlexAutoLanguagesConfig(targetID).MaxConcurrent
 	}
 
 	return &config, nil
@@ -160,8 +165,8 @@ func (db *DB) UpsertPlexAutoLanguagesConfig(config *PlexAutoLanguagesConfig) err
 	_, err = db.Exec(`
 		INSERT INTO plex_auto_languages_config (
 			target_id, enabled, update_level, update_strategy, trigger_on_play, trigger_on_scan,
-			trigger_on_activity, ignore_labels, ignore_libraries, schedule, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			trigger_on_activity, max_concurrency, ignore_labels, ignore_libraries, schedule, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(target_id) DO UPDATE SET
 			enabled = excluded.enabled,
 			update_level = excluded.update_level,
@@ -169,13 +174,14 @@ func (db *DB) UpsertPlexAutoLanguagesConfig(config *PlexAutoLanguagesConfig) err
 			trigger_on_play = excluded.trigger_on_play,
 			trigger_on_scan = excluded.trigger_on_scan,
 			trigger_on_activity = excluded.trigger_on_activity,
+			max_concurrency = excluded.max_concurrency,
 			ignore_labels = excluded.ignore_labels,
 			ignore_libraries = excluded.ignore_libraries,
 			schedule = excluded.schedule,
 			updated_at = CURRENT_TIMESTAMP
 	`, config.TargetID, config.Enabled, config.UpdateLevel, config.UpdateStrategy,
 		config.TriggerOnPlay, config.TriggerOnScan, config.TriggerOnActivity,
-		ignoreLabelsJSON, ignoreLibrariesJSON, config.Schedule)
+		config.MaxConcurrent, ignoreLabelsJSON, ignoreLibrariesJSON, config.Schedule)
 	if err != nil {
 		return fmt.Errorf("failed to upsert plex auto languages config: %w", err)
 	}

@@ -709,6 +709,14 @@ var migrations = []migration{
 			CREATE INDEX idx_matcharr_gaps_source ON matcharr_gaps(source);
 		`,
 	},
+	{
+		Version: 23,
+		Name:    "plex_auto_languages_concurrency",
+		SQL: `
+			-- Add max_concurrency column to Plex Auto Languages config
+			ALTER TABLE plex_auto_languages_config ADD COLUMN max_concurrency INTEGER DEFAULT 2;
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

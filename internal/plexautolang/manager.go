@@ -86,6 +86,8 @@ type Manager struct {
 	caches map[int64]*Cache // targetID -> cache
 	// Enabled targets (callbacks registered or explicitly enabled)
 	enabledTargets map[int64]bool
+	// Per-target work queues
+	queues map[int64]*targetQueue
 }
 
 // NewManager creates a new Plex Auto Languages manager
@@ -95,7 +97,55 @@ func NewManager(db *database.DB, targetGetter TargetGetter) *Manager {
 		targetGetter:   targetGetter,
 		caches:         make(map[int64]*Cache),
 		enabledTargets: make(map[int64]bool),
+		queues:         make(map[int64]*targetQueue),
 	}
+}
+
+type targetQueue struct {
+	mu            sync.Mutex
+	tasks         chan func()
+	maxConcurrent int
+	closed        bool
+}
+
+func newTargetQueue(maxConcurrent int) *targetQueue {
+	if maxConcurrent < 1 {
+		maxConcurrent = 1
+	}
+	q := &targetQueue{
+		tasks:         make(chan func(), 100),
+		maxConcurrent: maxConcurrent,
+	}
+	for i := 0; i < maxConcurrent; i++ {
+		go func() {
+			for task := range q.tasks {
+				if task != nil {
+					task()
+				}
+			}
+		}()
+	}
+	return q
+}
+
+func (q *targetQueue) enqueue(task func()) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return false
+	}
+	q.tasks <- task
+	return true
+}
+
+func (q *targetQueue) close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return
+	}
+	q.closed = true
+	close(q.tasks)
 }
 
 // SetSSEBroker sets the SSE broker for broadcasting events
@@ -137,9 +187,8 @@ func (m *Manager) Start() error {
 // Stop stops the manager
 func (m *Manager) Stop() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if !m.running {
+		m.mu.Unlock()
 		return nil
 	}
 
@@ -148,6 +197,11 @@ func (m *Manager) Stop() error {
 	}
 
 	m.running = false
+	for id, queue := range m.queues {
+		queue.close()
+		delete(m.queues, id)
+	}
+	m.mu.Unlock()
 	log.Info().Msg("Plex Auto Languages manager stopped")
 	return nil
 }
@@ -184,6 +238,10 @@ func (m *Manager) DisableTarget(targetID int64) {
 	m.mu.Lock()
 	delete(m.enabledTargets, targetID)
 	delete(m.caches, targetID)
+	if queue, ok := m.queues[targetID]; ok {
+		queue.close()
+		delete(m.queues, targetID)
+	}
 	m.mu.Unlock()
 }
 
@@ -193,6 +251,41 @@ func (m *Manager) isTargetEnabled(targetID int64) bool {
 	running := m.running
 	m.mu.RUnlock()
 	return running && enabled
+}
+
+func (m *Manager) enqueueTask(targetID int64, maxConcurrent int, task func()) {
+	queue := m.getOrCreateQueue(targetID, maxConcurrent)
+	if queue == nil {
+		return
+	}
+	if !queue.enqueue(task) {
+		log.Debug().Int64("target_id", targetID).Msg("Plex Auto Languages: Dropped queued task")
+	}
+}
+
+func (m *Manager) getOrCreateQueue(targetID int64, maxConcurrent int) *targetQueue {
+	maxConcurrent = normalizeMaxConcurrent(maxConcurrent)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	queue := m.queues[targetID]
+	if queue != nil && queue.maxConcurrent == maxConcurrent {
+		return queue
+	}
+	if queue != nil {
+		queue.close()
+	}
+	newQueue := newTargetQueue(maxConcurrent)
+	m.queues[targetID] = newQueue
+	return newQueue
+}
+
+func normalizeMaxConcurrent(maxConcurrent int) int {
+	if maxConcurrent < 1 {
+		return 1
+	}
+	return maxConcurrent
 }
 
 // registerTargetCallbacks registers notification callbacks for all enabled targets
@@ -338,10 +431,14 @@ func (m *Manager) handlePlayingNotification(targetID int64, target PlexTargetInt
 				Msg("Plex Auto Languages: Skipping rapid notification (debounced)")
 			return
 		}
-		go m.processPlayingSession(targetID, target, cache, playing.ClientIdentifier, ratingKey, config)
+		m.enqueueTask(targetID, config.MaxConcurrent, func() {
+			m.processPlayingSession(targetID, target, cache, playing.ClientIdentifier, ratingKey, config)
+		})
 	} else {
 		// Session stopped - cleanup but also check for final track changes
-		go m.processPlaybackStopped(targetID, target, playing.ClientIdentifier, ratingKey, config)
+		m.enqueueTask(targetID, config.MaxConcurrent, func() {
+			m.processPlaybackStopped(targetID, target, playing.ClientIdentifier, ratingKey, config)
+		})
 	}
 }
 
@@ -680,7 +777,9 @@ func (m *Manager) handleTimelineNotification(targetID int64, target PlexTargetIn
 	}
 
 	// Process asynchronously
-	go m.processNewEpisode(targetID, target, ratingKey, config)
+	m.enqueueTask(targetID, config.MaxConcurrent, func() {
+		m.processNewEpisode(targetID, target, ratingKey, config)
+	})
 }
 
 // processNewEpisode applies user preferences to a newly added episode
@@ -848,7 +947,9 @@ func (m *Manager) handleActivityNotification(targetID int64, target PlexTargetIn
 		Msg("Plex Auto Languages activity notification")
 
 	// Process asynchronously
-	go m.processNewEpisode(targetID, target, ratingKey, config)
+	m.enqueueTask(targetID, config.MaxConcurrent, func() {
+		m.processNewEpisode(targetID, target, ratingKey, config)
+	})
 }
 
 // applyPreferenceToShow applies the user's preference to other episodes in the show

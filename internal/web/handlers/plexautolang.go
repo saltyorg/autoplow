@@ -153,6 +153,14 @@ func (h *Handlers) PlexAutoLangConfigUpdate(w http.ResponseWriter, r *http.Reque
 	config.TriggerOnScan = r.FormValue("trigger_on_scan") == "on"
 	config.TriggerOnActivity = r.FormValue("trigger_on_activity") == "on"
 	config.Schedule = r.FormValue("schedule")
+	if v := r.FormValue("max_concurrency"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			if parsed < 1 {
+				parsed = 1
+			}
+			config.MaxConcurrent = parsed
+		}
+	}
 
 	if err := h.db.UpsertPlexAutoLanguagesConfig(config); err != nil {
 		h.flashErr(w, "Failed to save config: "+err.Error())
