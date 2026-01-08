@@ -19,7 +19,16 @@ type CompareResult struct {
 	Mismatches []Mismatch
 	MissingArr []MissingPath // Present in Arr, missing on server
 	MissingSrv []MissingPath // Present on server, missing in Arr
+	Matches    []MatchedMedia
 	Errors     []error
+}
+
+// MatchedMedia represents an Arr item matched to a media server item.
+type MatchedMedia struct {
+	ArrMedia   ArrMedia
+	ServerItem MediaServerItem
+	IDType     string
+	IDValue    string
 }
 
 // CompareArrToTarget compares media from an Arr instance to items in a media server target
@@ -121,6 +130,8 @@ func CompareArrToTarget(
 			Interface("server_provider_ids", targetItem.ProviderIDs).
 			Msg("Comparing media IDs")
 
+		matched := hasExpectedID
+
 		// Radarr movies: if TMDB is missing on the server, allow imdb as a fallback
 		if arr.Type == database.ArrTypeRadarr && expectedIDType == "tmdb" && len(actualIDs) == 0 {
 			imdbID := strings.TrimSpace(media.IMDBID)
@@ -135,7 +146,7 @@ func CompareArrToTarget(
 						Str("fallback_expected", imdbID).
 						Interface("server_provider_ids", targetItem.ProviderIDs).
 						Msg("Using fallback provider match for movie with missing TMDB ID")
-					continue
+					matched = true
 				}
 			} else {
 				log.Trace().
@@ -146,7 +157,7 @@ func CompareArrToTarget(
 		}
 
 		// Sonarr shows: if TVDB doesn't match, allow imdb first, then tmdb as fallbacks
-		if arr.Type == database.ArrTypeSonarr && expectedIDType == "tvdb" && !hasExpectedID {
+		if arr.Type == database.ArrTypeSonarr && expectedIDType == "tvdb" && !matched {
 			if imdbID := strings.TrimSpace(media.IMDBID); imdbID != "" {
 				if fallbackIDs := targetItem.GetProviderIDs("imdb"); containsID(fallbackIDs, imdbID) {
 					log.Debug().
@@ -157,11 +168,11 @@ func CompareArrToTarget(
 						Str("fallback_expected", imdbID).
 						Interface("server_provider_ids", targetItem.ProviderIDs).
 						Msg("Using fallback provider match for show with mismatched TVDB ID")
-					continue
+					matched = true
 				}
 			}
 
-			if media.TMDBID > 0 {
+			if !matched && media.TMDBID > 0 {
 				tmdbID := intToString(media.TMDBID)
 				if fallbackIDs := targetItem.GetProviderIDs("tmdb"); containsID(fallbackIDs, tmdbID) {
 					log.Debug().
@@ -172,13 +183,13 @@ func CompareArrToTarget(
 						Str("fallback_expected", tmdbID).
 						Interface("server_provider_ids", targetItem.ProviderIDs).
 						Msg("Using fallback provider match for show with mismatched TVDB ID")
-					continue
+					matched = true
 				}
 			}
 		}
 
 		// Compare IDs
-		if !hasExpectedID {
+		if !matched {
 			actualID := strings.Join(actualIDs, ",")
 			log.Debug().
 				Str("arr", arr.Name).
@@ -201,6 +212,13 @@ func CompareArrToTarget(
 				ExpectedIDType: expectedIDType,
 				ExpectedID:     expectedID,
 				ActualID:       actualID,
+			})
+		} else {
+			result.Matches = append(result.Matches, MatchedMedia{
+				ArrMedia:   media,
+				ServerItem: *targetItem,
+				IDType:     expectedIDType,
+				IDValue:    expectedID,
 			})
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +32,30 @@ type mismatchArrOption struct {
 type gapOption struct {
 	ID   int64
 	Name string
+}
+
+type fileMismatchDetailRow struct {
+	ID              int64
+	SeasonNumber    int
+	EpisodeNumber   int
+	ArrFileName     string
+	TargetFileNames string
+	ArrFilePath     string
+	TargetFilePaths string
+}
+
+type fileMismatchRow struct {
+	ID               int64
+	ArrID            int64
+	TargetID         int64
+	ArrName          string
+	TargetName       string
+	MediaTitle       string
+	ArrMediaID       int64
+	TargetMetadataID string
+	TargetItemPath   string
+	MismatchCount    int
+	Details          []fileMismatchDetailRow
 }
 
 // MatcharrPage renders the main matcharr page
@@ -91,6 +116,34 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 	targetGapArrOptions := buildGapArrOptions(targetGaps)
 	targetGapTargetOptions := buildGapTargetOptions(targetGaps)
 
+	// File mismatches and ignores
+	var fileMismatchRows []fileMismatchRow
+	var fileMismatchArrOptions []gapOption
+	var fileMismatchTargetOptions []gapOption
+	var fileIgnoreRows []*database.MatcharrFileIgnore
+	var fileIgnoreArrOptions []gapOption
+	var fileIgnoreTargetOptions []gapOption
+	if latestRun != nil {
+		fileMismatches, _ := h.db.ListMatcharrFileMismatches(latestRun.ID)
+		filteredFileMismatches := filterMatcharrFileMismatches(fileMismatches, arrIDFilter, targetFilterID)
+		fileMismatchRows = buildFileMismatchRows(filteredFileMismatches)
+		fileMismatchArrOptions = buildFileMismatchArrOptions(fileMismatches)
+		fileMismatchTargetOptions = buildFileMismatchTargetOptions(fileMismatches)
+	}
+	if fileMismatchRows == nil {
+		fileMismatchRows = []fileMismatchRow{}
+	}
+
+	fileIgnores, _ := h.db.ListMatcharrFileIgnores()
+	if fileIgnores != nil {
+		fileIgnoreRows = filterMatcharrFileIgnores(fileIgnores, arrIDFilter, targetFilterID)
+		fileIgnoreArrOptions = buildFileIgnoreArrOptions(fileIgnores)
+		fileIgnoreTargetOptions = buildFileIgnoreTargetOptions(fileIgnores)
+	}
+	if fileIgnoreRows == nil {
+		fileIgnoreRows = []*database.MatcharrFileIgnore{}
+	}
+
 	// Get run history
 	runs, _ := h.db.ListMatcharrRuns(10, 0)
 
@@ -104,29 +157,37 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 	matcharrTargets, _ := h.db.ListMatcharrEnabledTargets()
 
 	h.render(w, r, "matcharr.html", map[string]any{
-		"Tab":                    tab,
-		"Status":                 status,
-		"Arrs":                   arrs,
-		"EnabledArrs":            enabledArrs,
-		"LatestRun":              latestRun,
-		"PendingMismatches":      pendingMismatches,
-		"FilteredMismatches":     filteredMismatches,
-		"ArrGaps":                filteredArrGaps,
-		"TargetGaps":             filteredTargetGaps,
-		"Runs":                   runs,
-		"FixHistory":             fixHistory,
-		"Targets":                targets,
-		"MatcharrTargets":        len(matcharrTargets),
-		"CanRun":                 enabledArrs > 0 && len(matcharrTargets) > 0,
-		"SelectedArrID":          arrIDFilter,
-		"SelectedTargetID":       targetFilterID,
-		"TargetOptions":          targetOptions,
-		"ArrOptions":             arrOptions,
-		"ArrGapArrOptions":       arrGapArrOptions,
-		"ArrGapTargetOptions":    arrGapTargetOptions,
-		"TargetGapArrOptions":    targetGapArrOptions,
-		"TargetGapTargetOptions": targetGapTargetOptions,
-		"FiltersApplied":         filtersApplied,
+		"Tab":                       tab,
+		"Status":                    status,
+		"Arrs":                      arrs,
+		"EnabledArrs":               enabledArrs,
+		"LatestRun":                 latestRun,
+		"PendingMismatches":         pendingMismatches,
+		"FilteredMismatches":        filteredMismatches,
+		"ArrGaps":                   filteredArrGaps,
+		"TargetGaps":                filteredTargetGaps,
+		"FileMismatchRows":          fileMismatchRows,
+		"FileMismatchCount":         len(fileMismatchRows),
+		"FileIgnoreRows":            fileIgnoreRows,
+		"FileIgnoreCount":           len(fileIgnoreRows),
+		"Runs":                      runs,
+		"FixHistory":                fixHistory,
+		"Targets":                   targets,
+		"MatcharrTargets":           len(matcharrTargets),
+		"CanRun":                    enabledArrs > 0 && len(matcharrTargets) > 0,
+		"SelectedArrID":             arrIDFilter,
+		"SelectedTargetID":          targetFilterID,
+		"TargetOptions":             targetOptions,
+		"ArrOptions":                arrOptions,
+		"ArrGapArrOptions":          arrGapArrOptions,
+		"ArrGapTargetOptions":       arrGapTargetOptions,
+		"TargetGapArrOptions":       targetGapArrOptions,
+		"TargetGapTargetOptions":    targetGapTargetOptions,
+		"FileMismatchArrOptions":    fileMismatchArrOptions,
+		"FileMismatchTargetOptions": fileMismatchTargetOptions,
+		"FileIgnoreArrOptions":      fileIgnoreArrOptions,
+		"FileIgnoreTargetOptions":   fileIgnoreTargetOptions,
+		"FiltersApplied":            filtersApplied,
 	})
 }
 
@@ -439,6 +500,274 @@ func (h *Handlers) MatcharrTargetGapsPartial(w http.ResponseWriter, r *http.Requ
 		"SelectedTargetID": targetFilterID,
 		"IsPartial":        true,
 		"ScanningEnabled":  scanningEnabled,
+	})
+}
+
+// MatcharrFileMismatchesPartial returns the File Mismatches section as HTML.
+func (h *Handlers) MatcharrFileMismatchesPartial(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
+	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
+
+	latestRun, _ := h.db.GetLatestMatcharrRun()
+	scanningEnabled := h.isScanningEnabled()
+
+	var mismatches []*database.MatcharrFileMismatch
+	if latestRun != nil {
+		mismatches, _ = h.db.ListMatcharrFileMismatches(latestRun.ID)
+	}
+	if mismatches == nil {
+		mismatches = []*database.MatcharrFileMismatch{}
+	}
+
+	filtered := filterMatcharrFileMismatches(mismatches, arrIDFilter, targetFilterID)
+	rows := buildFileMismatchRows(filtered)
+	arrOptions := buildFileMismatchArrOptions(mismatches)
+	targetOptions := buildFileMismatchTargetOptions(mismatches)
+
+	h.renderPartial(w, "matcharr.html", "file_mismatches_section", map[string]any{
+		"Rows":             rows,
+		"ArrOptions":       arrOptions,
+		"TargetOptions":    targetOptions,
+		"SelectedArrID":    arrIDFilter,
+		"SelectedTargetID": targetFilterID,
+		"IsPartial":        true,
+		"ScanningEnabled":  scanningEnabled,
+	})
+}
+
+// MatcharrFileIgnoresPartial returns the File Ignores section as HTML.
+func (h *Handlers) MatcharrFileIgnoresPartial(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
+	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
+
+	ignores, _ := h.db.ListMatcharrFileIgnores()
+	if ignores == nil {
+		ignores = []*database.MatcharrFileIgnore{}
+	}
+
+	filtered := filterMatcharrFileIgnores(ignores, arrIDFilter, targetFilterID)
+	arrOptions := buildFileIgnoreArrOptions(ignores)
+	targetOptions := buildFileIgnoreTargetOptions(ignores)
+
+	h.renderPartial(w, "matcharr.html", "file_ignores_section", map[string]any{
+		"Rows":             filtered,
+		"ArrOptions":       arrOptions,
+		"TargetOptions":    targetOptions,
+		"SelectedArrID":    arrIDFilter,
+		"SelectedTargetID": targetFilterID,
+		"IsPartial":        true,
+	})
+}
+
+// MatcharrFileMismatchScan triggers a media server scan for a file mismatch row.
+func (h *Handlers) MatcharrFileMismatchScan(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.jsonError(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if h.targetsMgr == nil {
+		h.jsonError(w, "Targets manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	if !h.isScanningEnabled() {
+		h.jsonError(w, "Scanning is disabled", http.StatusBadRequest)
+		return
+	}
+
+	mismatch, err := h.db.GetMatcharrFileMismatch(id)
+	if err != nil {
+		h.jsonError(w, "Failed to load file mismatch", http.StatusInternalServerError)
+		return
+	}
+	if mismatch == nil {
+		h.jsonError(w, "File mismatch not found", http.StatusNotFound)
+		return
+	}
+
+	scanPath := strings.TrimSpace(mismatch.TargetItemPath)
+	pathFromFile := false
+	if scanPath == "" {
+		scanPath = strings.TrimSpace(mismatch.ArrFilePath)
+		pathFromFile = scanPath != ""
+	}
+	if scanPath == "" {
+		scanPath = strings.TrimSpace(strings.Split(mismatch.TargetFilePaths, ",")[0])
+		pathFromFile = scanPath != ""
+	}
+	if scanPath == "" {
+		h.jsonError(w, "No scan path available for this item", http.StatusBadRequest)
+		return
+	}
+	if pathFromFile {
+		if dir := filepath.Dir(scanPath); dir != "." && dir != "/" && dir != "" && scanPath != dir {
+			scanPath = dir
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetTimeouts().ScanOperation)
+	defer cancel()
+
+	result, _ := h.targetsMgr.ScanTarget(ctx, mismatch.TargetID, scanPath, "")
+	if !result.Success {
+		h.jsonError(w, "Scan failed: "+result.Error, http.StatusInternalServerError)
+		return
+	}
+
+	message := "Scan triggered on " + result.Message
+	if result.Error != "" {
+		message = "Scan skipped on " + result.Message + ": " + result.Error
+	}
+	h.jsonSuccess(w, message)
+}
+
+// MatcharrFileMismatchRecheck rechecks a single media item for filename mismatches.
+func (h *Handlers) MatcharrFileMismatchRecheck(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.FormValue("arr_id"))
+	targetFilterID := parseIDFilter(r.FormValue("target_id"))
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.jsonError(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if h.matcharrMgr == nil {
+		h.jsonError(w, "Manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetTimeouts().ScanOperation)
+	defer cancel()
+
+	if _, err := h.matcharrMgr.RecheckFileMismatch(ctx, id); err != nil {
+		h.jsonError(w, "Recheck failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	latestRun, _ := h.db.GetLatestMatcharrRun()
+	var mismatches []*database.MatcharrFileMismatch
+	if latestRun != nil {
+		mismatches, _ = h.db.ListMatcharrFileMismatches(latestRun.ID)
+	}
+	if mismatches == nil {
+		mismatches = []*database.MatcharrFileMismatch{}
+	}
+	filtered := filterMatcharrFileMismatches(mismatches, arrIDFilter, targetFilterID)
+	rows := buildFileMismatchRows(filtered)
+	arrOptions := buildFileMismatchArrOptions(mismatches)
+	targetOptions := buildFileMismatchTargetOptions(mismatches)
+
+	h.renderPartial(w, "matcharr.html", "file_mismatches_section", map[string]any{
+		"Rows":             rows,
+		"ArrOptions":       arrOptions,
+		"TargetOptions":    targetOptions,
+		"SelectedArrID":    arrIDFilter,
+		"SelectedTargetID": targetFilterID,
+		"IsPartial":        true,
+		"ScanningEnabled":  h.isScanningEnabled(),
+	})
+}
+
+// MatcharrFileMismatchIgnore ignores a single filename mismatch entry.
+func (h *Handlers) MatcharrFileMismatchIgnore(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.FormValue("arr_id"))
+	targetFilterID := parseIDFilter(r.FormValue("target_id"))
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.jsonError(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	mismatch, err := h.db.GetMatcharrFileMismatch(id)
+	if err != nil {
+		h.jsonError(w, "Failed to load file mismatch", http.StatusInternalServerError)
+		return
+	}
+	if mismatch == nil {
+		h.jsonError(w, "File mismatch not found", http.StatusNotFound)
+		return
+	}
+
+	ignore := &database.MatcharrFileIgnore{
+		ArrID:         mismatch.ArrID,
+		TargetID:      mismatch.TargetID,
+		ArrType:       mismatch.ArrType,
+		ArrName:       mismatch.ArrName,
+		TargetName:    mismatch.TargetName,
+		MediaTitle:    mismatch.MediaTitle,
+		ArrMediaID:    mismatch.ArrMediaID,
+		SeasonNumber:  mismatch.SeasonNumber,
+		EpisodeNumber: mismatch.EpisodeNumber,
+		ArrFileName:   mismatch.ArrFileName,
+		ArrFilePath:   mismatch.ArrFilePath,
+	}
+
+	if err := h.db.CreateMatcharrFileIgnore(ignore); err != nil {
+		h.jsonError(w, "Failed to ignore file mismatch: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = h.db.DeleteMatcharrFileMismatch(id)
+
+	latestRun, _ := h.db.GetLatestMatcharrRun()
+	var mismatches []*database.MatcharrFileMismatch
+	if latestRun != nil {
+		mismatches, _ = h.db.ListMatcharrFileMismatches(latestRun.ID)
+	}
+	if mismatches == nil {
+		mismatches = []*database.MatcharrFileMismatch{}
+	}
+	filtered := filterMatcharrFileMismatches(mismatches, arrIDFilter, targetFilterID)
+	rows := buildFileMismatchRows(filtered)
+	arrOptions := buildFileMismatchArrOptions(mismatches)
+	targetOptions := buildFileMismatchTargetOptions(mismatches)
+
+	h.renderPartial(w, "matcharr.html", "file_mismatches_section", map[string]any{
+		"Rows":             rows,
+		"ArrOptions":       arrOptions,
+		"TargetOptions":    targetOptions,
+		"SelectedArrID":    arrIDFilter,
+		"SelectedTargetID": targetFilterID,
+		"IsPartial":        true,
+		"ScanningEnabled":  h.isScanningEnabled(),
+	})
+}
+
+// MatcharrFileIgnoreRemove deletes a filename ignore rule.
+func (h *Handlers) MatcharrFileIgnoreRemove(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.FormValue("arr_id"))
+	targetFilterID := parseIDFilter(r.FormValue("target_id"))
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.jsonError(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.DeleteMatcharrFileIgnore(id); err != nil {
+		h.jsonError(w, "Failed to remove ignore: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ignores, _ := h.db.ListMatcharrFileIgnores()
+	if ignores == nil {
+		ignores = []*database.MatcharrFileIgnore{}
+	}
+	filtered := filterMatcharrFileIgnores(ignores, arrIDFilter, targetFilterID)
+	arrOptions := buildFileIgnoreArrOptions(ignores)
+	targetOptions := buildFileIgnoreTargetOptions(ignores)
+
+	h.renderPartial(w, "matcharr.html", "file_ignores_section", map[string]any{
+		"Rows":             filtered,
+		"ArrOptions":       arrOptions,
+		"TargetOptions":    targetOptions,
+		"SelectedArrID":    arrIDFilter,
+		"SelectedTargetID": targetFilterID,
+		"IsPartial":        true,
 	})
 }
 
@@ -854,6 +1183,7 @@ func (h *Handlers) MatcharrTabCounts(w http.ResponseWriter, r *http.Request) {
 	matcharrTargets, _ := h.db.ListMatcharrEnabledTargets()
 
 	var arrGapsCount, targetGapsCount, pendingMismatchesCount int
+	var fileMismatchCount, fileIgnoreCount int
 	if latestRun, _ := h.db.GetLatestMatcharrRun(); latestRun != nil {
 		if gaps, _ := h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceArr); gaps != nil {
 			arrGapsCount = len(gaps)
@@ -864,6 +1194,12 @@ func (h *Handlers) MatcharrTabCounts(w http.ResponseWriter, r *http.Request) {
 		if mismatches, _ := h.db.GetActionableMatcharrMismatches(latestRun.ID); mismatches != nil {
 			pendingMismatchesCount = len(mismatches)
 		}
+		if fileMismatches, _ := h.db.ListMatcharrFileMismatches(latestRun.ID); fileMismatches != nil {
+			fileMismatchCount = len(buildFileMismatchRows(fileMismatches))
+		}
+	}
+	if ignores, _ := h.db.ListMatcharrFileIgnores(); ignores != nil {
+		fileIgnoreCount = len(ignores)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -872,6 +1208,8 @@ func (h *Handlers) MatcharrTabCounts(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `<span id="arr-gaps-count" hx-swap-oob="true">%d</span>`, arrGapsCount)
 	fmt.Fprintf(w, `<span id="target-gaps-count" hx-swap-oob="true">%d</span>`, targetGapsCount)
 	fmt.Fprintf(w, `<span id="mismatches-count" hx-swap-oob="true">%d</span>`, pendingMismatchesCount)
+	fmt.Fprintf(w, `<span id="file-mismatches-count" hx-swap-oob="true">%d</span>`, fileMismatchCount)
+	fmt.Fprintf(w, `<span id="file-ignores-count" hx-swap-oob="true">%d</span>`, fileIgnoreCount)
 }
 
 // MatcharrToggleTarget toggles matcharr enabled state for a target
@@ -1154,6 +1492,224 @@ func buildGapTargetOptions(gaps []*database.MatcharrGap) []gapOption {
 			name = fmt.Sprintf("Target #%d", gap.TargetID)
 		}
 		targets[gap.TargetID] = name
+	}
+
+	options := make([]gapOption, 0, len(targets))
+	for id, name := range targets {
+		options = append(options, gapOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
+}
+
+func filterMatcharrFileMismatches(mismatches []*database.MatcharrFileMismatch, arrID int64, targetID int64) []*database.MatcharrFileMismatch {
+	if arrID == 0 && targetID == 0 {
+		return mismatches
+	}
+
+	filtered := make([]*database.MatcharrFileMismatch, 0, len(mismatches))
+	for _, mismatch := range mismatches {
+		if arrID > 0 && mismatch.ArrID != arrID {
+			continue
+		}
+		if targetID > 0 && mismatch.TargetID != targetID {
+			continue
+		}
+		filtered = append(filtered, mismatch)
+	}
+
+	return filtered
+}
+
+func buildFileMismatchRows(mismatches []*database.MatcharrFileMismatch) []fileMismatchRow {
+	rowsMap := make(map[string]*fileMismatchRow)
+	order := make([]string, 0)
+
+	for _, mismatch := range mismatches {
+		key := fmt.Sprintf("%d:%d:%d", mismatch.ArrID, mismatch.TargetID, mismatch.ArrMediaID)
+		row, exists := rowsMap[key]
+		if !exists {
+			row = &fileMismatchRow{
+				ID:               mismatch.ID,
+				ArrID:            mismatch.ArrID,
+				TargetID:         mismatch.TargetID,
+				ArrName:          mismatch.ArrName,
+				TargetName:       mismatch.TargetName,
+				MediaTitle:       mismatch.MediaTitle,
+				ArrMediaID:       mismatch.ArrMediaID,
+				TargetMetadataID: mismatch.TargetMetadataID,
+				TargetItemPath:   mismatch.TargetItemPath,
+			}
+			rowsMap[key] = row
+			order = append(order, key)
+		}
+		if row.TargetItemPath == "" {
+			row.TargetItemPath = mismatch.TargetItemPath
+		}
+
+		row.MismatchCount++
+		row.Details = append(row.Details, fileMismatchDetailRow{
+			ID:              mismatch.ID,
+			SeasonNumber:    mismatch.SeasonNumber,
+			EpisodeNumber:   mismatch.EpisodeNumber,
+			ArrFileName:     mismatch.ArrFileName,
+			TargetFileNames: mismatch.TargetFileNames,
+			ArrFilePath:     mismatch.ArrFilePath,
+			TargetFilePaths: mismatch.TargetFilePaths,
+		})
+	}
+
+	rows := make([]fileMismatchRow, 0, len(order))
+	for _, key := range order {
+		row := rowsMap[key]
+		sort.Slice(row.Details, func(i, j int) bool {
+			if row.Details[i].SeasonNumber != row.Details[j].SeasonNumber {
+				return row.Details[i].SeasonNumber < row.Details[j].SeasonNumber
+			}
+			if row.Details[i].EpisodeNumber != row.Details[j].EpisodeNumber {
+				return row.Details[i].EpisodeNumber < row.Details[j].EpisodeNumber
+			}
+			return strings.ToLower(row.Details[i].ArrFileName) < strings.ToLower(row.Details[j].ArrFileName)
+		})
+		rows = append(rows, *row)
+	}
+
+	return rows
+}
+
+func buildFileMismatchArrOptions(mismatches []*database.MatcharrFileMismatch) []gapOption {
+	arrs := make(map[int64]string)
+	for _, mismatch := range mismatches {
+		if mismatch.ArrID == 0 {
+			continue
+		}
+		if _, exists := arrs[mismatch.ArrID]; exists {
+			continue
+		}
+		name := mismatch.ArrName
+		if name == "" {
+			name = fmt.Sprintf("Arr #%d", mismatch.ArrID)
+		}
+		arrs[mismatch.ArrID] = name
+	}
+
+	options := make([]gapOption, 0, len(arrs))
+	for id, name := range arrs {
+		options = append(options, gapOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
+}
+
+func buildFileMismatchTargetOptions(mismatches []*database.MatcharrFileMismatch) []gapOption {
+	targets := make(map[int64]string)
+	for _, mismatch := range mismatches {
+		if mismatch.TargetID == 0 {
+			continue
+		}
+		if _, exists := targets[mismatch.TargetID]; exists {
+			continue
+		}
+		name := mismatch.TargetName
+		if name == "" {
+			name = fmt.Sprintf("Target #%d", mismatch.TargetID)
+		}
+		targets[mismatch.TargetID] = name
+	}
+
+	options := make([]gapOption, 0, len(targets))
+	for id, name := range targets {
+		options = append(options, gapOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
+}
+
+func filterMatcharrFileIgnores(ignores []*database.MatcharrFileIgnore, arrID int64, targetID int64) []*database.MatcharrFileIgnore {
+	if arrID == 0 && targetID == 0 {
+		return ignores
+	}
+
+	filtered := make([]*database.MatcharrFileIgnore, 0, len(ignores))
+	for _, ignore := range ignores {
+		if arrID > 0 && ignore.ArrID != arrID {
+			continue
+		}
+		if targetID > 0 && ignore.TargetID != targetID {
+			continue
+		}
+		filtered = append(filtered, ignore)
+	}
+
+	return filtered
+}
+
+func buildFileIgnoreArrOptions(ignores []*database.MatcharrFileIgnore) []gapOption {
+	arrs := make(map[int64]string)
+	for _, ignore := range ignores {
+		if ignore.ArrID == 0 {
+			continue
+		}
+		if _, exists := arrs[ignore.ArrID]; exists {
+			continue
+		}
+		name := ignore.ArrName
+		if name == "" {
+			name = fmt.Sprintf("Arr #%d", ignore.ArrID)
+		}
+		arrs[ignore.ArrID] = name
+	}
+
+	options := make([]gapOption, 0, len(arrs))
+	for id, name := range arrs {
+		options = append(options, gapOption{ID: id, Name: name})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Name == options[j].Name {
+			return options[i].ID < options[j].ID
+		}
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+
+	return options
+}
+
+func buildFileIgnoreTargetOptions(ignores []*database.MatcharrFileIgnore) []gapOption {
+	targets := make(map[int64]string)
+	for _, ignore := range ignores {
+		if ignore.TargetID == 0 {
+			continue
+		}
+		if _, exists := targets[ignore.TargetID]; exists {
+			continue
+		}
+		name := ignore.TargetName
+		if name == "" {
+			name = fmt.Sprintf("Target #%d", ignore.TargetID)
+		}
+		targets[ignore.TargetID] = name
 	}
 
 	options := make([]gapOption, 0, len(targets))

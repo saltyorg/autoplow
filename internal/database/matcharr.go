@@ -112,6 +112,45 @@ type MatcharrGap struct {
 	CreatedAt  time.Time         `json:"created_at"`
 }
 
+// MatcharrFileMismatch represents a filename mismatch between Arr and media servers.
+type MatcharrFileMismatch struct {
+	ID               int64     `json:"id"`
+	RunID            int64     `json:"run_id"`
+	ArrID            int64     `json:"arr_id"`
+	TargetID         int64     `json:"target_id"`
+	ArrType          ArrType   `json:"arr_type"`
+	ArrName          string    `json:"arr_name"`
+	TargetName       string    `json:"target_name"`
+	MediaTitle       string    `json:"media_title"`
+	ArrMediaID       int64     `json:"arr_media_id"`
+	TargetMetadataID string    `json:"target_metadata_id"`
+	SeasonNumber     int       `json:"season_number"`
+	EpisodeNumber    int       `json:"episode_number"`
+	ArrFileName      string    `json:"arr_file_name"`
+	TargetFileNames  string    `json:"target_file_names"`
+	ArrFilePath      string    `json:"arr_file_path"`
+	TargetItemPath   string    `json:"target_item_path"`
+	TargetFilePaths  string    `json:"target_file_paths"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// MatcharrFileIgnore represents a persisted ignore rule for filename mismatches.
+type MatcharrFileIgnore struct {
+	ID            int64     `json:"id"`
+	ArrID         int64     `json:"arr_id"`
+	TargetID      int64     `json:"target_id"`
+	ArrType       ArrType   `json:"arr_type"`
+	ArrName       string    `json:"arr_name"`
+	TargetName    string    `json:"target_name"`
+	MediaTitle    string    `json:"media_title"`
+	ArrMediaID    int64     `json:"arr_media_id"`
+	SeasonNumber  int       `json:"season_number"`
+	EpisodeNumber int       `json:"episode_number"`
+	ArrFileName   string    `json:"arr_file_name"`
+	ArrFilePath   string    `json:"arr_file_path"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 // CreateMatcharrArr creates a new Arr instance
 func (db *DB) CreateMatcharrArr(arr *MatcharrArr) error {
 	pathMappingsJSON, err := marshalToString(arr.PathMappings)
@@ -465,6 +504,230 @@ func (db *DB) DeleteMatcharrGap(id int64) error {
 	return nil
 }
 
+// CreateMatcharrFileMismatch creates a new filename mismatch record.
+func (db *DB) CreateMatcharrFileMismatch(mismatch *MatcharrFileMismatch) error {
+	result, err := db.Exec(`
+		INSERT INTO matcharr_file_mismatches (
+			run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
+			arr_media_id, target_metadata_id, season_number, episode_number,
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, mismatch.RunID, mismatch.ArrID, mismatch.TargetID, mismatch.ArrType, mismatch.ArrName, mismatch.TargetName,
+		mismatch.MediaTitle, mismatch.ArrMediaID, mismatch.TargetMetadataID, mismatch.SeasonNumber,
+		mismatch.EpisodeNumber, mismatch.ArrFileName, mismatch.TargetFileNames, mismatch.ArrFilePath,
+		mismatch.TargetItemPath, mismatch.TargetFilePaths)
+	if err != nil {
+		return fmt.Errorf("failed to create matcharr file mismatch: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert id: %w", err)
+	}
+	mismatch.ID = id
+	return nil
+}
+
+// GetMatcharrFileMismatch retrieves a filename mismatch by ID.
+func (db *DB) GetMatcharrFileMismatch(id int64) (*MatcharrFileMismatch, error) {
+	var mismatch MatcharrFileMismatch
+	err := db.QueryRow(`
+		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
+			arr_media_id, target_metadata_id, season_number, episode_number,
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
+		FROM matcharr_file_mismatches WHERE id = ?
+	`, id).Scan(
+		&mismatch.ID, &mismatch.RunID, &mismatch.ArrID, &mismatch.TargetID, &mismatch.ArrType,
+		&mismatch.ArrName, &mismatch.TargetName, &mismatch.MediaTitle, &mismatch.ArrMediaID,
+		&mismatch.TargetMetadataID, &mismatch.SeasonNumber, &mismatch.EpisodeNumber,
+		&mismatch.ArrFileName, &mismatch.TargetFileNames, &mismatch.ArrFilePath, &mismatch.TargetItemPath,
+		&mismatch.TargetFilePaths,
+		&mismatch.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get matcharr file mismatch: %w", err)
+	}
+	return &mismatch, nil
+}
+
+// ListMatcharrFileMismatches retrieves filename mismatches for a run.
+func (db *DB) ListMatcharrFileMismatches(runID int64) ([]*MatcharrFileMismatch, error) {
+	rows, err := db.Query(`
+		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
+			arr_media_id, target_metadata_id, season_number, episode_number,
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
+		FROM matcharr_file_mismatches
+		WHERE run_id = ?
+		ORDER BY id
+	`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list matcharr file mismatches: %w", err)
+	}
+	defer rows.Close()
+
+	var mismatches []*MatcharrFileMismatch
+	for rows.Next() {
+		var mismatch MatcharrFileMismatch
+		if err := rows.Scan(
+			&mismatch.ID, &mismatch.RunID, &mismatch.ArrID, &mismatch.TargetID, &mismatch.ArrType,
+			&mismatch.ArrName, &mismatch.TargetName, &mismatch.MediaTitle, &mismatch.ArrMediaID,
+			&mismatch.TargetMetadataID, &mismatch.SeasonNumber, &mismatch.EpisodeNumber,
+			&mismatch.ArrFileName, &mismatch.TargetFileNames, &mismatch.ArrFilePath, &mismatch.TargetItemPath,
+			&mismatch.TargetFilePaths, &mismatch.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan matcharr file mismatch: %w", err)
+		}
+		mismatches = append(mismatches, &mismatch)
+	}
+	return mismatches, rows.Err()
+}
+
+// ListMatcharrFileMismatchesForMedia retrieves filename mismatches for a single media item.
+func (db *DB) ListMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMediaID int64) ([]*MatcharrFileMismatch, error) {
+	rows, err := db.Query(`
+		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
+			arr_media_id, target_metadata_id, season_number, episode_number,
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
+		FROM matcharr_file_mismatches
+		WHERE run_id = ? AND arr_id = ? AND target_id = ? AND arr_media_id = ?
+		ORDER BY id
+	`, runID, arrID, targetID, arrMediaID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list matcharr file mismatches for media: %w", err)
+	}
+	defer rows.Close()
+
+	var mismatches []*MatcharrFileMismatch
+	for rows.Next() {
+		var mismatch MatcharrFileMismatch
+		if err := rows.Scan(
+			&mismatch.ID, &mismatch.RunID, &mismatch.ArrID, &mismatch.TargetID, &mismatch.ArrType,
+			&mismatch.ArrName, &mismatch.TargetName, &mismatch.MediaTitle, &mismatch.ArrMediaID,
+			&mismatch.TargetMetadataID, &mismatch.SeasonNumber, &mismatch.EpisodeNumber,
+			&mismatch.ArrFileName, &mismatch.TargetFileNames, &mismatch.ArrFilePath, &mismatch.TargetItemPath,
+			&mismatch.TargetFilePaths, &mismatch.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan matcharr file mismatch: %w", err)
+		}
+		mismatches = append(mismatches, &mismatch)
+	}
+	return mismatches, rows.Err()
+}
+
+// UpdateMatcharrFileMismatch updates stored filename mismatch details.
+func (db *DB) UpdateMatcharrFileMismatch(id int64, targetFileNames, arrFilePath, targetItemPath, targetFilePaths string) error {
+	_, err := db.Exec(`
+		UPDATE matcharr_file_mismatches
+		SET target_file_names = ?, arr_file_path = ?, target_item_path = ?, target_file_paths = ?
+		WHERE id = ?
+	`, targetFileNames, arrFilePath, targetItemPath, targetFilePaths, id)
+	if err != nil {
+		return fmt.Errorf("failed to update matcharr file mismatch: %w", err)
+	}
+	return nil
+}
+
+// DeleteMatcharrFileMismatch deletes a filename mismatch by ID.
+func (db *DB) DeleteMatcharrFileMismatch(id int64) error {
+	if _, err := db.Exec(`DELETE FROM matcharr_file_mismatches WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("failed to delete matcharr file mismatch: %w", err)
+	}
+	return nil
+}
+
+// DeleteMatcharrFileMismatchesForMedia removes filename mismatches for a media item.
+func (db *DB) DeleteMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMediaID int64) error {
+	_, err := db.Exec(`
+		DELETE FROM matcharr_file_mismatches
+		WHERE run_id = ? AND arr_id = ? AND target_id = ? AND arr_media_id = ?
+	`, runID, arrID, targetID, arrMediaID)
+	if err != nil {
+		return fmt.Errorf("failed to delete matcharr file mismatches for media: %w", err)
+	}
+	return nil
+}
+
+// CreateMatcharrFileIgnore creates a new filename ignore rule.
+func (db *DB) CreateMatcharrFileIgnore(ignore *MatcharrFileIgnore) error {
+	result, err := db.Exec(`
+		INSERT INTO matcharr_file_ignores (
+			arr_id, target_id, arr_type, arr_name, target_name, media_title,
+			arr_media_id, season_number, episode_number, arr_file_name, arr_file_path
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, ignore.ArrID, ignore.TargetID, ignore.ArrType, ignore.ArrName, ignore.TargetName,
+		ignore.MediaTitle, ignore.ArrMediaID, ignore.SeasonNumber, ignore.EpisodeNumber,
+		ignore.ArrFileName, ignore.ArrFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create matcharr file ignore: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert id: %w", err)
+	}
+	ignore.ID = id
+	return nil
+}
+
+// GetMatcharrFileIgnore retrieves a filename ignore by ID.
+func (db *DB) GetMatcharrFileIgnore(id int64) (*MatcharrFileIgnore, error) {
+	var ignore MatcharrFileIgnore
+	err := db.QueryRow(`
+		SELECT id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
+			arr_media_id, season_number, episode_number, arr_file_name, arr_file_path, created_at
+		FROM matcharr_file_ignores WHERE id = ?
+	`, id).Scan(
+		&ignore.ID, &ignore.ArrID, &ignore.TargetID, &ignore.ArrType, &ignore.ArrName, &ignore.TargetName,
+		&ignore.MediaTitle, &ignore.ArrMediaID, &ignore.SeasonNumber, &ignore.EpisodeNumber,
+		&ignore.ArrFileName, &ignore.ArrFilePath, &ignore.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get matcharr file ignore: %w", err)
+	}
+	return &ignore, nil
+}
+
+// ListMatcharrFileIgnores retrieves all filename ignore rules.
+func (db *DB) ListMatcharrFileIgnores() ([]*MatcharrFileIgnore, error) {
+	rows, err := db.Query(`
+		SELECT id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
+			arr_media_id, season_number, episode_number, arr_file_name, arr_file_path, created_at
+		FROM matcharr_file_ignores
+		ORDER BY media_title, season_number, episode_number
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list matcharr file ignores: %w", err)
+	}
+	defer rows.Close()
+
+	var ignores []*MatcharrFileIgnore
+	for rows.Next() {
+		var ignore MatcharrFileIgnore
+		if err := rows.Scan(
+			&ignore.ID, &ignore.ArrID, &ignore.TargetID, &ignore.ArrType, &ignore.ArrName, &ignore.TargetName,
+			&ignore.MediaTitle, &ignore.ArrMediaID, &ignore.SeasonNumber, &ignore.EpisodeNumber,
+			&ignore.ArrFileName, &ignore.ArrFilePath, &ignore.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan matcharr file ignore: %w", err)
+		}
+		ignores = append(ignores, &ignore)
+	}
+	return ignores, rows.Err()
+}
+
+// DeleteMatcharrFileIgnore removes a filename ignore rule by ID.
+func (db *DB) DeleteMatcharrFileIgnore(id int64) error {
+	if _, err := db.Exec(`DELETE FROM matcharr_file_ignores WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("failed to delete matcharr file ignore: %w", err)
+	}
+	return nil
+}
+
 // UpdateMatcharrMismatchStatus updates the status of a mismatch
 func (db *DB) UpdateMatcharrMismatchStatus(id int64, status MatcharrMismatchStatus, errorMsg string) error {
 	var fixedAt any
@@ -728,6 +991,10 @@ func (db *DB) ClearMatcharrHistory() error {
 	// Delete gaps
 	if _, err := db.Exec(`DELETE FROM matcharr_gaps`); err != nil {
 		return fmt.Errorf("failed to clear matcharr gaps: %w", err)
+	}
+
+	if _, err := db.Exec(`DELETE FROM matcharr_file_mismatches`); err != nil {
+		return fmt.Errorf("failed to clear matcharr file mismatches: %w", err)
 	}
 
 	// Then delete runs

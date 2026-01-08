@@ -31,8 +31,8 @@
 
         // Matcharr events trigger matcharr page refreshes
         'matcharr_run_started': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions', '#matcharr-tab-counts'],
-        'matcharr_run_completed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-mismatches', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions', '#matcharr-tab-counts'],
-        'matcharr_run_failed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#quick-actions', '#matcharr-tab-counts'],
+        'matcharr_run_completed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-mismatches', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#matcharr-file-mismatches', '#matcharr-file-ignores', '#quick-actions', '#matcharr-tab-counts'],
+        'matcharr_run_failed': ['#matcharr-status', '#matcharr-last-run', '#matcharr-history', '#matcharr-arr-gaps', '#matcharr-target-gaps', '#matcharr-file-mismatches', '#matcharr-file-ignores', '#quick-actions', '#matcharr-tab-counts'],
         'matcharr_mismatch_updated': ['#matcharr-mismatches', '#matcharr-status', '#quick-actions', '#matcharr-tab-counts'],
 
         // Plex Auto Languages events

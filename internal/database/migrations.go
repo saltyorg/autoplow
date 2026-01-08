@@ -717,6 +717,55 @@ var migrations = []migration{
 			ALTER TABLE plex_auto_languages_config ADD COLUMN max_concurrency INTEGER DEFAULT 2;
 		`,
 	},
+	{
+		Version: 24,
+		Name:    "matcharr_file_mismatches",
+		SQL: `
+			-- Filename mismatches between Arr and media servers
+			CREATE TABLE matcharr_file_mismatches (
+				id INTEGER PRIMARY KEY,
+				run_id INTEGER REFERENCES matcharr_runs(id) ON DELETE CASCADE,
+				arr_id INTEGER REFERENCES matcharr_arrs(id) ON DELETE CASCADE,
+				target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
+				arr_type TEXT NOT NULL,
+				arr_name TEXT DEFAULT '',
+				target_name TEXT DEFAULT '',
+				media_title TEXT NOT NULL,
+				arr_media_id INTEGER NOT NULL,
+				target_metadata_id TEXT NOT NULL,
+				season_number INTEGER DEFAULT 0,
+				episode_number INTEGER DEFAULT 0,
+				arr_file_name TEXT DEFAULT '',
+				target_file_names TEXT DEFAULT '',
+				arr_file_path TEXT DEFAULT '',
+				target_item_path TEXT DEFAULT '',
+				target_file_paths TEXT DEFAULT '',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+
+			CREATE INDEX idx_matcharr_file_mismatches_run ON matcharr_file_mismatches(run_id);
+			CREATE INDEX idx_matcharr_file_mismatches_target ON matcharr_file_mismatches(target_id);
+
+			-- Persisted filename ignore rules
+			CREATE TABLE matcharr_file_ignores (
+				id INTEGER PRIMARY KEY,
+				arr_id INTEGER REFERENCES matcharr_arrs(id) ON DELETE CASCADE,
+				target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
+				arr_type TEXT NOT NULL,
+				arr_name TEXT DEFAULT '',
+				target_name TEXT DEFAULT '',
+				media_title TEXT NOT NULL,
+				arr_media_id INTEGER NOT NULL,
+				season_number INTEGER DEFAULT 0,
+				episode_number INTEGER DEFAULT 0,
+				arr_file_name TEXT DEFAULT '',
+				arr_file_path TEXT DEFAULT '',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+
+			CREATE INDEX idx_matcharr_file_ignores_target ON matcharr_file_ignores(target_id);
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

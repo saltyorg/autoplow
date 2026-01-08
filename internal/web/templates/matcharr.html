@@ -28,6 +28,12 @@
             <a href="/matcharr?tab=mismatches" class="{{if eq .Content.Tab "mismatches"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 Mismatches (<span id="mismatches-count">{{len .Content.PendingMismatches}}</span>)
             </a>
+            <a href="/matcharr?tab=file-mismatches" class="{{if eq .Content.Tab "file-mismatches"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                File Mismatches (<span id="file-mismatches-count">{{.Content.FileMismatchCount}}</span>)
+            </a>
+            <a href="/matcharr?tab=file-ignores" class="{{if eq .Content.Tab "file-ignores"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
+                Ignored Files (<span id="file-ignores-count">{{.Content.FileIgnoreCount}}</span>)
+            </a>
             <a href="/matcharr?tab=history" class="{{if eq .Content.Tab "history"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
                 History
             </a>
@@ -494,6 +500,20 @@
     </div>
     {{end}}
 
+    {{if eq .Content.Tab "file-mismatches"}}
+    <!-- File Mismatches Tab -->
+    <div class="space-y-6">
+        {{template "file_mismatches_section" (dict "Rows" .Content.FileMismatchRows "IsPartial" false "ArrOptions" .Content.FileMismatchArrOptions "TargetOptions" .Content.FileMismatchTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID "ScanningEnabled" $.ScanningEnabled)}}
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "file-ignores"}}
+    <!-- File Ignores Tab -->
+    <div class="space-y-6">
+        {{template "file_ignores_section" (dict "Rows" .Content.FileIgnoreRows "IsPartial" false "ArrOptions" .Content.FileIgnoreArrOptions "TargetOptions" .Content.FileIgnoreTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID)}}
+    </div>
+    {{end}}
+
     {{if eq .Content.Tab "history"}}
     <!-- History Tab -->
     <div class="space-y-6">
@@ -953,6 +973,19 @@ function handleMismatchAction(event, id) {
         detailRow.remove();
     }
 }
+
+function toggleFileMismatchDetails(id) {
+    const detailsRow = document.getElementById(`file-mismatch-${id}-details`);
+    const toggleBtn = document.querySelector(`[data-file-mismatch-toggle="${id}"]`);
+    if (!detailsRow) {
+        return;
+    }
+    const isHidden = detailsRow.classList.contains('hidden');
+    detailsRow.classList.toggle('hidden');
+    if (toggleBtn) {
+        toggleBtn.textContent = isHidden ? 'Hide' : 'View';
+    }
+}
 </script>
 {{else}}
 <div class="text-center py-12">
@@ -1078,6 +1111,297 @@ function handleMismatchAction(event, id) {
     </div>
     {{if .IsPartial}}
     <span id="target-gaps-count" hx-swap-oob="true">{{len .Rows}}</span>
+    {{end}}
+</div>
+{{end}}
+
+{{define "file_mismatches_section"}}
+<div id="matcharr-file-mismatches" class="space-y-6" hx-get="/matcharr/file-mismatches" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".file-mismatch-filters select" data-sse-polling-fallback="5s">
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">File Mismatches</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Files reported by Arr but not matching filenames seen by the media server.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 file-mismatch-filters">
+                <div class="flex items-center">
+                    <label for="file-mismatch-arr-filter" class="sr-only">Arr filter</label>
+                    <select id="file-mismatch-arr-filter"
+                            name="arr_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/file-mismatches"
+                            hx-target="#matcharr-file-mismatches"
+                            hx-swap="outerHTML"
+                            hx-include=".file-mismatch-filters select">
+                        <option value="0" {{if not $.SelectedArrID}}selected{{end}}>All Arrs</option>
+                        {{range .ArrOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedArrID (eq $.SelectedArrID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="flex items-center">
+                    <label for="file-mismatch-target-filter" class="sr-only">Media server filter</label>
+                    <select id="file-mismatch-target-filter"
+                            name="target_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/file-mismatches"
+                            hx-target="#matcharr-file-mismatches"
+                            hx-swap="outerHTML"
+                            hx-include=".file-mismatch-filters select">
+                        <option value="0" {{if not $.SelectedTargetID}}selected{{end}}>All Media Servers</option>
+                        {{range .TargetOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedTargetID (eq $.SelectedTargetID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="px-4 py-5 sm:p-6 space-y-4">
+            {{if .Rows}}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Issues</th>
+                            <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {{range .Rows}}
+                        <tr id="file-mismatch-{{.ID}}" class="hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                            <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.MediaTitle}}</td>
+                            <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.ArrName}}</td>
+                            <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.TargetName}}</td>
+                            <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.MismatchCount}} file(s)</td>
+                            <td class="px-3 py-4 text-sm text-right">
+                                <div class="flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        data-file-mismatch-toggle="{{.ID}}"
+                                        onclick="toggleFileMismatchDetails({{.ID}})"
+                                        class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600">
+                                        View
+                                    </button>
+                                    <button
+                                        type="button"
+                                        hx-post="/matcharr/file-mismatches/{{.ID}}/scan"
+                                        hx-swap="none"
+                                        hx-disabled-elt="this"
+                                        title="If scan doesn't resolve this, the Arr database may be out of sync with the filesystem."
+                                        class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 {{if $.ScanningEnabled}}bg-indigo-600 hover:bg-indigo-500 focus-visible:outline-indigo-600{{else}}bg-gray-400 cursor-not-allowed{{end}}"
+                                        {{if not $.ScanningEnabled}}disabled{{end}}>
+                                        Scan
+                                    </button>
+                                    <button
+                                        type="button"
+                                        hx-post="/matcharr/file-mismatches/{{.ID}}/recheck"
+                                        hx-target="#matcharr-file-mismatches"
+                                        hx-swap="outerHTML"
+                                        hx-include=".file-mismatch-filters select"
+                                        hx-disabled-elt="this"
+                                        class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 bg-emerald-600 hover:bg-emerald-500 focus-visible:outline-emerald-600">
+                                        Recheck
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr id="file-mismatch-{{.ID}}-details" class="hidden bg-gray-50 dark:bg-gray-900/60">
+                            <td colspan="5" class="px-4 py-4">
+                                <div class="space-y-3">
+                                    <div class="flex items-center justify-between">
+                                        <p class="text-sm font-semibold text-gray-900 dark:text-white">File Details</p>
+                                        <button type="button" data-file-mismatch-toggle="{{.ID}}" onclick="toggleFileMismatchDetails({{.ID}})" class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                                            Hide
+                                        </button>
+                                    </div>
+                                    <div class="overflow-x-auto">
+                                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                            <thead>
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Episode</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr Filename</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target Filenames</th>
+                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                                {{range .Details}}
+                                                <tr>
+                                                    <td class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                                        {{if or (ne .SeasonNumber 0) (ne .EpisodeNumber 0)}}
+                                                        S{{printf "%02d" .SeasonNumber}}E{{printf "%02d" .EpisodeNumber}}
+                                                        {{else}}
+                                                        Movie
+                                                        {{end}}
+                                                    </td>
+                                                    <td class="px-3 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                                        <p class="font-mono">{{.ArrFileName}}</p>
+                                                        {{if .ArrFilePath}}
+                                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 break-all">{{.ArrFilePath}}</p>
+                                                        {{end}}
+                                                    </td>
+                                                    <td class="px-3 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                                        {{if .TargetFileNames}}
+                                                        <p class="font-mono">{{.TargetFileNames}}</p>
+                                                        {{else}}
+                                                        <em class="text-gray-400 dark:text-gray-500">Missing</em>
+                                                        {{end}}
+                                                        {{if .TargetFilePaths}}
+                                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 break-all">{{.TargetFilePaths}}</p>
+                                                        {{end}}
+                                                    </td>
+                                                    <td class="px-3 py-3 text-sm text-right">
+                                                        <button
+                                                            type="button"
+                                                            hx-post="/matcharr/file-mismatches/{{.ID}}/ignore"
+                                                            hx-target="#matcharr-file-mismatches"
+                                                            hx-swap="outerHTML"
+                                                            hx-include=".file-mismatch-filters select"
+                                                            class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 bg-amber-600 hover:bg-amber-500 focus-visible:outline-amber-600">
+                                                            Ignore
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                {{end}}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{else}}
+            <div class="text-center py-8">
+                <p class="text-sm text-gray-500 dark:text-gray-400">No file mismatches detected.</p>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{if .IsPartial}}
+    <span id="file-mismatches-count" hx-swap-oob="true">{{len .Rows}}</span>
+    {{end}}
+</div>
+<script>
+function toggleFileMismatchDetails(id) {
+    const detailsRow = document.getElementById(`file-mismatch-${id}-details`);
+    const toggleBtn = document.querySelector(`[data-file-mismatch-toggle="${id}"]`);
+    if (!detailsRow) {
+        return;
+    }
+    const isHidden = detailsRow.classList.contains('hidden');
+    detailsRow.classList.toggle('hidden');
+    if (toggleBtn) {
+        toggleBtn.textContent = isHidden ? 'Hide' : 'View';
+    }
+}
+</script>
+{{end}}
+
+{{define "file_ignores_section"}}
+<div id="matcharr-file-ignores" class="space-y-6" hx-get="/matcharr/file-ignores" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".file-ignore-filters select" data-sse-polling-fallback="5s">
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Ignored Files</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Files excluded from filename comparisons.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 file-ignore-filters">
+                <div class="flex items-center">
+                    <label for="file-ignore-arr-filter" class="sr-only">Arr filter</label>
+                    <select id="file-ignore-arr-filter"
+                            name="arr_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/file-ignores"
+                            hx-target="#matcharr-file-ignores"
+                            hx-swap="outerHTML"
+                            hx-include=".file-ignore-filters select">
+                        <option value="0" {{if not $.SelectedArrID}}selected{{end}}>All Arrs</option>
+                        {{range .ArrOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedArrID (eq $.SelectedArrID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="flex items-center">
+                    <label for="file-ignore-target-filter" class="sr-only">Media server filter</label>
+                    <select id="file-ignore-target-filter"
+                            name="target_id"
+                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                            hx-get="/matcharr/file-ignores"
+                            hx-target="#matcharr-file-ignores"
+                            hx-swap="outerHTML"
+                            hx-include=".file-ignore-filters select">
+                        <option value="0" {{if not $.SelectedTargetID}}selected{{end}}>All Media Servers</option>
+                        {{range .TargetOptions}}
+                        <option value="{{.ID}}" {{if and $.SelectedTargetID (eq $.SelectedTargetID .ID)}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="px-4 py-5 sm:p-6 space-y-4">
+            {{if .Rows}}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Episode</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr Filename</th>
+                            <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {{range .Rows}}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                            <td class="px-3 py-4 text-sm font-medium text-gray-900 dark:text-white">{{.MediaTitle}}</td>
+                            <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.ArrName}}</td>
+                            <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{{.TargetName}}</td>
+                            <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                {{if or (ne .SeasonNumber 0) (ne .EpisodeNumber 0)}}
+                                S{{printf "%02d" .SeasonNumber}}E{{printf "%02d" .EpisodeNumber}}
+                                {{else}}
+                                Movie
+                                {{end}}
+                            </td>
+                            <td class="px-3 py-4 text-sm text-gray-900 dark:text-gray-100">
+                                <p class="font-mono">{{.ArrFileName}}</p>
+                                {{if .ArrFilePath}}
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 break-all">{{.ArrFilePath}}</p>
+                                {{end}}
+                            </td>
+                            <td class="px-3 py-4 text-sm text-right">
+                                <button
+                                    type="button"
+                                    hx-post="/matcharr/file-ignores/{{.ID}}/remove"
+                                    hx-target="#matcharr-file-ignores"
+                                    hx-swap="outerHTML"
+                                    hx-include=".file-ignore-filters select"
+                                    class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 bg-red-600 hover:bg-red-500 focus-visible:outline-red-600">
+                                    Remove
+                                </button>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{else}}
+            <div class="text-center py-8">
+                <p class="text-sm text-gray-500 dark:text-gray-400">No ignored file entries.</p>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{if .IsPartial}}
+    <span id="file-ignores-count" hx-swap-oob="true">{{len .Rows}}</span>
     {{end}}
 </div>
 {{end}}

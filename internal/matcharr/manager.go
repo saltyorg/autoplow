@@ -287,6 +287,7 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 
 	startTime := time.Now()
 	runLog := NewRunLogger()
+	ignoreSet := make(map[string]struct{})
 
 	// Create run record
 	run := &database.MatcharrRun{
@@ -312,6 +313,15 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 		Bool("auto_fix", autoFix).
 		Str("triggered_by", triggeredBy).
 		Msg("Starting matcharr comparison")
+
+	if ignores, err := m.db.ListMatcharrFileIgnores(); err != nil {
+		runLog.Warn("Failed to load file mismatch ignores: %v", err)
+	} else {
+		for _, ignore := range ignores {
+			key := fileIgnoreKey(ignore.ArrType, ignore.ArrMediaID, ignore.TargetID, ignore.SeasonNumber, ignore.EpisodeNumber, ignore.ArrFileName)
+			ignoreSet[key] = struct{}{}
+		}
+	}
 
 	// Broadcast run started event
 	m.broadcastEvent(sse.EventMatcharrRunStarted, map[string]any{
@@ -442,6 +452,7 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 
 		arr := arrResult.arr
 		arrMedia := arrResult.media
+		arrClient := NewArrClient(arr.URL, arr.APIKey, arr.Type)
 
 		// Get the libraries this Arr should compare against
 		libSpecs, ok := arrLibraryMap[arr.ID]
@@ -578,6 +589,10 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 					runLog.Warn("Failed to save missing server path %s: %v", gap.ServerItem.Path, err)
 					log.Warn().Err(err).Str("server_path", gap.ServerItem.Path).Msg("Failed to save missing server path")
 				}
+			}
+
+			if fileFetcher, ok := fixer.(TargetFileFetcher); ok {
+				m.compareFileMismatches(ctx, run.ID, arr, arrClient, target, fileFetcher, compareResult.Matches, ignoreSet, runLog)
 			}
 		}
 	}

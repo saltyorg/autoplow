@@ -13,6 +13,7 @@ import (
 
 // ArrMedia represents a media item from Sonarr/Radarr
 type ArrMedia struct {
+	ID        int64  `json:"id"`
 	Title     string `json:"title"`
 	Path      string `json:"path"`
 	TMDBID    int    `json:"tmdb_id,omitempty"` // Movies (Radarr) and some Sonarr series
@@ -20,6 +21,30 @@ type ArrMedia struct {
 	IMDBID    string `json:"imdb_id,omitempty"` // Both
 	TitleSlug string `json:"title_slug,omitempty"`
 	HasFile   bool   `json:"has_file"`
+}
+
+// ArrEpisodeFile represents a Sonarr episode with a file path.
+type ArrEpisodeFile struct {
+	SeasonNumber  int
+	EpisodeNumber int
+	FilePath      string
+}
+
+// ArrMovieFile represents a Radarr movie file path.
+type ArrMovieFile struct {
+	FilePath string
+}
+
+// TargetEpisodeFile represents a media server episode file.
+type TargetEpisodeFile struct {
+	SeasonNumber  int
+	EpisodeNumber int
+	FilePath      string
+}
+
+// TargetMovieFile represents a media server movie file.
+type TargetMovieFile struct {
+	FilePath string
 }
 
 // GetPrimaryID returns the primary ID for this media item based on Arr type

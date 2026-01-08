@@ -359,3 +359,101 @@ func (s *PlexTarget) fetchBatchLocations(ctx context.Context, ratingKeys []strin
 
 	return locations, nil
 }
+
+// GetEpisodeFiles returns episode file paths for a Plex show item.
+func (s *PlexTarget) GetEpisodeFiles(ctx context.Context, itemID string) ([]matcharr.TargetEpisodeFile, error) {
+	episodesURL := fmt.Sprintf("%s/library/metadata/%s/allLeaves", s.dbTarget.URL, itemID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", episodesURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plex returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var episodesResp plexMetadataResponse
+	if err := json.Unmarshal(body, &episodesResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	results := make([]matcharr.TargetEpisodeFile, 0, len(episodesResp.MediaContainer.Metadata))
+	for _, meta := range episodesResp.MediaContainer.Metadata {
+		for _, media := range meta.Media {
+			for _, part := range media.Part {
+				if strings.TrimSpace(part.File) == "" {
+					continue
+				}
+				results = append(results, matcharr.TargetEpisodeFile{
+					SeasonNumber:  meta.ParentIndex,
+					EpisodeNumber: meta.Index,
+					FilePath:      part.File,
+				})
+			}
+		}
+	}
+
+	return results, nil
+}
+
+// GetMovieFiles returns movie file paths for a Plex movie item.
+func (s *PlexTarget) GetMovieFiles(ctx context.Context, itemID string) ([]matcharr.TargetMovieFile, error) {
+	metadataURL := fmt.Sprintf("%s/library/metadata/%s", s.dbTarget.URL, itemID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", metadataURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plex returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var metaResp plexMetadataResponse
+	if err := json.Unmarshal(body, &metaResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	results := make([]matcharr.TargetMovieFile, 0)
+	for _, meta := range metaResp.MediaContainer.Metadata {
+		for _, media := range meta.Media {
+			for _, part := range media.Part {
+				if strings.TrimSpace(part.File) == "" {
+					continue
+				}
+				results = append(results, matcharr.TargetMovieFile{FilePath: part.File})
+			}
+		}
+	}
+
+	return results, nil
+}

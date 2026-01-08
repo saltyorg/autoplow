@@ -22,6 +22,15 @@ type TargetFixer interface {
 	Type() database.TargetType
 }
 
+// TargetFileFetcher provides file-level details for filename comparisons.
+type TargetFileFetcher interface {
+	// GetEpisodeFiles returns episode file paths for a show.
+	GetEpisodeFiles(ctx context.Context, itemID string) ([]TargetEpisodeFile, error)
+
+	// GetMovieFiles returns movie file paths for a movie item.
+	GetMovieFiles(ctx context.Context, itemID string) ([]TargetMovieFile, error)
+}
+
 // FixMismatch fixes a single mismatch by updating the media server item
 func FixMismatch(ctx context.Context, fixer TargetFixer, mismatch *Mismatch) error {
 	if fixer == nil {

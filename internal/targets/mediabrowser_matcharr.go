@@ -123,6 +123,140 @@ func (s *MediaBrowserTarget) GetLibraryItemsWithProviderIDs(ctx context.Context,
 	return allItems, nil
 }
 
+// GetEpisodeFiles returns episode file paths for an Emby/Jellyfin series item.
+func (s *MediaBrowserTarget) GetEpisodeFiles(ctx context.Context, itemID string) ([]matcharr.TargetEpisodeFile, error) {
+	baseURL := strings.TrimRight(s.dbTarget.URL, "/")
+	limit := 500
+	startIndex := 0
+
+	results := make([]matcharr.TargetEpisodeFile, 0)
+
+	for {
+		itemsURL, err := url.Parse(fmt.Sprintf("%s/Items", baseURL))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse URL: %w", err)
+		}
+
+		q := itemsURL.Query()
+		q.Set("ParentId", itemID)
+		q.Set("Recursive", "true")
+		q.Set("Fields", "Path,ParentIndexNumber,IndexNumber")
+		q.Set("EnableImages", "false")
+		q.Set("EnableTotalRecordCount", "true")
+		q.Set("Limit", fmt.Sprintf("%d", limit))
+		q.Set("StartIndex", fmt.Sprintf("%d", startIndex))
+		q.Set("IncludeItemTypes", "Episode")
+		itemsURL.RawQuery = q.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", itemsURL.String(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		s.setHeaders(req)
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("%s returned status %d: %s", s.config.ServerName, resp.StatusCode, string(body))
+		}
+
+		var itemsResp struct {
+			Items []struct {
+				Path              string `json:"Path"`
+				ParentIndexNumber int    `json:"ParentIndexNumber"`
+				IndexNumber       int    `json:"IndexNumber"`
+			} `json:"Items"`
+			TotalRecordCount int `json:"TotalRecordCount"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&itemsResp); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		resp.Body.Close()
+
+		for _, item := range itemsResp.Items {
+			if strings.TrimSpace(item.Path) == "" {
+				continue
+			}
+			results = append(results, matcharr.TargetEpisodeFile{
+				SeasonNumber:  item.ParentIndexNumber,
+				EpisodeNumber: item.IndexNumber,
+				FilePath:      item.Path,
+			})
+		}
+
+		if len(itemsResp.Items) < limit {
+			break
+		}
+		startIndex += limit
+		if startIndex >= itemsResp.TotalRecordCount {
+			break
+		}
+	}
+
+	return results, nil
+}
+
+// GetMovieFiles returns movie file paths for an Emby/Jellyfin movie item.
+func (s *MediaBrowserTarget) GetMovieFiles(ctx context.Context, itemID string) ([]matcharr.TargetMovieFile, error) {
+	baseURL := strings.TrimRight(s.dbTarget.URL, "/")
+	itemsURL, err := url.Parse(fmt.Sprintf("%s/Items", baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	q := itemsURL.Query()
+	q.Set("Ids", itemID)
+	q.Set("Fields", "Path")
+	q.Set("EnableImages", "false")
+	q.Set("EnableTotalRecordCount", "false")
+	itemsURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", itemsURL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	s.setHeaders(req)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("%s returned status %d: %s", s.config.ServerName, resp.StatusCode, string(body))
+	}
+
+	var itemsResp struct {
+		Items []struct {
+			Path string `json:"Path"`
+		} `json:"Items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&itemsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	results := make([]matcharr.TargetMovieFile, 0, len(itemsResp.Items))
+	for _, item := range itemsResp.Items {
+		if strings.TrimSpace(item.Path) == "" {
+			continue
+		}
+		results = append(results, matcharr.TargetMovieFile{FilePath: item.Path})
+	}
+
+	return results, nil
+}
+
 // mediaBrowserItemUpdate represents the update payload for changing provider IDs
 // Jellyfin requires additional fields (Genres, Tags, LockData, LockedFields) to be present
 type mediaBrowserItemUpdate struct {

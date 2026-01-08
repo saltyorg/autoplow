@@ -148,6 +148,7 @@ func (c *ArrClient) GetRootFolders(ctx context.Context) ([]RootFolder, error) {
 
 // sonarrSeries represents a series from Sonarr API
 type sonarrSeries struct {
+	ID         int                     `json:"id"`
 	Title      string                  `json:"title"`
 	Path       string                  `json:"path"`
 	TvdbID     int                     `json:"tvdbId"`
@@ -164,12 +165,30 @@ type sonarrSeriesStatistics struct {
 
 // radarrMovie represents a movie from Radarr API
 type radarrMovie struct {
+	ID        int    `json:"id"`
 	Title     string `json:"title"`
 	Path      string `json:"path"`
 	TmdbID    int    `json:"tmdbId"`
 	ImdbID    string `json:"imdbId"`
 	TitleSlug string `json:"titleSlug"`
 	HasFile   bool   `json:"hasFile"`
+}
+
+type sonarrEpisode struct {
+	SeasonNumber  int  `json:"seasonNumber"`
+	EpisodeNumber int  `json:"episodeNumber"`
+	EpisodeFileID int  `json:"episodeFileId"`
+	HasFile       bool `json:"hasFile"`
+}
+
+type sonarrEpisodeFile struct {
+	ID   int    `json:"id"`
+	Path string `json:"path"`
+}
+
+type radarrMovieFile struct {
+	ID   int    `json:"id"`
+	Path string `json:"path"`
 }
 
 func (c *ArrClient) parseSonarrResponse(body []byte) ([]ArrMedia, error) {
@@ -186,6 +205,7 @@ func (c *ArrClient) parseSonarrResponse(body []byte) ([]ArrMedia, error) {
 		}
 
 		media = append(media, ArrMedia{
+			ID:        int64(s.ID),
 			Title:     s.Title,
 			Path:      s.Path,
 			TVDBID:    s.TvdbID,
@@ -208,6 +228,7 @@ func (c *ArrClient) parseRadarrResponse(body []byte) ([]ArrMedia, error) {
 	media := make([]ArrMedia, 0, len(movies))
 	for _, m := range movies {
 		media = append(media, ArrMedia{
+			ID:        int64(m.ID),
 			Title:     m.Title,
 			Path:      m.Path,
 			TMDBID:    m.TmdbID,
@@ -218,6 +239,123 @@ func (c *ArrClient) parseRadarrResponse(body []byte) ([]ArrMedia, error) {
 	}
 
 	return media, nil
+}
+
+// GetEpisodeFiles fetches episode file paths for a Sonarr series.
+func (c *ArrClient) GetEpisodeFiles(ctx context.Context, seriesID int64) ([]ArrEpisodeFile, error) {
+	if c.ArrType != database.ArrTypeSonarr {
+		return nil, fmt.Errorf("episode files are only available for Sonarr")
+	}
+
+	episodesURL := fmt.Sprintf("/api/v3/episode?seriesId=%d", seriesID)
+	episodeFilesURL := fmt.Sprintf("/api/v3/episodefile?seriesId=%d", seriesID)
+
+	episodesResp, err := c.doRequest(ctx, "GET", episodesURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch episodes: %w", err)
+	}
+	defer episodesResp.Body.Close()
+
+	if episodesResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(episodesResp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", episodesResp.StatusCode, string(body))
+	}
+
+	episodesBody, err := io.ReadAll(episodesResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read episodes response: %w", err)
+	}
+
+	var episodes []sonarrEpisode
+	if err := json.Unmarshal(episodesBody, &episodes); err != nil {
+		return nil, fmt.Errorf("failed to decode episodes: %w", err)
+	}
+
+	filesResp, err := c.doRequest(ctx, "GET", episodeFilesURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch episode files: %w", err)
+	}
+	defer filesResp.Body.Close()
+
+	if filesResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(filesResp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", filesResp.StatusCode, string(body))
+	}
+
+	filesBody, err := io.ReadAll(filesResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read episode files response: %w", err)
+	}
+
+	var episodeFiles []sonarrEpisodeFile
+	if err := json.Unmarshal(filesBody, &episodeFiles); err != nil {
+		return nil, fmt.Errorf("failed to decode episode files: %w", err)
+	}
+
+	filePaths := make(map[int]string, len(episodeFiles))
+	for _, file := range episodeFiles {
+		if strings.TrimSpace(file.Path) == "" {
+			continue
+		}
+		filePaths[file.ID] = file.Path
+	}
+
+	results := make([]ArrEpisodeFile, 0, len(episodes))
+	for _, ep := range episodes {
+		if !ep.HasFile || ep.EpisodeFileID == 0 {
+			continue
+		}
+		path := filePaths[ep.EpisodeFileID]
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		results = append(results, ArrEpisodeFile{
+			SeasonNumber:  ep.SeasonNumber,
+			EpisodeNumber: ep.EpisodeNumber,
+			FilePath:      path,
+		})
+	}
+
+	return results, nil
+}
+
+// GetMovieFiles fetches movie file paths for a Radarr movie.
+func (c *ArrClient) GetMovieFiles(ctx context.Context, movieID int64) ([]ArrMovieFile, error) {
+	if c.ArrType != database.ArrTypeRadarr {
+		return nil, fmt.Errorf("movie files are only available for Radarr")
+	}
+
+	endpoint := fmt.Sprintf("/api/v3/moviefile?movieId=%d", movieID)
+	resp, err := c.doRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch movie files: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read movie files response: %w", err)
+	}
+
+	var files []radarrMovieFile
+	if err := json.Unmarshal(body, &files); err != nil {
+		return nil, fmt.Errorf("failed to decode movie files: %w", err)
+	}
+
+	results := make([]ArrMovieFile, 0, len(files))
+	for _, file := range files {
+		if strings.TrimSpace(file.Path) == "" {
+			continue
+		}
+		results = append(results, ArrMovieFile{FilePath: file.Path})
+	}
+
+	return results, nil
 }
 
 func (c *ArrClient) doRequest(ctx context.Context, method, endpoint string, body io.Reader) (*http.Response, error) {
