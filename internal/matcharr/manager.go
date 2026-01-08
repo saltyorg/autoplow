@@ -250,6 +250,14 @@ type targetFetchResult struct {
 	err     error
 }
 
+type compareTask struct {
+	arr      *database.MatcharrArr
+	arrMedia []ArrMedia
+	target   *database.Target
+	items    []MediaServerItem
+	fixer    TargetFixer
+}
+
 // RunComparison runs a comparison between all Arr instances and all targets
 // If autoFix is true, mismatches will be automatically fixed
 func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy string) (*RunResult, error) {
@@ -444,6 +452,13 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 		targetItemsByLib[key] = tr
 	}
 
+	fileLimiters := make(map[int64]chan struct{}, len(targets))
+	for _, target := range targets {
+		limit := normalizeFileConcurrency(target.Config.MatcharrFileConcurrency)
+		fileLimiters[target.ID] = make(chan struct{}, limit)
+	}
+
+	var tasks []compareTask
 	for _, arrResult := range arrResults {
 		if arrResult.err != nil {
 			result.Errors = append(result.Errors, fmt.Errorf("arr %s: %w", arrResult.arr.Name, arrResult.err))
@@ -452,8 +467,6 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 
 		arr := arrResult.arr
 		arrMedia := arrResult.media
-		arrClient := NewArrClient(arr.URL, arr.APIKey, arr.Type)
-
 		// Get the libraries this Arr should compare against
 		libSpecs, ok := arrLibraryMap[arr.ID]
 		if !ok || len(libSpecs) == 0 {
@@ -485,12 +498,45 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 			}
 			fixer := targetFixers[targetID]
 
-			runLog.Info("Comparing %s (%d items) -> %s (%d items)",
-				arr.Name, len(arrMedia), target.Name, len(items))
+			tasks = append(tasks, compareTask{
+				arr:      arr,
+				arrMedia: arrMedia,
+				target:   target,
+				items:    items,
+				fixer:    fixer,
+			})
+		}
+	}
 
-			compareResult := CompareArrToTarget(ctx, arr, arrMedia, target, items)
+	compareConcurrency := 3
+	if autoFix {
+		compareConcurrency = 1
+	}
+	if compareConcurrency > len(tasks) {
+		compareConcurrency = len(tasks)
+	}
+
+	taskCh := make(chan compareTask)
+	var wg sync.WaitGroup
+	var resultMu sync.Mutex
+
+	worker := func() {
+		defer wg.Done()
+		for task := range taskCh {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			runLog.Info("Comparing %s (%d items) -> %s (%d items)",
+				task.arr.Name, len(task.arrMedia), task.target.Name, len(task.items))
+
+			compareResult := CompareArrToTarget(ctx, task.arr, task.arrMedia, task.target, task.items)
+			resultMu.Lock()
 			result.TotalCompared += compareResult.Compared
 			result.Errors = append(result.Errors, compareResult.Errors...)
+			resultMu.Unlock()
 
 			runLog.Info("Compared %d items, found %d mismatches", compareResult.Compared, len(compareResult.Mismatches))
 
@@ -503,11 +549,11 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 
 				dbMismatch := &database.MatcharrMismatch{
 					RunID:            run.ID,
-					ArrID:            arr.ID,
-					TargetID:         target.ID,
-					ArrType:          arr.Type,
-					ArrName:          arr.Name,
-					TargetName:       target.Name,
+					ArrID:            task.arr.ID,
+					TargetID:         task.target.ID,
+					ArrType:          task.arr.Type,
+					ArrName:          task.arr.Name,
+					TargetName:       task.target.Name,
 					TargetTitle:      mismatch.ServerItem.Title,
 					MediaTitle:       mismatch.ArrMedia.Title,
 					MediaPath:        mismatch.ArrMedia.Path,
@@ -526,13 +572,15 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 					continue
 				}
 
+				resultMu.Lock()
 				result.Mismatches = append(result.Mismatches, mismatch)
 				result.MismatchesFound++
+				resultMu.Unlock()
 
 				// Auto-fix if enabled
 				if autoFix {
 					runLog.Info("Auto-fixing: %s", mismatch.ArrMedia.Title)
-					if err := FixMismatch(ctx, fixer, &mismatch); err != nil {
+					if err := FixMismatch(ctx, task.fixer, &mismatch); err != nil {
 						runLog.Error("Failed to fix %s: %v", mismatch.ArrMedia.Title, err)
 						log.Error().
 							Err(err).
@@ -543,14 +591,15 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 						runLog.Info("Fixed: %s", mismatch.ArrMedia.Title)
 						_ = m.db.UpdateMatcharrMismatchStatus(dbMismatch.ID, database.MatcharrMismatchStatusFixed, "")
 						_ = m.db.IncrementMatcharrRunFixed(run.ID)
+						resultMu.Lock()
 						result.MismatchesFixed++
+						resultMu.Unlock()
 
 						// Add delay between fixes to avoid overwhelming the server
 						if delayBetweenFixes > 0 {
 							select {
 							case <-ctx.Done():
-								m.finalizeRun(run, result, startTime, runLog)
-								return result, nil
+								return
 							case <-time.After(delayBetweenFixes):
 							}
 						}
@@ -562,14 +611,14 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 			for _, gap := range compareResult.MissingArr {
 				dbGap := &database.MatcharrGap{
 					RunID:      run.ID,
-					ArrID:      arr.ID,
-					TargetID:   target.ID,
+					ArrID:      task.arr.ID,
+					TargetID:   task.target.ID,
 					Source:     database.MatcharrGapSourceArr,
 					Title:      gap.ArrMedia.Title,
-					ArrName:    arr.Name,
-					TargetName: target.Name,
+					ArrName:    task.arr.Name,
+					TargetName: task.target.Name,
 					ArrPath:    gap.ArrMedia.Path,
-					TargetPath: mapPath(gap.ArrMedia.Path, arr.PathMappings),
+					TargetPath: mapPath(gap.ArrMedia.Path, task.arr.PathMappings),
 				}
 				if err := m.db.CreateMatcharrGap(dbGap); err != nil {
 					runLog.Warn("Failed to save missing Arr path %s: %v", gap.ArrMedia.Path, err)
@@ -581,12 +630,12 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 			for _, gap := range compareResult.MissingSrv {
 				dbGap := &database.MatcharrGap{
 					RunID:      run.ID,
-					ArrID:      arr.ID,
-					TargetID:   target.ID,
+					ArrID:      task.arr.ID,
+					TargetID:   task.target.ID,
 					Source:     database.MatcharrGapSourceTarget,
 					Title:      gap.ServerItem.Title,
-					ArrName:    arr.Name,
-					TargetName: target.Name,
+					ArrName:    task.arr.Name,
+					TargetName: task.target.Name,
 					ArrPath:    "",
 					TargetPath: gap.ServerItem.Path,
 				}
@@ -596,10 +645,31 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 				}
 			}
 
-			if fileFetcher, ok := fixer.(TargetFileFetcher); ok {
-				m.compareFileMismatches(ctx, run.ID, arr, arrClient, target, fileFetcher, compareResult.Matches, ignoreSet, runLog)
+			if fileFetcher, ok := task.fixer.(TargetFileFetcher); ok {
+				arrClient := NewArrClient(task.arr.URL, task.arr.APIKey, task.arr.Type)
+				m.compareFileMismatches(ctx, run.ID, task.arr, arrClient, task.target, fileFetcher, compareResult.Matches, fileLimiters[task.target.ID], ignoreSet, runLog)
 			}
 		}
+	}
+
+	if compareConcurrency > 0 {
+		wg.Add(compareConcurrency)
+		for i := 0; i < compareConcurrency; i++ {
+			go worker()
+		}
+
+		for _, task := range tasks {
+			select {
+			case <-ctx.Done():
+				close(taskCh)
+				wg.Wait()
+				m.finalizeRun(run, result, startTime, runLog)
+				return result, nil
+			case taskCh <- task:
+			}
+		}
+		close(taskCh)
+		wg.Wait()
 	}
 
 	m.finalizeRun(run, result, startTime, runLog)

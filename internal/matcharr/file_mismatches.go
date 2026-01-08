@@ -127,6 +127,7 @@ func (m *Manager) compareFileMismatches(
 	target *database.Target,
 	fileFetcher TargetFileFetcher,
 	matches []MatchedMedia,
+	targetLimiter chan struct{},
 	ignoreSet map[string]struct{},
 	runLog *RunLogger,
 ) {
@@ -154,6 +155,160 @@ func (m *Manager) compareFileMismatches(
 	workCh := make(chan MatchedMedia)
 	var wg sync.WaitGroup
 
+	acquireLimiter := func() bool {
+		if targetLimiter == nil {
+			return true
+		}
+		select {
+		case targetLimiter <- struct{}{}:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	releaseLimiter := func() {
+		if targetLimiter == nil {
+			return
+		}
+		<-targetLimiter
+	}
+
+	processMatch := func(match MatchedMedia) {
+		if !acquireLimiter() {
+			return
+		}
+		defer releaseLimiter()
+
+		if match.ArrMedia.ID == 0 || match.ServerItem.ItemID == "" {
+			return
+		}
+		if !match.ArrMedia.HasFile {
+			return
+		}
+
+		switch arr.Type {
+		case database.ArrTypeSonarr:
+			arrFiles, ok := episodeCache.Load(match.ArrMedia.ID)
+			if !ok {
+				files, err := arrClient.GetEpisodeFiles(ctx, match.ArrMedia.ID)
+				if err != nil {
+					runLog.Warn("Failed to fetch episode files for %s: %v", match.ArrMedia.Title, err)
+					return
+				}
+				episodeCache.Store(match.ArrMedia.ID, files)
+				arrFiles = files
+			}
+
+			targetFiles, ok := targetEpisodeCache.Load(match.ServerItem.ItemID)
+			if !ok {
+				files, err := fileFetcher.GetEpisodeFiles(ctx, match.ServerItem.ItemID)
+				if err != nil {
+					runLog.Warn("Failed to fetch episode files from %s for %s: %v", target.Name, match.ArrMedia.Title, err)
+					return
+				}
+				targetEpisodeCache.Store(match.ServerItem.ItemID, files)
+				targetFiles = files
+			}
+
+			mismatches := compareEpisodeFiles(arrFiles.([]ArrEpisodeFile), targetFiles.([]TargetEpisodeFile))
+			for _, mismatch := range mismatches {
+				ignoreKey := fileIgnoreKey(arr.Type, match.ArrMedia.ID, target.ID, mismatch.SeasonNumber, mismatch.EpisodeNumber, mismatch.ArrFileName)
+				if _, ignored := ignoreSet[ignoreKey]; ignored {
+					continue
+				}
+
+				targetItemPath := targetItemPathFromItem(match.ServerItem)
+
+				record := &database.MatcharrFileMismatch{
+					RunID:            runID,
+					ArrID:            arr.ID,
+					TargetID:         target.ID,
+					ArrType:          arr.Type,
+					ArrName:          arr.Name,
+					TargetName:       target.Name,
+					MediaTitle:       match.ArrMedia.Title,
+					ArrMediaID:       match.ArrMedia.ID,
+					TargetMetadataID: match.ServerItem.ItemID,
+					SeasonNumber:     mismatch.SeasonNumber,
+					EpisodeNumber:    mismatch.EpisodeNumber,
+					ArrFileName:      mismatch.ArrFileName,
+					TargetFileNames:  strings.Join(mismatch.TargetFileNames, ", "),
+					ArrFilePath:      mismatch.ArrFilePath,
+					TargetItemPath:   targetItemPath,
+					TargetFilePaths:  strings.Join(mismatch.TargetFilePaths, ", "),
+				}
+
+				if err := m.db.CreateMatcharrFileMismatch(record); err != nil {
+					runLog.Warn("Failed to save file mismatch for %s: %v", match.ArrMedia.Title, err)
+				}
+			}
+
+		case database.ArrTypeRadarr:
+			arrFiles, ok := movieCache.Load(match.ArrMedia.ID)
+			if !ok {
+				var files []ArrMovieFile
+				if match.ArrMedia.MovieFilePath != "" {
+					files = []ArrMovieFile{{FilePath: match.ArrMedia.MovieFilePath}}
+				} else {
+					fetched, err := arrClient.GetMovieFiles(ctx, match.ArrMedia.ID)
+					if err != nil {
+						runLog.Warn("Failed to fetch movie files for %s: %v", match.ArrMedia.Title, err)
+						return
+					}
+					files = fetched
+				}
+				movieCache.Store(match.ArrMedia.ID, files)
+				arrFiles = files
+			}
+
+			targetFiles, ok := targetMovieCache.Load(match.ServerItem.ItemID)
+			if !ok {
+				files, err := fileFetcher.GetMovieFiles(ctx, match.ServerItem.ItemID)
+				if err != nil {
+					runLog.Warn("Failed to fetch movie files from %s for %s: %v", target.Name, match.ArrMedia.Title, err)
+					return
+				}
+				targetMovieCache.Store(match.ServerItem.ItemID, files)
+				targetFiles = files
+			}
+
+			mismatches := compareMovieFiles(arrFiles.([]ArrMovieFile), targetFiles.([]TargetMovieFile))
+			for _, mismatch := range mismatches {
+				ignoreKey := fileIgnoreKey(arr.Type, match.ArrMedia.ID, target.ID, 0, 0, mismatch.ArrFileName)
+				if _, ignored := ignoreSet[ignoreKey]; ignored {
+					continue
+				}
+
+				targetItemPath := targetItemPathFromItem(match.ServerItem)
+
+				record := &database.MatcharrFileMismatch{
+					RunID:            runID,
+					ArrID:            arr.ID,
+					TargetID:         target.ID,
+					ArrType:          arr.Type,
+					ArrName:          arr.Name,
+					TargetName:       target.Name,
+					MediaTitle:       match.ArrMedia.Title,
+					ArrMediaID:       match.ArrMedia.ID,
+					TargetMetadataID: match.ServerItem.ItemID,
+					ArrFileName:      mismatch.ArrFileName,
+					TargetFileNames:  strings.Join(mismatch.TargetFileNames, ", "),
+					ArrFilePath:      mismatch.ArrFilePath,
+					TargetItemPath:   targetItemPath,
+					TargetFilePaths:  strings.Join(mismatch.TargetFilePaths, ", "),
+				}
+
+				if err := m.db.CreateMatcharrFileMismatch(record); err != nil {
+					runLog.Warn("Failed to save file mismatch for %s: %v", match.ArrMedia.Title, err)
+				}
+			}
+
+		default:
+			runLog.Debug("Skipping file mismatch check for unsupported Arr type %s", arr.Type)
+		}
+	}
+
 	worker := func() {
 		defer wg.Done()
 		for match := range workCh {
@@ -162,134 +317,7 @@ func (m *Manager) compareFileMismatches(
 				return
 			default:
 			}
-
-			if match.ArrMedia.ID == 0 || match.ServerItem.ItemID == "" {
-				continue
-			}
-			if !match.ArrMedia.HasFile {
-				continue
-			}
-
-			switch arr.Type {
-			case database.ArrTypeSonarr:
-				arrFiles, ok := episodeCache.Load(match.ArrMedia.ID)
-				if !ok {
-					files, err := arrClient.GetEpisodeFiles(ctx, match.ArrMedia.ID)
-					if err != nil {
-						runLog.Warn("Failed to fetch episode files for %s: %v", match.ArrMedia.Title, err)
-						continue
-					}
-					episodeCache.Store(match.ArrMedia.ID, files)
-					arrFiles = files
-				}
-
-				targetFiles, ok := targetEpisodeCache.Load(match.ServerItem.ItemID)
-				if !ok {
-					files, err := fileFetcher.GetEpisodeFiles(ctx, match.ServerItem.ItemID)
-					if err != nil {
-						runLog.Warn("Failed to fetch episode files from %s for %s: %v", target.Name, match.ArrMedia.Title, err)
-						continue
-					}
-					targetEpisodeCache.Store(match.ServerItem.ItemID, files)
-					targetFiles = files
-				}
-
-				mismatches := compareEpisodeFiles(arrFiles.([]ArrEpisodeFile), targetFiles.([]TargetEpisodeFile))
-				for _, mismatch := range mismatches {
-					ignoreKey := fileIgnoreKey(arr.Type, match.ArrMedia.ID, target.ID, mismatch.SeasonNumber, mismatch.EpisodeNumber, mismatch.ArrFileName)
-					if _, ignored := ignoreSet[ignoreKey]; ignored {
-						continue
-					}
-
-					targetItemPath := targetItemPathFromItem(match.ServerItem)
-
-					record := &database.MatcharrFileMismatch{
-						RunID:            runID,
-						ArrID:            arr.ID,
-						TargetID:         target.ID,
-						ArrType:          arr.Type,
-						ArrName:          arr.Name,
-						TargetName:       target.Name,
-						MediaTitle:       match.ArrMedia.Title,
-						ArrMediaID:       match.ArrMedia.ID,
-						TargetMetadataID: match.ServerItem.ItemID,
-						SeasonNumber:     mismatch.SeasonNumber,
-						EpisodeNumber:    mismatch.EpisodeNumber,
-						ArrFileName:      mismatch.ArrFileName,
-						TargetFileNames:  strings.Join(mismatch.TargetFileNames, ", "),
-						ArrFilePath:      mismatch.ArrFilePath,
-						TargetItemPath:   targetItemPath,
-						TargetFilePaths:  strings.Join(mismatch.TargetFilePaths, ", "),
-					}
-
-					if err := m.db.CreateMatcharrFileMismatch(record); err != nil {
-						runLog.Warn("Failed to save file mismatch for %s: %v", match.ArrMedia.Title, err)
-					}
-				}
-
-			case database.ArrTypeRadarr:
-				arrFiles, ok := movieCache.Load(match.ArrMedia.ID)
-				if !ok {
-					var files []ArrMovieFile
-					if match.ArrMedia.MovieFilePath != "" {
-						files = []ArrMovieFile{{FilePath: match.ArrMedia.MovieFilePath}}
-					} else {
-						fetched, err := arrClient.GetMovieFiles(ctx, match.ArrMedia.ID)
-						if err != nil {
-							runLog.Warn("Failed to fetch movie files for %s: %v", match.ArrMedia.Title, err)
-							continue
-						}
-						files = fetched
-					}
-					movieCache.Store(match.ArrMedia.ID, files)
-					arrFiles = files
-				}
-
-				targetFiles, ok := targetMovieCache.Load(match.ServerItem.ItemID)
-				if !ok {
-					files, err := fileFetcher.GetMovieFiles(ctx, match.ServerItem.ItemID)
-					if err != nil {
-						runLog.Warn("Failed to fetch movie files from %s for %s: %v", target.Name, match.ArrMedia.Title, err)
-						continue
-					}
-					targetMovieCache.Store(match.ServerItem.ItemID, files)
-					targetFiles = files
-				}
-
-				mismatches := compareMovieFiles(arrFiles.([]ArrMovieFile), targetFiles.([]TargetMovieFile))
-				for _, mismatch := range mismatches {
-					ignoreKey := fileIgnoreKey(arr.Type, match.ArrMedia.ID, target.ID, 0, 0, mismatch.ArrFileName)
-					if _, ignored := ignoreSet[ignoreKey]; ignored {
-						continue
-					}
-
-					targetItemPath := targetItemPathFromItem(match.ServerItem)
-
-					record := &database.MatcharrFileMismatch{
-						RunID:            runID,
-						ArrID:            arr.ID,
-						TargetID:         target.ID,
-						ArrType:          arr.Type,
-						ArrName:          arr.Name,
-						TargetName:       target.Name,
-						MediaTitle:       match.ArrMedia.Title,
-						ArrMediaID:       match.ArrMedia.ID,
-						TargetMetadataID: match.ServerItem.ItemID,
-						ArrFileName:      mismatch.ArrFileName,
-						TargetFileNames:  strings.Join(mismatch.TargetFileNames, ", "),
-						ArrFilePath:      mismatch.ArrFilePath,
-						TargetItemPath:   targetItemPath,
-						TargetFilePaths:  strings.Join(mismatch.TargetFilePaths, ", "),
-					}
-
-					if err := m.db.CreateMatcharrFileMismatch(record); err != nil {
-						runLog.Warn("Failed to save file mismatch for %s: %v", match.ArrMedia.Title, err)
-					}
-				}
-
-			default:
-				runLog.Debug("Skipping file mismatch check for unsupported Arr type %s", arr.Type)
-			}
+			processMatch(match)
 		}
 	}
 
