@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
 // WebhookConfig holds generic webhook configuration
@@ -42,9 +44,7 @@ func NewWebhookProvider(config WebhookConfig) *WebhookProvider {
 
 	return &WebhookProvider{
 		config: config,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client: httpclient.NewTraceClient("webhook", 30*time.Second),
 	}
 }
 

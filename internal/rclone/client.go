@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
 // ClientConfig holds rclone RCD client configuration
@@ -46,11 +48,9 @@ func NewClient(config ClientConfig) *Client {
 	}
 
 	return &Client{
-		config: config,
-		httpClient: &http.Client{
-			Timeout: config.Timeout,
-		},
-		baseURL: fmt.Sprintf("http://%s", config.Address),
+		config:     config,
+		httpClient: httpclient.NewTraceClient("rclone", config.Timeout),
+		baseURL:    fmt.Sprintf("http://%s", config.Address),
 	}
 }
 

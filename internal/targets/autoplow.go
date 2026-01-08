@@ -13,6 +13,7 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
 // AutoplowTarget implements the Target interface for forwarding scans to another Autoplow instance
@@ -25,9 +26,7 @@ type AutoplowTarget struct {
 func NewAutoplowTarget(dbTarget *database.Target) *AutoplowTarget {
 	return &AutoplowTarget{
 		dbTarget: dbTarget,
-		client: &http.Client{
-			Timeout: config.GetTimeouts().HTTPClient,
-		},
+		client:   httpclient.NewTraceClient(fmt.Sprintf("%s:%s", dbTarget.Type, dbTarget.Name), config.GetTimeouts().HTTPClient),
 	}
 }
 

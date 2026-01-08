@@ -19,6 +19,7 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
 // plexActivityTracker tracks all activities for an item during scan completion (used by waiting uploaders)
@@ -88,9 +89,7 @@ type PlexTarget struct {
 func NewPlexTarget(dbTarget *database.Target) *PlexTarget {
 	return &PlexTarget{
 		dbTarget: dbTarget,
-		client: &http.Client{
-			Timeout: config.GetTimeouts().HTTPClient,
-		},
+		client:   httpclient.NewTraceClient(fmt.Sprintf("%s:%s", dbTarget.Type, dbTarget.Name), config.GetTimeouts().HTTPClient),
 	}
 }
 

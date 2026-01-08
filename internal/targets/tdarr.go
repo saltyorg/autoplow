@@ -12,6 +12,7 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
 // TdarrTarget implements the Target interface for Tdarr
@@ -24,9 +25,7 @@ type TdarrTarget struct {
 func NewTdarrTarget(dbTarget *database.Target) *TdarrTarget {
 	return &TdarrTarget{
 		dbTarget: dbTarget,
-		client: &http.Client{
-			Timeout: config.GetTimeouts().HTTPClient,
-		},
+		client:   httpclient.NewTraceClient(fmt.Sprintf("%s:%s", dbTarget.Type, dbTarget.Name), config.GetTimeouts().HTTPClient),
 	}
 }
 

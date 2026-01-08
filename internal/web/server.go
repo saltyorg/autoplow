@@ -562,6 +562,7 @@ func (s *Server) setupRoutes() {
 
 	// Set the server as the upload subsystem toggler
 	h.SetUploadSubsystemToggler(s)
+	h.SetTargetsManager(s.targetsMgr)
 
 	// Set managers if already available
 	if s.rcloneMgr != nil {
@@ -768,6 +769,9 @@ func (s *Server) setupRoutes() {
 			r.Post("/arrs/{id}/test", h.MatcharrArrTest)
 			r.Get("/gaps/arr", h.MatcharrArrGapsPartial)
 			r.Get("/gaps/target", h.MatcharrTargetGapsPartial)
+			r.Post("/gaps/{id}/scan", h.MatcharrGapScan)
+			r.Post("/gaps/{id}/recheck", h.MatcharrGapRecheck)
+			r.Post("/gaps/arr/scan-all", h.MatcharrArrGapsScanAll)
 			r.Post("/run", h.MatcharrRunNow)
 			r.Get("/run/status", h.MatcharrRunStatus)
 			r.Get("/mismatches", h.MatcharrMismatchesPartial)

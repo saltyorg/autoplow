@@ -351,28 +351,53 @@
                                             type="button"
                                             data-toggle="ignore-{{.ID}}"
                                             class="btn-secondary text-xs">
-                                            Manage ignore paths
+                                            Settings
                                         </button>
                                     </div>
                                 </td>
                             </tr>
                             <tr id="ignore-{{.ID}}" class="hidden bg-gray-50 dark:bg-gray-900/60">
                                 <td colspan="4" class="px-3 py-4">
-                                    <form hx-post="/matcharr/targets/{{.ID}}/ignore-paths" hx-swap="none" class="space-y-3">
-                                        <div class="flex items-start justify-between">
-                                            <div>
-                                                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Matcharr Ignore Paths</h4>
-                                                <p class="text-xs text-gray-500 dark:text-gray-400">Skip comparisons for items under these prefixes on {{.Name}}.</p>
-                                            </div>
-                                            <button type="button" class="btn-secondary text-xs" data-add-ignore="#ignore-list-{{.ID}}">Add Path</button>
+                                    <form hx-post="/matcharr/targets/{{.ID}}/ignore-paths" hx-swap="none" class="space-y-6">
+                                        <div>
+                                            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Matcharr Settings</h4>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">Configure path mappings and ignore paths for {{.Name}}.</p>
                                         </div>
-                                        <div id="ignore-list-{{.ID}}" class="space-y-2">
-                                            {{range $path := .Config.MatcharrExcludePaths}}
-                                            <div class="ignore-row flex items-center gap-2">
-                                                <input type="text" name="matcharr_exclude_paths[]" value="{{$path}}" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                                                <button type="button" class="btn-secondary text-xs remove-ignore">Remove</button>
+                                        <div class="space-y-3">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Path Mappings</h5>
+                                                    <p class="text-xs text-gray-500 dark:text-gray-400">Map local paths to media server paths.</p>
+                                                </div>
+                                                <button type="button" class="btn-secondary text-xs" data-add-path-mapping="#path-mapping-list-{{.ID}}">Add Mapping</button>
                                             </div>
-                                            {{end}}
+                                            <div id="path-mapping-list-{{.ID}}" class="space-y-2">
+                                                {{range $mapping := .Config.PathMappings}}
+                                                <div class="path-mapping-row flex items-center gap-2">
+                                                    <input type="text" name="path_mapping_from[]" value="{{$mapping.From}}" placeholder="Local path (e.g., /mnt/media)" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                                    <span class="text-gray-500 dark:text-gray-400">→</span>
+                                                    <input type="text" name="path_mapping_to[]" value="{{$mapping.To}}" placeholder="Server path (e.g., /data/media)" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                                    <button type="button" class="btn-secondary text-xs remove-path-mapping">Remove</button>
+                                                </div>
+                                                {{end}}
+                                            </div>
+                                        </div>
+                                        <div class="space-y-3">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Ignore Paths</h5>
+                                                    <p class="text-xs text-gray-500 dark:text-gray-400">Skip comparisons for items under these prefixes.</p>
+                                                </div>
+                                                <button type="button" class="btn-secondary text-xs" data-add-ignore="#ignore-list-{{.ID}}">Add Path</button>
+                                            </div>
+                                            <div id="ignore-list-{{.ID}}" class="space-y-2">
+                                                {{range $path := .Config.MatcharrExcludePaths}}
+                                                <div class="ignore-row flex items-center gap-2">
+                                                    <input type="text" name="matcharr_exclude_paths[]" value="{{$path}}" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                                    <button type="button" class="btn-secondary text-xs remove-ignore">Remove</button>
+                                                </div>
+                                                {{end}}
+                                            </div>
                                         </div>
                                         <div class="flex justify-end gap-2">
                                             <button type="submit" class="btn-primary text-xs px-3 py-2">Save</button>
@@ -410,6 +435,27 @@
                     e.target.closest('.ignore-row')?.remove();
                 }
 
+                if (e.target.closest('.remove-path-mapping')) {
+                    e.target.closest('.path-mapping-row')?.remove();
+                }
+
+                const addMappingBtn = e.target.closest('[data-add-path-mapping]');
+                if (addMappingBtn) {
+                    const listSelector = addMappingBtn.getAttribute('data-add-path-mapping');
+                    const list = document.querySelector(listSelector);
+                    if (list) {
+                        const div = document.createElement('div');
+                        div.className = 'path-mapping-row flex items-center gap-2';
+                        div.innerHTML = `
+                            <input type="text" name="path_mapping_from[]" placeholder="Local path (e.g., /mnt/media)" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <span class="text-gray-500 dark:text-gray-400">→</span>
+                            <input type="text" name="path_mapping_to[]" placeholder="Server path (e.g., /data/media)" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <button type="button" class="btn-secondary text-xs remove-path-mapping">Remove</button>
+                        `;
+                        list.appendChild(div);
+                    }
+                }
+
                 const addBtn = e.target.closest('[data-add-ignore]');
                 if (addBtn) {
                     const listSelector = addBtn.getAttribute('data-add-ignore');
@@ -429,14 +475,14 @@
         </div>
         {{end}}
 
-        {{if eq .Content.Tab "arr-gaps"}}
+    {{if eq .Content.Tab "arr-gaps"}}
     <!-- Missing on Server Tab -->
-    {{template "arr_gaps_section" (dict "Rows" .Content.ArrGaps "IsPartial" false "ArrOptions" .Content.ArrGapArrOptions "TargetOptions" .Content.ArrGapTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID)}}
+    {{template "arr_gaps_section" (dict "Rows" .Content.ArrGaps "IsPartial" false "ArrOptions" .Content.ArrGapArrOptions "TargetOptions" .Content.ArrGapTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID "ScanningEnabled" $.ScanningEnabled)}}
     {{end}}
 
     {{if eq .Content.Tab "target-gaps"}}
     <!-- Missing in Arrs Tab -->
-    {{template "target_gaps_section" (dict "Rows" .Content.TargetGaps "IsPartial" false "ArrOptions" .Content.TargetGapArrOptions "TargetOptions" .Content.TargetGapTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID)}}
+    {{template "target_gaps_section" (dict "Rows" .Content.TargetGaps "IsPartial" false "ArrOptions" .Content.TargetGapArrOptions "TargetOptions" .Content.TargetGapTargetOptions "SelectedArrID" .Content.SelectedArrID "SelectedTargetID" .Content.SelectedTargetID "ScanningEnabled" $.ScanningEnabled)}}
     {{end}}
 
     {{if eq .Content.Tab "mismatches"}}
@@ -535,6 +581,45 @@
     </div>
     {{end}}
 </div>
+<script>
+function handleGapScanAction(event) {
+    const xhr = event.detail && event.detail.xhr;
+    if (!xhr) {
+        return;
+    }
+
+    let message = 'Scan triggered';
+    let success = xhr.status < 400;
+
+    try {
+        const data = JSON.parse(xhr.responseText || '{}');
+        if (data.error) {
+            message = data.error;
+            success = false;
+        } else if (data.message) {
+            message = data.message;
+        }
+    } catch (err) {
+        if (!success) {
+            message = xhr.responseText || 'Failed to trigger scan';
+        }
+    }
+
+    if (typeof showToast === 'function') {
+        showToast(success, message);
+    }
+}
+
+document.body.addEventListener('matcharrGapRecheck', (event) => {
+    const detail = event.detail || {};
+    if (typeof showToast !== 'function' || !detail.message) {
+        return;
+    }
+
+    const ok = detail.success !== false;
+    showToast(ok, detail.message);
+});
+</script>
 {{end}}
 
 {{define "arr_form"}}
@@ -888,41 +973,56 @@ function handleMismatchAction(event, id) {
                 <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Missing on Server</h3>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paths that Arr reported but were not found on any media server.</p>
             </div>
-            <div class="flex flex-wrap items-center gap-3 arr-gaps-filters">
-                <div class="flex items-center">
-                    <label for="arr-gaps-arr-filter" class="sr-only">Arr filter</label>
-                    <select id="arr-gaps-arr-filter"
-                            name="arr_id"
-                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
-                            hx-get="/matcharr/gaps/arr"
-                            hx-target="#matcharr-arr-gaps"
-                            hx-swap="outerHTML"
-                            hx-include=".arr-gaps-filters select">
-                        <option value="0" {{if not $.SelectedArrID}}selected{{end}}>All Arrs</option>
-                        {{range .ArrOptions}}
-                        <option value="{{.ID}}" {{if and $.SelectedArrID (eq $.SelectedArrID .ID)}}selected{{end}}>{{.Name}}</option>
-                        {{end}}
-                    </select>
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex flex-wrap items-center gap-3 arr-gaps-filters">
+                    <div class="flex items-center">
+                        <label for="arr-gaps-arr-filter" class="sr-only">Arr filter</label>
+                        <select id="arr-gaps-arr-filter"
+                                name="arr_id"
+                                class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                                hx-get="/matcharr/gaps/arr"
+                                hx-target="#matcharr-arr-gaps"
+                                hx-swap="outerHTML"
+                                hx-include=".arr-gaps-filters select">
+                            <option value="0" {{if not $.SelectedArrID}}selected{{end}}>All Arrs</option>
+                            {{range .ArrOptions}}
+                            <option value="{{.ID}}" {{if and $.SelectedArrID (eq $.SelectedArrID .ID)}}selected{{end}}>{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <div class="flex items-center">
+                        <label for="arr-gaps-target-filter" class="sr-only">Media server filter</label>
+                        <select id="arr-gaps-target-filter"
+                                name="target_id"
+                                class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
+                                hx-get="/matcharr/gaps/arr"
+                                hx-target="#matcharr-arr-gaps"
+                                hx-swap="outerHTML"
+                                hx-include=".arr-gaps-filters select">
+                            <option value="0" {{if not $.SelectedTargetID}}selected{{end}}>All Media Servers</option>
+                            {{range .TargetOptions}}
+                            <option value="{{.ID}}" {{if and $.SelectedTargetID (eq $.SelectedTargetID .ID)}}selected{{end}}>{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </div>
                 </div>
-                <div class="flex items-center">
-                    <label for="arr-gaps-target-filter" class="sr-only">Media server filter</label>
-                    <select id="arr-gaps-target-filter"
-                            name="target_id"
-                            class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-1.5 border focus:border-indigo-500 focus:ring-indigo-500"
-                            hx-get="/matcharr/gaps/arr"
-                            hx-target="#matcharr-arr-gaps"
-                            hx-swap="outerHTML"
-                            hx-include=".arr-gaps-filters select">
-                        <option value="0" {{if not $.SelectedTargetID}}selected{{end}}>All Media Servers</option>
-                        {{range .TargetOptions}}
-                        <option value="{{.ID}}" {{if and $.SelectedTargetID (eq $.SelectedTargetID .ID)}}selected{{end}}>{{.Name}}</option>
-                        {{end}}
-                    </select>
-                </div>
+                {{if .Rows}}
+                <button
+                    type="button"
+                    hx-post="/matcharr/gaps/arr/scan-all"
+                    hx-include=".arr-gaps-filters select"
+                    hx-swap="none"
+                    hx-disabled-elt="this"
+                    hx-on::afterRequest="handleGapScanAction(event)"
+                    class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 {{if .ScanningEnabled}}bg-indigo-600 hover:bg-indigo-500 focus-visible:outline-indigo-600{{else}}bg-gray-400 cursor-not-allowed{{end}}"
+                    {{if not .ScanningEnabled}}disabled{{end}}>
+                    Scan All ({{len .Rows}})
+                </button>
+                {{end}}
             </div>
         </div>
         <div class="px-4 py-5 sm:p-6 space-y-4">
-            {{template "gap_table" (dict "Rows" .Rows "Type" "arr")}}
+            {{template "gap_table" (dict "Rows" .Rows "Type" "arr" "ScanningEnabled" .ScanningEnabled)}}
         </div>
     </div>
     {{if .IsPartial}}
@@ -973,7 +1073,7 @@ function handleMismatchAction(event, id) {
             </div>
         </div>
         <div class="px-4 py-5 sm:p-6 space-y-4">
-            {{template "gap_table" (dict "Rows" .Rows "Type" "target")}}
+            {{template "gap_table" (dict "Rows" .Rows "Type" "target" "ScanningEnabled" .ScanningEnabled)}}
         </div>
     </div>
     {{if .IsPartial}}
@@ -992,6 +1092,9 @@ function handleMismatchAction(event, id) {
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Arr</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Path</th>
+                {{if eq .Type "arr"}}
+                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                {{end}}
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1007,6 +1110,32 @@ function handleMismatchAction(event, id) {
                         {{.TargetPath}}
                     {{end}}
                 </td>
+                {{if eq $.Type "arr"}}
+                <td class="px-3 py-4 text-sm text-right">
+                    <div class="flex justify-end gap-2">
+                        <button
+                            type="button"
+                            hx-post="/matcharr/gaps/{{.ID}}/scan"
+                            hx-swap="none"
+                            hx-disabled-elt="this"
+                            hx-on::afterRequest="handleGapScanAction(event)"
+                            class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 {{if $.ScanningEnabled}}bg-indigo-600 hover:bg-indigo-500 focus-visible:outline-indigo-600{{else}}bg-gray-400 cursor-not-allowed{{end}}"
+                            {{if not $.ScanningEnabled}}disabled{{end}}>
+                            Scan
+                        </button>
+                        <button
+                            type="button"
+                            hx-post="/matcharr/gaps/{{.ID}}/recheck"
+                            hx-target="#matcharr-arr-gaps"
+                            hx-swap="outerHTML"
+                            hx-include=".arr-gaps-filters select"
+                            hx-disabled-elt="this"
+                            class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 bg-emerald-600 hover:bg-emerald-500 focus-visible:outline-emerald-600">
+                            Recheck
+                        </button>
+                    </div>
+                </td>
+                {{end}}
             </tr>
             {{end}}
         </tbody>

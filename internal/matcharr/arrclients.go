@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
 // ArrClient is a client for Sonarr/Radarr API
@@ -29,9 +30,7 @@ func NewArrClient(arrURL, apiKey string, arrType database.ArrType) *ArrClient {
 		URL:     strings.TrimSuffix(arrURL, "/"),
 		APIKey:  apiKey,
 		ArrType: arrType,
-		client: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		client:  httpclient.NewTraceClient(fmt.Sprintf("arr:%s", arrType), 60*time.Second),
 	}
 }
 

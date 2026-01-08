@@ -13,6 +13,7 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/httpclient"
 	"github.com/saltyorg/autoplow/internal/inotify"
 	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
@@ -20,6 +21,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/processor"
 	"github.com/saltyorg/autoplow/internal/rclone"
+	"github.com/saltyorg/autoplow/internal/targets"
 	"github.com/saltyorg/autoplow/internal/throttle"
 	"github.com/saltyorg/autoplow/internal/uploader"
 	"github.com/saltyorg/autoplow/internal/web/middleware"
@@ -50,6 +52,7 @@ type Handlers struct {
 	apiKeyService          *auth.APIKeyService
 	triggerAuthService     *auth.TriggerAuthService
 	processor              *processor.Processor
+	targetsMgr             *targets.Manager
 	rcloneMgr              *rclone.Manager
 	uploadMgr              *uploader.Manager
 	throttleMgr            *throttle.Manager
@@ -85,6 +88,11 @@ func (h *Handlers) SetRcloneManager(mgr *rclone.Manager) {
 // SetUploadManager sets the upload manager
 func (h *Handlers) SetUploadManager(mgr *uploader.Manager) {
 	h.uploadMgr = mgr
+}
+
+// SetTargetsManager sets the targets manager
+func (h *Handlers) SetTargetsManager(mgr *targets.Manager) {
+	h.targetsMgr = mgr
 }
 
 // SetThrottleManager sets the throttle manager
@@ -188,7 +196,7 @@ type githubRelease struct {
 func (h *Handlers) checkForUpdates() {
 	const apiURL = "https://svm.saltbox.dev/version?url=https://api.github.com/repos/saltyorg/autoplow/releases/latest"
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := httpclient.NewTraceClient("update-check", 10*time.Second)
 	resp, err := client.Get(apiURL)
 	if err != nil {
 		log.Debug().Err(err).Msg("Failed to check for updates")

@@ -456,6 +456,15 @@ func (db *DB) CreateMatcharrGap(gap *MatcharrGap) error {
 	return nil
 }
 
+// DeleteMatcharrGap removes a missing-path record by ID.
+func (db *DB) DeleteMatcharrGap(id int64) error {
+	_, err := db.Exec(`DELETE FROM matcharr_gaps WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete matcharr gap: %w", err)
+	}
+	return nil
+}
+
 // UpdateMatcharrMismatchStatus updates the status of a mismatch
 func (db *DB) UpdateMatcharrMismatchStatus(id int64, status MatcharrMismatchStatus, errorMsg string) error {
 	var fixedAt any
@@ -510,6 +519,27 @@ func (db *DB) GetMatcharrMismatch(id int64) (*MatcharrMismatch, error) {
 	}
 
 	return &mismatch, nil
+}
+
+// GetMatcharrGap retrieves a gap by ID
+func (db *DB) GetMatcharrGap(id int64) (*MatcharrGap, error) {
+	var gap MatcharrGap
+
+	err := db.QueryRow(`
+		SELECT id, run_id, arr_id, target_id, source, title, arr_name, target_name, arr_path, target_path, created_at
+		FROM matcharr_gaps WHERE id = ?
+	`, id).Scan(
+		&gap.ID, &gap.RunID, &gap.ArrID, &gap.TargetID, &gap.Source, &gap.Title,
+		&gap.ArrName, &gap.TargetName, &gap.ArrPath, &gap.TargetPath, &gap.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get matcharr gap: %w", err)
+	}
+
+	return &gap, nil
 }
 
 // ListMatcharrMismatches retrieves mismatches for a run

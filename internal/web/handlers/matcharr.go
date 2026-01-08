@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/log"
 
+	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/matcharr"
 )
@@ -376,11 +378,9 @@ func (h *Handlers) MatcharrMismatchesPartial(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// MatcharrArrGapsPartial returns the Missing on Server section as HTML
-func (h *Handlers) MatcharrArrGapsPartial(w http.ResponseWriter, r *http.Request) {
-	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
-	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
+func (h *Handlers) renderMatcharrArrGapsSection(w http.ResponseWriter, arrIDFilter int64, targetFilterID int64) {
 	latestRun, _ := h.db.GetLatestMatcharrRun()
+	scanningEnabled := h.isScanningEnabled()
 
 	var gaps []*database.MatcharrGap
 	if latestRun != nil {
@@ -401,7 +401,15 @@ func (h *Handlers) MatcharrArrGapsPartial(w http.ResponseWriter, r *http.Request
 		"SelectedArrID":    arrIDFilter,
 		"SelectedTargetID": targetFilterID,
 		"IsPartial":        true,
+		"ScanningEnabled":  scanningEnabled,
 	})
+}
+
+// MatcharrArrGapsPartial returns the Missing on Server section as HTML
+func (h *Handlers) MatcharrArrGapsPartial(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
+	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
+	h.renderMatcharrArrGapsSection(w, arrIDFilter, targetFilterID)
 }
 
 // MatcharrTargetGapsPartial returns the Missing in Arrs section as HTML
@@ -409,6 +417,7 @@ func (h *Handlers) MatcharrTargetGapsPartial(w http.ResponseWriter, r *http.Requ
 	arrIDFilter := parseIDFilter(r.URL.Query().Get("arr_id"))
 	targetFilterID := parseIDFilter(r.URL.Query().Get("target_id"))
 	latestRun, _ := h.db.GetLatestMatcharrRun()
+	scanningEnabled := h.isScanningEnabled()
 
 	var gaps []*database.MatcharrGap
 	if latestRun != nil {
@@ -429,7 +438,232 @@ func (h *Handlers) MatcharrTargetGapsPartial(w http.ResponseWriter, r *http.Requ
 		"SelectedArrID":    arrIDFilter,
 		"SelectedTargetID": targetFilterID,
 		"IsPartial":        true,
+		"ScanningEnabled":  scanningEnabled,
 	})
+}
+
+// MatcharrGapScan triggers a media server scan for a single gap row
+func (h *Handlers) MatcharrGapScan(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.jsonError(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if h.targetsMgr == nil {
+		h.jsonError(w, "Targets manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	if !h.isScanningEnabled() {
+		h.jsonError(w, "Scanning is disabled", http.StatusBadRequest)
+		return
+	}
+
+	gap, err := h.db.GetMatcharrGap(id)
+	if err != nil {
+		h.jsonError(w, "Failed to load gap", http.StatusInternalServerError)
+		return
+	}
+	if gap == nil {
+		h.jsonError(w, "Gap not found", http.StatusNotFound)
+		return
+	}
+	if gap.TargetID == 0 {
+		h.jsonError(w, "Target not found for this gap", http.StatusBadRequest)
+		return
+	}
+
+	scanPath := matcharrGapScanPath(gap)
+	if scanPath == "" {
+		h.jsonError(w, "No scan path available for this gap", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetTimeouts().ScanOperation)
+	defer cancel()
+
+	result, _ := h.targetsMgr.ScanTarget(ctx, gap.TargetID, scanPath, "")
+	if !result.Success {
+		h.jsonError(w, "Scan failed: "+result.Error, http.StatusInternalServerError)
+		return
+	}
+
+	message := "Scan triggered on " + result.Message
+	if result.Error != "" {
+		message = "Scan skipped on " + result.Message + ": " + result.Error
+	}
+	h.jsonSuccess(w, message)
+}
+
+// MatcharrGapRecheck checks whether a missing item now exists on the media server.
+func (h *Handlers) MatcharrGapRecheck(w http.ResponseWriter, r *http.Request) {
+	arrIDFilter := parseIDFilter(r.FormValue("arr_id"))
+	targetFilterID := parseIDFilter(r.FormValue("target_id"))
+
+	success := false
+	message := ""
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		message = "Invalid ID"
+	} else if h.matcharrMgr == nil {
+		message = "Manager not initialized"
+	} else {
+		gap, err := h.db.GetMatcharrGap(id)
+		if err != nil {
+			message = "Failed to load gap"
+		} else if gap == nil {
+			message = "Gap not found"
+		} else if gap.Source != database.MatcharrGapSourceArr {
+			message = "Recheck is only available for Missing on Server gaps"
+		} else if gap.TargetID == 0 {
+			message = "Target not found for this gap"
+		} else {
+			checkPath := matcharrGapScanPath(gap)
+			if checkPath == "" {
+				message = "No path available for this gap"
+			} else {
+				ctx, cancel := context.WithTimeout(r.Context(), config.GetTimeouts().ScanOperation)
+				defer cancel()
+
+				found, err := h.matcharrMgr.CheckTargetPath(ctx, gap.TargetID, checkPath)
+				if err != nil {
+					message = "Recheck failed: " + err.Error()
+				} else {
+					targetName := gap.TargetName
+					if targetName == "" {
+						targetName = fmt.Sprintf("Target #%d", gap.TargetID)
+					}
+					if found {
+						if err := h.db.DeleteMatcharrGap(gap.ID); err != nil {
+							message = "Recheck found item but failed to update list: " + err.Error()
+						} else {
+							success = true
+							message = "Found on " + targetName + ", removed from list"
+						}
+					} else {
+						message = "Still missing on " + targetName
+					}
+				}
+			}
+		}
+	}
+
+	if message != "" {
+		payload := map[string]any{
+			"matcharrGapRecheck": map[string]any{
+				"success": success,
+				"message": message,
+			},
+		}
+		if data, err := json.Marshal(payload); err == nil {
+			w.Header().Set("HX-Trigger", string(data))
+		}
+	}
+
+	h.renderMatcharrArrGapsSection(w, arrIDFilter, targetFilterID)
+}
+
+// MatcharrArrGapsScanAll triggers scans for all filtered Missing on Server gaps
+func (h *Handlers) MatcharrArrGapsScanAll(w http.ResponseWriter, r *http.Request) {
+	if h.targetsMgr == nil {
+		h.jsonError(w, "Targets manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	if !h.isScanningEnabled() {
+		h.jsonError(w, "Scanning is disabled", http.StatusBadRequest)
+		return
+	}
+
+	arrIDFilter := parseIDFilter(r.FormValue("arr_id"))
+	targetFilterID := parseIDFilter(r.FormValue("target_id"))
+	latestRun, _ := h.db.GetLatestMatcharrRun()
+	if latestRun == nil {
+		h.jsonError(w, "No matcharr run data available", http.StatusBadRequest)
+		return
+	}
+
+	gaps, _ := h.db.GetMatcharrGaps(latestRun.ID, database.MatcharrGapSourceArr)
+	if len(gaps) == 0 {
+		h.jsonSuccess(w, "No gaps to scan")
+		return
+	}
+
+	filteredGaps := filterMatcharrGaps(gaps, arrIDFilter, targetFilterID)
+	if len(filteredGaps) == 0 {
+		h.jsonSuccess(w, "No gaps to scan")
+		return
+	}
+
+	type scanTask struct {
+		TargetID   int64
+		TargetName string
+		Path       string
+	}
+
+	seen := make(map[string]struct{})
+	tasks := make([]scanTask, 0, len(filteredGaps))
+	for _, gap := range filteredGaps {
+		if gap.TargetID == 0 {
+			continue
+		}
+		scanPath := matcharrGapScanPath(gap)
+		if scanPath == "" {
+			continue
+		}
+		targetName := gap.TargetName
+		if targetName == "" {
+			targetName = fmt.Sprintf("Target #%d", gap.TargetID)
+		}
+		key := fmt.Sprintf("%d:%s", gap.TargetID, scanPath)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		tasks = append(tasks, scanTask{
+			TargetID:   gap.TargetID,
+			TargetName: targetName,
+			Path:       scanPath,
+		})
+	}
+
+	if len(tasks) == 0 {
+		h.jsonSuccess(w, "No gaps to scan")
+		return
+	}
+
+	go func(tasks []scanTask) {
+		for _, task := range tasks {
+			ctx, cancel := context.WithTimeout(context.Background(), config.GetTimeouts().ScanOperation)
+			result, _ := h.targetsMgr.ScanTarget(ctx, task.TargetID, task.Path, "")
+			cancel()
+
+			if !result.Success {
+				log.Warn().
+					Str("target", task.TargetName).
+					Str("path", task.Path).
+					Str("error", result.Error).
+					Msg("Matcharr scan failed")
+				continue
+			}
+			if result.Error != "" {
+				log.Debug().
+					Str("target", task.TargetName).
+					Str("path", task.Path).
+					Str("note", result.Error).
+					Msg("Matcharr scan skipped")
+			} else {
+				log.Info().
+					Str("target", task.TargetName).
+					Str("path", task.Path).
+					Msg("Matcharr scan triggered")
+			}
+		}
+	}(tasks)
+
+	h.jsonSuccess(w, fmt.Sprintf("Scan all started for %d item(s)", len(tasks)))
 }
 
 // MatcharrFixOne fixes a single mismatch
@@ -686,6 +920,13 @@ func (h *Handlers) MatcharrUpdateTargetIgnorePaths(w http.ResponseWriter, r *htt
 		return
 	}
 
+	mappings, mappingErrors := parsePathMappings(r)
+	if len(mappingErrors) > 0 {
+		h.jsonError(w, strings.Join(mappingErrors, "; "), http.StatusBadRequest)
+		return
+	}
+
+	target.Config.PathMappings = mappings
 	target.Config.MatcharrExcludePaths = parseMatcharrExcludePaths(r)
 
 	if err := h.db.UpdateTarget(target); err != nil {
@@ -693,9 +934,14 @@ func (h *Handlers) MatcharrUpdateTargetIgnorePaths(w http.ResponseWriter, r *htt
 		return
 	}
 
+	// Invalidate library cache for this target since path mappings may have changed
+	if err := h.db.DeleteCachedLibraries(id); err != nil {
+		log.Warn().Err(err).Int64("target_id", id).Msg("Failed to invalidate library cache")
+	}
+
 	// Refresh page to reflect updated paths
 	w.Header().Set("HX-Refresh", "true")
-	h.jsonSuccess(w, "Matcharr ignore paths updated")
+	h.jsonSuccess(w, "Target settings updated")
 }
 
 // MatcharrClearHistory clears all matcharr run history
@@ -744,6 +990,23 @@ func parseIDFilter(value string) int64 {
 		return id
 	}
 	return 0
+}
+
+func (h *Handlers) isScanningEnabled() bool {
+	if val, _ := h.db.GetSetting("scanning.enabled"); val == "false" {
+		return false
+	}
+	return true
+}
+
+func matcharrGapScanPath(gap *database.MatcharrGap) string {
+	if gap == nil {
+		return ""
+	}
+	if path := strings.TrimSpace(gap.TargetPath); path != "" {
+		return path
+	}
+	return strings.TrimSpace(gap.ArrPath)
 }
 
 func filterMatcharrMismatches(mismatches []*database.MatcharrMismatch, arrID int64, targetID int64) []*database.MatcharrMismatch {

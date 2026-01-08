@@ -206,6 +206,143 @@ func (m *Manager) InvalidateCache(targetID int64) {
 	delete(m.targets, targetID)
 }
 
+// ScanTarget triggers a scan on a single target for the given path.
+// triggerName is optional - if provided, targets with this trigger in their exclude list will be skipped.
+// Returns scan result and optional completion info for targets that need upload delay waiting.
+func (m *Manager) ScanTarget(ctx context.Context, targetID int64, path string, triggerName string) (ScanResult, *ScanCompletionInfo) {
+	dbTarget, err := m.db.GetTarget(targetID)
+	if err != nil {
+		return ScanResult{
+			Success: false,
+			Message: fmt.Sprintf("target %d", targetID),
+			Error:   err.Error(),
+		}, nil
+	}
+	if dbTarget == nil {
+		return ScanResult{
+			Success: false,
+			Message: fmt.Sprintf("target %d", targetID),
+			Error:   "target not found",
+		}, nil
+	}
+	if !dbTarget.Enabled {
+		return ScanResult{
+			Success: false,
+			Message: dbTarget.Name,
+			Error:   "target disabled",
+		}, nil
+	}
+
+	return m.scanTarget(ctx, dbTarget, path, triggerName)
+}
+
+func (m *Manager) scanTarget(ctx context.Context, dbTarget *database.Target, path string, triggerName string) (ScanResult, *ScanCompletionInfo) {
+	// Check if trigger should be excluded for this target
+	if triggerName != "" && dbTarget.Config.ShouldExcludeTrigger(triggerName) {
+		log.Debug().
+			Str("target", dbTarget.Name).
+			Str("trigger", triggerName).
+			Str("path", path).
+			Msg("Trigger excluded by target exclude rules, skipping")
+		return ScanResult{
+			Success: true,
+			Message: dbTarget.Name,
+			Error:   "trigger excluded by target rules",
+		}, nil
+	}
+
+	// Check if path should be excluded for this target
+	if dbTarget.Config.ShouldExcludePath(path) {
+		log.Debug().
+			Str("target", dbTarget.Name).
+			Str("path", path).
+			Msg("Path excluded by target exclude rules, skipping")
+		return ScanResult{
+			Success: true,
+			Message: dbTarget.Name,
+			Error:   "path excluded by target rules",
+		}, nil
+	}
+
+	target, err := m.GetTargetForDBTarget(dbTarget)
+	if err != nil {
+		return ScanResult{
+			Success: false,
+			Message: dbTarget.Name,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	// Apply target-level scan delay if configured
+	if dbTarget.Config.ScanDelay > 0 {
+		log.Debug().
+			Str("target", dbTarget.Name).
+			Int("delay_seconds", dbTarget.Config.ScanDelay).
+			Str("path", path).
+			Msg("Applying target scan delay")
+
+		select {
+		case <-ctx.Done():
+			return ScanResult{
+				Success: false,
+				Message: dbTarget.Name,
+				Error:   "context cancelled during scan delay",
+			}, nil
+		case <-time.After(time.Duration(dbTarget.Config.ScanDelay) * time.Second):
+			// Delay complete, proceed with scan
+		}
+	}
+
+	// Apply target-level path mapping before sending to media server
+	scanPath := ApplyPathMappings(path, dbTarget.Config.PathMappings)
+
+	log.Trace().
+		Int64("target_id", dbTarget.ID).
+		Str("target", dbTarget.Name).
+		Str("target_type", string(dbTarget.Type)).
+		Str("path", path).
+		Str("scan_path", scanPath).
+		Str("trigger", triggerName).
+		Msg("Target scan request")
+
+	if err := target.Scan(ctx, scanPath); err != nil {
+		return ScanResult{
+			Success: false,
+			Message: dbTarget.Name,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	result := ScanResult{
+		Success: true,
+		Message: dbTarget.Name,
+	}
+
+	// Collect completion info for scan tracking
+	// For targets with smart detection (Plex), always track - they use idle timer only
+	// For other targets, only track if ScanCompletionSeconds is configured
+	if _, hasSmartDetection := target.(ScanCompletionWaiter); hasSmartDetection {
+		return result, &ScanCompletionInfo{
+			TargetID:    dbTarget.ID,
+			TargetName:  dbTarget.Name,
+			ScanPath:    scanPath,
+			TimeoutSecs: 0,
+			Target:      target,
+		}
+	}
+	if dbTarget.Config.ScanCompletionSeconds > 0 {
+		return result, &ScanCompletionInfo{
+			TargetID:    dbTarget.ID,
+			TargetName:  dbTarget.Name,
+			ScanPath:    scanPath,
+			TimeoutSecs: dbTarget.Config.ScanCompletionSeconds,
+			Target:      target,
+		}
+	}
+
+	return result, nil
+}
+
 // ScanAll triggers a scan on all enabled targets for the given path
 // triggerName is optional - if provided, targets with this trigger in their exclude list will be skipped
 // Returns scan results and completion info for targets that need upload delay waiting
@@ -224,103 +361,10 @@ func (m *Manager) ScanAll(ctx context.Context, path string, triggerName string) 
 	completionInfos := make([]ScanCompletionInfo, 0)
 
 	for _, dbTarget := range dbTargets {
-		// Check if trigger should be excluded for this target
-		if triggerName != "" && dbTarget.Config.ShouldExcludeTrigger(triggerName) {
-			log.Debug().
-				Str("target", dbTarget.Name).
-				Str("trigger", triggerName).
-				Str("path", path).
-				Msg("Trigger excluded by target exclude rules, skipping")
-			results = append(results, ScanResult{
-				Success: true,
-				Message: dbTarget.Name,
-				Error:   "trigger excluded by target rules",
-			})
-			continue
-		}
-
-		// Check if path should be excluded for this target
-		if dbTarget.Config.ShouldExcludePath(path) {
-			log.Debug().
-				Str("target", dbTarget.Name).
-				Str("path", path).
-				Msg("Path excluded by target exclude rules, skipping")
-			results = append(results, ScanResult{
-				Success: true,
-				Message: dbTarget.Name,
-				Error:   "path excluded by target rules",
-			})
-			continue
-		}
-
-		target, err := m.GetTargetForDBTarget(dbTarget)
-		if err != nil {
-			results = append(results, ScanResult{
-				Success: false,
-				Message: dbTarget.Name,
-				Error:   err.Error(),
-			})
-			continue
-		}
-
-		// Apply target-level scan delay if configured
-		if dbTarget.Config.ScanDelay > 0 {
-			log.Debug().
-				Str("target", dbTarget.Name).
-				Int("delay_seconds", dbTarget.Config.ScanDelay).
-				Str("path", path).
-				Msg("Applying target scan delay")
-
-			select {
-			case <-ctx.Done():
-				results = append(results, ScanResult{
-					Success: false,
-					Message: dbTarget.Name,
-					Error:   "context cancelled during scan delay",
-				})
-				continue
-			case <-time.After(time.Duration(dbTarget.Config.ScanDelay) * time.Second):
-				// Delay complete, proceed with scan
-			}
-		}
-
-		// Apply target-level path mapping before sending to media server
-		scanPath := ApplyPathMappings(path, dbTarget.Config.PathMappings)
-
-		if err := target.Scan(ctx, scanPath); err != nil {
-			results = append(results, ScanResult{
-				Success: false,
-				Message: dbTarget.Name,
-				Error:   err.Error(),
-			})
-		} else {
-			results = append(results, ScanResult{
-				Success: true,
-				Message: dbTarget.Name,
-			})
-
-			// Collect completion info for scan tracking
-			// For targets with smart detection (Plex), always track - they use idle timer only
-			// For other targets, only track if ScanCompletionSeconds is configured
-			if _, hasSmartDetection := target.(ScanCompletionWaiter); hasSmartDetection {
-				// Smart detection targets use idle timer, no fixed timeout needed
-				// TimeoutSecs=0 means no context timeout - relies purely on idle detection
-				completionInfos = append(completionInfos, ScanCompletionInfo{
-					TargetID:    dbTarget.ID,
-					TargetName:  dbTarget.Name,
-					ScanPath:    scanPath,
-					TimeoutSecs: 0,
-					Target:      target,
-				})
-			} else if dbTarget.Config.ScanCompletionSeconds > 0 {
-				completionInfos = append(completionInfos, ScanCompletionInfo{
-					TargetID:    dbTarget.ID,
-					TargetName:  dbTarget.Name,
-					ScanPath:    scanPath,
-					TimeoutSecs: dbTarget.Config.ScanCompletionSeconds,
-					Target:      target,
-				})
-			}
+		result, completionInfo := m.scanTarget(ctx, dbTarget, path, triggerName)
+		results = append(results, result)
+		if completionInfo != nil {
+			completionInfos = append(completionInfos, *completionInfo)
 		}
 	}
 

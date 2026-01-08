@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
 // DiscordConfig holds Discord webhook configuration
@@ -25,9 +27,7 @@ type DiscordProvider struct {
 func NewDiscordProvider(config DiscordConfig) *DiscordProvider {
 	return &DiscordProvider{
 		config: config,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client: httpclient.NewTraceClient("discord", 30*time.Second),
 	}
 }
 

@@ -851,6 +851,21 @@ func filterItemsByIgnoredPaths(items []MediaServerItem, ignored []string) []Medi
 	return filtered
 }
 
+func targetItemsContainPath(items []MediaServerItem, path string) bool {
+	normalized := normalizePath(path)
+	if normalized == "" {
+		return false
+	}
+
+	for _, item := range items {
+		if item.MatchPath() == normalized {
+			return true
+		}
+	}
+
+	return false
+}
+
 // pathIgnored returns true if path is within an ignored prefix (boundary aware)
 func pathIgnored(path string, ignored []string) bool {
 	for _, prefix := range ignored {
@@ -1071,6 +1086,67 @@ func (m *Manager) FixAllPending(ctx context.Context) (int, error) {
 	}
 
 	return fixed, nil
+}
+
+// CheckTargetPath verifies whether a target contains an item matching the given path.
+// Uses the same library/item parsing logic as matcharr comparisons.
+func (m *Manager) CheckTargetPath(ctx context.Context, targetID int64, path string) (bool, error) {
+	if m == nil {
+		return false, fmt.Errorf("manager not initialized")
+	}
+
+	target, err := m.db.GetTarget(targetID)
+	if err != nil {
+		return false, fmt.Errorf("failed to load target: %w", err)
+	}
+	if target == nil {
+		return false, fmt.Errorf("target not found: %d", targetID)
+	}
+
+	targetObj, err := m.targetGetter.GetTargetAny(target.ID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get target: %w", err)
+	}
+
+	fixer, ok := targetObj.(TargetFixer)
+	if !ok {
+		return false, fmt.Errorf("target does not support matcharr operations")
+	}
+
+	normalizedPath := normalizePath(path)
+	if normalizedPath == "" {
+		return false, fmt.Errorf("empty path")
+	}
+
+	libraries, err := m.getTargetLibraries(ctx, target)
+	if err != nil {
+		return false, err
+	}
+	if len(libraries) == 0 {
+		return false, fmt.Errorf("no cached libraries for target")
+	}
+
+	ignored := normalizeIgnorePaths(target.Config.MatcharrExcludePaths)
+	for _, lib := range libraries {
+		libPaths := filteredLibraryPaths(lib, ignored)
+		for _, libPath := range libPaths {
+			if !pathsOverlap(normalizedPath, libPath) {
+				continue
+			}
+
+			items, err := fixer.GetLibraryItemsWithProviderIDs(ctx, lib.ID)
+			if err != nil {
+				return false, err
+			}
+			items = filterItemsByIgnoredPaths(items, ignored)
+
+			if targetItemsContainPath(items, normalizedPath) {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // Library represents a media server library (supports multiple root paths)
