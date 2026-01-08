@@ -88,7 +88,7 @@ func (s *MediaBrowserTarget) Scan(ctx context.Context, path string) error {
 
 	// If refresh metadata is enabled, try to find and refresh the item directly
 	if refreshMetadata {
-		refreshed, found, err := s.tryRefreshItem(ctx, path)
+		refreshed, err := s.tryRefreshItem(ctx, path)
 		if err != nil {
 			log.Warn().Err(err).Str("path", path).Msg("Failed to refresh item directly, falling back to path scan")
 		} else if refreshed {
@@ -96,10 +96,7 @@ func (s *MediaBrowserTarget) Scan(ctx context.Context, path string) error {
 		}
 		// Fall through to path-based scan if item not found or refresh failed
 		if err == nil {
-			if found {
-				return s.scanPath(ctx, path, "Modified")
-			}
-			return s.scanPath(ctx, path, "Created")
+			return s.scanPath(ctx, path, "Modified")
 		}
 	}
 
@@ -166,12 +163,12 @@ func (s *MediaBrowserTarget) scanPath(ctx context.Context, path string, updateTy
 }
 
 // tryRefreshItem attempts to find an item by path and refresh it directly.
-// Returns refreshed flag and whether the item was found in the library.
-func (s *MediaBrowserTarget) tryRefreshItem(ctx context.Context, path string) (bool, bool, error) {
+// Returns true if the item was refreshed.
+func (s *MediaBrowserTarget) tryRefreshItem(ctx context.Context, path string) (bool, error) {
 	// First, get the libraries to find which one contains this path
 	libraries, err := s.GetLibraries(ctx)
 	if err != nil {
-		return false, false, fmt.Errorf("failed to get libraries: %w", err)
+		return false, fmt.Errorf("failed to get libraries: %w", err)
 	}
 
 	// Find the library that contains this path
@@ -191,7 +188,7 @@ func (s *MediaBrowserTarget) tryRefreshItem(ctx context.Context, path string) (b
 
 	if matchedLibrary == nil {
 		log.Debug().Str("path", path).Msg("No matching library found for path")
-		return false, false, nil
+		return false, nil
 	}
 
 	log.Debug().
@@ -202,17 +199,17 @@ func (s *MediaBrowserTarget) tryRefreshItem(ctx context.Context, path string) (b
 	// Search for the item in the library
 	item, err := s.findItemByPath(ctx, matchedLibrary, path)
 	if err != nil {
-		return false, false, fmt.Errorf("failed to find item: %w", err)
+		return false, fmt.Errorf("failed to find item: %w", err)
 	}
 
 	if item == nil {
 		log.Debug().Str("path", path).Msg("Item not found in library, will use path scan")
-		return false, false, nil
+		return false, nil
 	}
 
 	// Refresh the item
 	if err := s.refreshItem(ctx, item.ID); err != nil {
-		return false, true, fmt.Errorf("failed to refresh item: %w", err)
+		return false, fmt.Errorf("failed to refresh item: %w", err)
 	}
 
 	log.Info().
@@ -221,7 +218,7 @@ func (s *MediaBrowserTarget) tryRefreshItem(ctx context.Context, path string) (b
 		Str("item_id", item.ID).
 		Msgf("%s item refreshed directly", s.config.ServerName)
 
-	return true, true, nil
+	return true, nil
 }
 
 // mediaBrowserItem represents an item in the media server library
