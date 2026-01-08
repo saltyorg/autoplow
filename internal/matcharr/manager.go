@@ -465,6 +465,7 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 		targetItems := make(map[int64][]MediaServerItem)
 		targetFixers := make(map[int64]TargetFixer)
 		targetNames := make(map[int64]string)
+		targetConfigs := make(map[int64]*database.Target)
 
 		for _, spec := range libSpecs {
 			key := fmt.Sprintf("%d:%s", spec.target.ID, spec.library.ID)
@@ -472,12 +473,16 @@ func (m *Manager) RunComparison(ctx context.Context, autoFix bool, triggeredBy s
 				targetItems[spec.target.ID] = append(targetItems[spec.target.ID], tr.items...)
 				targetFixers[spec.target.ID] = tr.fixer
 				targetNames[spec.target.ID] = tr.target.Name
+				targetConfigs[spec.target.ID] = tr.target
 			}
 		}
 
 		// Compare against each target
 		for targetID, items := range targetItems {
-			target := &database.Target{ID: targetID, Name: targetNames[targetID]}
+			target := targetConfigs[targetID]
+			if target == nil {
+				target = &database.Target{ID: targetID, Name: targetNames[targetID]}
+			}
 			fixer := targetFixers[targetID]
 
 			runLog.Info("Comparing %s (%d items) -> %s (%d items)",

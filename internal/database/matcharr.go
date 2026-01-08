@@ -16,15 +16,16 @@ const (
 
 // MatcharrArr represents a Sonarr/Radarr instance configuration
 type MatcharrArr struct {
-	ID           int64                 `json:"id"`
-	Name         string                `json:"name"`
-	Type         ArrType               `json:"type"`
-	URL          string                `json:"url"`
-	APIKey       string                `json:"api_key"`
-	Enabled      bool                  `json:"enabled"`
-	PathMappings []MatcharrPathMapping `json:"path_mappings,omitempty"`
-	CreatedAt    time.Time             `json:"created_at"`
-	UpdatedAt    time.Time             `json:"updated_at"`
+	ID              int64                 `json:"id"`
+	Name            string                `json:"name"`
+	Type            ArrType               `json:"type"`
+	URL             string                `json:"url"`
+	APIKey          string                `json:"api_key"`
+	Enabled         bool                  `json:"enabled"`
+	FileConcurrency int                   `json:"file_concurrency"`
+	PathMappings    []MatcharrPathMapping `json:"path_mappings,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
 }
 
 // MatcharrPathMapping represents a path mapping between Arr and media server
@@ -159,9 +160,9 @@ func (db *DB) CreateMatcharrArr(arr *MatcharrArr) error {
 	}
 
 	result, err := db.Exec(`
-		INSERT INTO matcharr_arrs (name, type, url, api_key, enabled, path_mappings, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, pathMappingsJSON)
+		INSERT INTO matcharr_arrs (name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, arr.FileConcurrency, pathMappingsJSON)
 	if err != nil {
 		return fmt.Errorf("failed to create matcharr arr: %w", err)
 	}
@@ -182,11 +183,11 @@ func (db *DB) GetMatcharrArr(id int64) (*MatcharrArr, error) {
 	var enabled int
 
 	err := db.QueryRow(`
-		SELECT id, name, type, url, api_key, enabled, path_mappings, created_at, updated_at
+		SELECT id, name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at
 		FROM matcharr_arrs WHERE id = ?
 	`, id).Scan(
 		&arr.ID, &arr.Name, &arr.Type, &arr.URL, &arr.APIKey,
-		&enabled, &pathMappingsJSON, &arr.CreatedAt, &arr.UpdatedAt,
+		&enabled, &arr.FileConcurrency, &pathMappingsJSON, &arr.CreatedAt, &arr.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -207,7 +208,7 @@ func (db *DB) GetMatcharrArr(id int64) (*MatcharrArr, error) {
 // ListMatcharrArrs retrieves all Arr instances
 func (db *DB) ListMatcharrArrs() ([]*MatcharrArr, error) {
 	rows, err := db.Query(`
-		SELECT id, name, type, url, api_key, enabled, path_mappings, created_at, updated_at
+		SELECT id, name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at
 		FROM matcharr_arrs ORDER BY name
 	`)
 	if err != nil {
@@ -223,7 +224,7 @@ func (db *DB) ListMatcharrArrs() ([]*MatcharrArr, error) {
 
 		if err := rows.Scan(
 			&arr.ID, &arr.Name, &arr.Type, &arr.URL, &arr.APIKey,
-			&enabled, &pathMappingsJSON, &arr.CreatedAt, &arr.UpdatedAt,
+			&enabled, &arr.FileConcurrency, &pathMappingsJSON, &arr.CreatedAt, &arr.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan matcharr arr: %w", err)
 		}
@@ -243,7 +244,7 @@ func (db *DB) ListMatcharrArrs() ([]*MatcharrArr, error) {
 // ListEnabledMatcharrArrs retrieves all enabled Arr instances
 func (db *DB) ListEnabledMatcharrArrs() ([]*MatcharrArr, error) {
 	rows, err := db.Query(`
-		SELECT id, name, type, url, api_key, enabled, path_mappings, created_at, updated_at
+		SELECT id, name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at
 		FROM matcharr_arrs WHERE enabled = 1 ORDER BY name
 	`)
 	if err != nil {
@@ -259,7 +260,7 @@ func (db *DB) ListEnabledMatcharrArrs() ([]*MatcharrArr, error) {
 
 		if err := rows.Scan(
 			&arr.ID, &arr.Name, &arr.Type, &arr.URL, &arr.APIKey,
-			&enabled, &pathMappingsJSON, &arr.CreatedAt, &arr.UpdatedAt,
+			&enabled, &arr.FileConcurrency, &pathMappingsJSON, &arr.CreatedAt, &arr.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan matcharr arr: %w", err)
 		}
@@ -285,9 +286,9 @@ func (db *DB) UpdateMatcharrArr(arr *MatcharrArr) error {
 
 	_, err = db.Exec(`
 		UPDATE matcharr_arrs
-		SET name = ?, type = ?, url = ?, api_key = ?, enabled = ?, path_mappings = ?, updated_at = CURRENT_TIMESTAMP
+		SET name = ?, type = ?, url = ?, api_key = ?, enabled = ?, file_concurrency = ?, path_mappings = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, pathMappingsJSON, arr.ID)
+	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, arr.FileConcurrency, pathMappingsJSON, arr.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update matcharr arr: %w", err)
 	}

@@ -195,7 +195,7 @@ func (h *Handlers) MatcharrPage(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) MatcharrArrNew(w http.ResponseWriter, r *http.Request) {
 	h.renderPartial(w, "matcharr.html", "arr_form", map[string]any{
 		"IsNew": true,
-		"Arr":   &database.MatcharrArr{Enabled: true},
+		"Arr":   &database.MatcharrArr{Enabled: true, FileConcurrency: matcharrDefaultFileConcurrency},
 	})
 }
 
@@ -208,11 +208,12 @@ func (h *Handlers) MatcharrArrCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	arr := &database.MatcharrArr{
-		Name:    r.FormValue("name"),
-		Type:    database.ArrType(r.FormValue("type")),
-		URL:     strings.TrimSuffix(r.FormValue("url"), "/"),
-		APIKey:  r.FormValue("api_key"),
-		Enabled: r.FormValue("enabled") == "on",
+		Name:            r.FormValue("name"),
+		Type:            database.ArrType(r.FormValue("type")),
+		URL:             strings.TrimSuffix(r.FormValue("url"), "/"),
+		APIKey:          r.FormValue("api_key"),
+		Enabled:         r.FormValue("enabled") == "on",
+		FileConcurrency: parseMatcharrFileConcurrency(r),
 	}
 
 	// Parse path mappings
@@ -284,6 +285,7 @@ func (h *Handlers) MatcharrArrUpdate(w http.ResponseWriter, r *http.Request) {
 	arr.URL = strings.TrimSuffix(r.FormValue("url"), "/")
 	arr.APIKey = r.FormValue("api_key")
 	arr.Enabled = r.FormValue("enabled") == "on"
+	arr.FileConcurrency = parseMatcharrFileConcurrency(r)
 	arr.PathMappings = parseMatcharrPathMappings(r)
 
 	if err := h.db.UpdateMatcharrArr(arr); err != nil {
@@ -1266,6 +1268,7 @@ func (h *Handlers) MatcharrUpdateTargetIgnorePaths(w http.ResponseWriter, r *htt
 
 	target.Config.PathMappings = mappings
 	target.Config.MatcharrExcludePaths = parseMatcharrExcludePaths(r)
+	target.Config.MatcharrFileConcurrency = parseMatcharrFileConcurrency(r)
 
 	if err := h.db.UpdateTarget(target); err != nil {
 		h.jsonError(w, "Failed to update target: "+err.Error(), http.StatusInternalServerError)
@@ -1738,6 +1741,20 @@ func parseMatcharrExcludePaths(r *http.Request) []string {
 		}
 	}
 	return paths
+}
+
+const matcharrDefaultFileConcurrency = 4
+
+func parseMatcharrFileConcurrency(r *http.Request) int {
+	raw := strings.TrimSpace(r.FormValue("matcharr_file_concurrency"))
+	if raw == "" {
+		return matcharrDefaultFileConcurrency
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return matcharrDefaultFileConcurrency
+	}
+	return value
 }
 
 // parseMatcharrPathMappings parses path mapping form fields for matcharr

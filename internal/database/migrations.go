@@ -766,6 +766,14 @@ var migrations = []migration{
 			CREATE INDEX idx_matcharr_file_ignores_target ON matcharr_file_ignores(target_id);
 		`,
 	},
+	{
+		Version: 25,
+		Name:    "matcharr_file_concurrency",
+		SQL: `
+			-- Add file_concurrency to matcharr arrs
+			ALTER TABLE matcharr_arrs ADD COLUMN file_concurrency INTEGER NOT NULL DEFAULT 4;
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

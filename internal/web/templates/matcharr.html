@@ -405,6 +405,16 @@
                                                 {{end}}
                                             </div>
                                         </div>
+                                        <div class="space-y-3">
+                                            <div>
+                                                <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Performance</h5>
+                                                <p class="text-xs text-gray-500 dark:text-gray-400">Limit parallel file comparisons for this media server.</p>
+                                            </div>
+                                            <div>
+                                                <label for="matcharr-file-concurrency-{{.ID}}" class="block text-xs font-medium text-gray-700 dark:text-gray-300">File compare concurrency</label>
+                                                <input type="number" min="1" name="matcharr_file_concurrency" id="matcharr-file-concurrency-{{.ID}}" value="{{if gt .Config.MatcharrFileConcurrency 0}}{{.Config.MatcharrFileConcurrency}}{{else}}4{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                            </div>
+                                        </div>
                                         <div class="flex justify-end gap-2">
                                             <button type="submit" class="btn-primary text-xs px-3 py-2">Save</button>
                                         </div>
@@ -664,6 +674,11 @@ document.body.addEventListener('matcharrGapRecheck', (event) => {
             <div>
                 <label for="api_key" class="block text-sm font-medium text-gray-900 dark:text-white">API Key</label>
                 <input type="text" name="api_key" id="api_key" value="{{.Arr.APIKey}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono">
+            </div>
+            <div>
+                <label for="matcharr-file-concurrency-{{if .IsNew}}new{{else}}{{.Arr.ID}}{{end}}" class="block text-sm font-medium text-gray-900 dark:text-white">File compare concurrency</label>
+                <input type="number" min="1" name="matcharr_file_concurrency" id="matcharr-file-concurrency-{{if .IsNew}}new{{else}}{{.Arr.ID}}{{end}}" value="{{if gt .Arr.FileConcurrency 0}}{{.Arr.FileConcurrency}}{{else}}4{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Parallel file comparisons for this Arr instance.</p>
             </div>
         </div>
 

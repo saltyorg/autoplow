@@ -120,6 +120,9 @@ type TargetConfig struct {
 	// Useful when a library includes folders managed manually that should not be matched
 	MatcharrExcludePaths []string `json:"matcharr_exclude_paths,omitempty"`
 
+	// MatcharrFileConcurrency controls parallel file comparisons for Matcharr on this target.
+	MatcharrFileConcurrency int `json:"matcharr_file_concurrency,omitempty"`
+
 	// SessionMode controls how playback sessions are monitored for this target
 	// "websocket" (default) uses real-time WebSocket connection for instant updates
 	// "polling" uses HTTP polling at the global poll interval
