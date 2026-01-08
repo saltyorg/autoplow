@@ -22,7 +22,7 @@ func (db *DB) GetSetting(key string) (string, error) {
 	return value, nil
 }
 
-// GetSettingJSON retrieves a setting and unmarshals it from JSON
+// GetSettingJSON retrieves a setting and unmarshal it from JSON
 func (db *DB) GetSettingJSON(key string, v any) error {
 	value, err := db.GetSetting(key)
 	if err != nil {

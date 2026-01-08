@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -559,7 +560,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		Msg("Plex Auto Languages: User track preference saved")
 
 	// Apply preference to other episodes
-	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, cache, episode, selectedAudio, selectedSubtitle, config)
+	result := m.applyPreferenceToShow(ctx, target, *user, userToken, cache, episode, selectedAudio, selectedSubtitle, config)
 
 	// Log history
 	if result.EpisodesChanged > 0 {
@@ -707,7 +708,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, skipping apply")
 		userToken = ""
 	}
-	result := m.applyPreferenceToShow(ctx, targetID, target, *user, userToken, cache, episode, selectedAudio, selectedSubtitle, config)
+	result := m.applyPreferenceToShow(ctx, target, *user, userToken, cache, episode, selectedAudio, selectedSubtitle, config)
 
 	// Log history
 	if result.EpisodesChanged > 0 {
@@ -809,6 +810,11 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 		return // No preferences for this show
 	}
 
+	var episodeAddedAt time.Time
+	if episode.AddedAt > 0 {
+		episodeAddedAt = time.Unix(episode.AddedAt, 0)
+	}
+
 	m.mu.RLock()
 	cache := m.caches[targetID]
 	m.mu.RUnlock()
@@ -822,6 +828,17 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 	// Apply each user's preference to this episode
 	part := &episode.Parts[0]
 	for _, pref := range prefs {
+		if config.UpdateStrategy == database.PlexAutoLanguagesUpdateStrategyNext && !episodeAddedAt.IsZero() {
+			if pref.UpdatedAt.After(episodeAddedAt) {
+				log.Trace().
+					Str("show", episode.GrandparentTitle).
+					Str("episode", episode.Title).
+					Str("user", pref.PlexUserID).
+					Msg("Skipping preference for new episode due to update strategy")
+				continue
+			}
+		}
+
 		// Build reference streams from preference
 		refAudio := m.preferenceToAudioStream(pref)
 		refSubtitle := m.preferenceToSubtitleStream(pref)
@@ -955,7 +972,6 @@ func (m *Manager) handleActivityNotification(targetID int64, target PlexTargetIn
 // applyPreferenceToShow applies the user's preference to other episodes in the show
 func (m *Manager) applyPreferenceToShow(
 	ctx context.Context,
-	targetID int64,
 	target PlexTargetInterface,
 	user PlexUser,
 	userToken string,
@@ -983,11 +999,16 @@ func (m *Manager) applyPreferenceToShow(
 
 	switch config.UpdateLevel {
 	case database.PlexAutoLanguagesUpdateLevelSeason:
-		if triggerEpisode.ParentKey != "" {
-			episodes, err = target.GetSeasonEpisodes(ctx, triggerEpisode.ParentKey)
-		} else {
-			episodes, err = target.GetShowEpisodes(ctx, triggerEpisode.GrandparentKey)
+		if triggerEpisode.ParentKey == "" {
+			err = fmt.Errorf("missing parent key for season update level")
+			result.Errors = append(result.Errors, err.Error())
+			log.Warn().
+				Str("show", triggerEpisode.GrandparentTitle).
+				Str("episode", triggerEpisode.Title).
+				Msg("Plex Auto Languages: Missing season key, skipping update")
+			return result
 		}
+		episodes, err = target.GetSeasonEpisodes(ctx, triggerEpisode.ParentKey)
 	default: // show
 		episodes, err = target.GetShowEpisodes(ctx, triggerEpisode.GrandparentKey)
 	}
@@ -996,6 +1017,17 @@ func (m *Manager) applyPreferenceToShow(
 		result.Errors = append(result.Errors, err.Error())
 		return result
 	}
+
+	// Ensure deterministic ordering for update strategy evaluation.
+	sort.SliceStable(episodes, func(i, j int) bool {
+		if episodes[i].ParentIndex != episodes[j].ParentIndex {
+			return episodes[i].ParentIndex < episodes[j].ParentIndex
+		}
+		if episodes[i].Index != episodes[j].Index {
+			return episodes[i].Index < episodes[j].Index
+		}
+		return episodes[i].RatingKey < episodes[j].RatingKey
+	})
 
 	// Filter episodes based on update strategy
 	episodesToUpdate := m.filterEpisodesByStrategy(episodes, triggerEpisode, config.UpdateStrategy)
@@ -1015,8 +1047,6 @@ func (m *Manager) applyPreferenceToShow(
 		if ep.RatingKey == triggerEpisode.RatingKey {
 			continue
 		}
-
-		result.EpisodesProcessed++
 
 		// The episode list from GetShowEpisodes doesn't include stream info
 		// We need to reload each episode to get the full metadata with streams
@@ -1038,7 +1068,15 @@ func (m *Manager) applyPreferenceToShow(
 		}
 
 		part := &fullEpisode.Parts[0]
-		changed := m.applyPreferenceToEpisode(ctx, target, user.ID, userToken, cache, part, refAudio, refSubtitle)
+		result.EpisodesProcessed++
+		changed, invalidToken := m.applyPreferenceToEpisode(ctx, target, user.ID, userToken, cache, part, refAudio, refSubtitle)
+		if invalidToken {
+			result.Errors = append(result.Errors, "invalid user token")
+			log.Warn().
+				Str("user", user.ID).
+				Msg("Plex Auto Languages: Invalid user token, skipping remaining updates")
+			break
+		}
 
 		if changed.AudioChanged || changed.SubtitleChanged {
 			result.EpisodesChanged++
@@ -1084,7 +1122,7 @@ func (m *Manager) applyPreferenceToEpisode(
 	part *MediaPart,
 	refAudio *AudioStream,
 	refSubtitle *SubtitleStream,
-) *TrackChange {
+) (*TrackChange, bool) {
 	change := &TrackChange{
 		PartID: part.ID,
 	}
@@ -1128,21 +1166,23 @@ func (m *Manager) applyPreferenceToEpisode(
 	}
 
 	if !change.AudioChanged && !change.SubtitleChanged {
-		return change // Nothing to do
+		return change, false // Nothing to do
 	}
 
 	// Apply the changes
 	if err := target.SetStreamsAsUser(ctx, part.ID, audioID, subtitleID, userToken); err != nil {
 		if cache != nil && errors.Is(err, ErrInvalidUserToken) {
 			cache.ClearUserToken(userID)
+			log.Warn().Err(err).Int("partID", part.ID).Msg("Invalid user token, aborting updates")
+			return change, true
 		}
 		log.Warn().Err(err).Int("partID", part.ID).Msg("Failed to set streams")
 		change.AudioChanged = false
 		change.SubtitleChanged = false
-		return change
+		return change, false
 	}
 
-	return change
+	return change, false
 }
 
 // filterEpisodesByStrategy filters episodes based on the update strategy

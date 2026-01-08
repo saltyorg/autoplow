@@ -53,7 +53,7 @@ func marshalToPtr(v any) (*string, error) {
 	return &s, nil
 }
 
-// unmarshalFromNullString unmarshals JSON from a sql.NullString into a value
+// unmarshalFromNullString unmarshal JSON from a sql.NullString into a value
 // If the string is not valid or empty, does nothing and returns nil
 func unmarshalFromNullString(data sql.NullString, v any) error {
 	if !data.Valid || data.String == "" {
@@ -75,7 +75,7 @@ func marshalToString(v any) (string, error) {
 	return string(data), nil
 }
 
-// unmarshalFromString unmarshals JSON from a string into a value
+// unmarshalFromString unmarshal JSON from a string into a value
 // Useful when the column is NOT NULL
 func unmarshalFromString(data string, v any) error {
 	if data == "" {
