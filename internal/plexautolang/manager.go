@@ -402,14 +402,22 @@ func (m *Manager) handlePlayingNotification(targetID int64, target PlexTargetInt
 	sessionKey := playing.SessionKey
 	prevState, _ := cache.GetSessionState(sessionKey)
 
-	log.Debug().
+	var cachedUsername string
+	if cached, ok := cache.GetUserClient(playing.ClientIdentifier); ok {
+		cachedUsername = cached.Username
+	}
+
+	logEvent := log.Debug().
 		Str("target", target.Name()).
 		Str("session", sessionKey).
 		Str("state", playing.State).
 		Str("prev_state", prevState).
 		Str("client", playing.ClientIdentifier).
-		Str("key", playing.Key).
-		Msg("Plex Auto Languages: Play session state change")
+		Str("key", playing.Key)
+	if cachedUsername != "" {
+		logEvent = logEvent.Str("user", cachedUsername)
+	}
+	logEvent.Msg("Plex Auto Languages: Play session state change")
 
 	// Update state
 	cache.SetSessionState(sessionKey, playing.State)
@@ -458,9 +466,14 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	// Cache the user for later use
 	cache.SetUserClient(clientIdentifier, user.ID, user.Name)
 
+	userLabel := user.Name
+	if userLabel == "" {
+		userLabel = user.ID
+	}
+
 	userToken, err := m.getUserToken(ctx, cache, target, user.ID)
 	if err != nil {
-		log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, falling back to admin token")
+		log.Debug().Err(err).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get user token, falling back to admin token")
 		userToken = ""
 	}
 
@@ -469,14 +482,14 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	if userToken != "" {
 		episode, err = target.GetEpisodeWithStreamsAsUser(ctx, ratingKey, userToken)
 		if err != nil {
-			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode as user, clearing token cache")
+			log.Debug().Err(err).Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get episode as user, clearing token cache")
 			// Token might be invalid, clear it and try again next time
 			cache.ClearUserToken(user.ID)
 			userToken = ""
 			// Fall back to admin token
 			episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
 			if err != nil {
-				log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode")
+				log.Debug().Err(err).Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get episode")
 				return
 			}
 		}
@@ -484,13 +497,13 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		// No user token available, use admin token
 		episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
 		if err != nil {
-			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Failed to get episode")
+			log.Debug().Err(err).Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get episode")
 			return
 		}
 	}
 
 	if episode.GrandparentKey == "" || len(episode.Parts) == 0 {
-		log.Debug().Str("ratingKey", ratingKey).Msg("Plex Auto Languages: Not a TV episode or no media parts")
+		log.Debug().Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: Not a TV episode or no media parts")
 		return // Not a TV episode or no media parts
 	}
 
@@ -500,7 +513,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	selectedSubtitle := GetSelectedSubtitleStream(part)
 
 	if selectedAudio == nil {
-		log.Debug().Str("ratingKey", ratingKey).Msg("Plex Auto Languages: No audio stream selected")
+		log.Debug().Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: No audio stream selected")
 		return // No audio selected, nothing to do
 	}
 
@@ -529,6 +542,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 			Str("episode", episode.Title).
 			Int("audio_id", audioID).
 			Int("subtitle_id", subtitleID).
+			Str("user", userLabel).
 			Msg("Plex Auto Languages: Caching initial stream selection")
 		return
 	}
@@ -541,12 +555,13 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		Int("new_audio", audioID).
 		Int("prev_subtitle", cachedStreams.SubtitleStreamID).
 		Int("new_subtitle", subtitleID).
+		Str("user", userLabel).
 		Msg("Plex Auto Languages: Stream selection changed")
 
 	// Save the new preference
 	newPref := m.createPreference(targetID, user.ID, user.Name, episode, selectedAudio, selectedSubtitle)
 	if err := m.db.UpsertPlexAutoLanguagesPreference(newPref); err != nil {
-		log.Error().Err(err).Msg("Plex Auto Languages: Failed to save preference")
+		log.Error().Err(err).Str("user", userLabel).Msg("Plex Auto Languages: Failed to save preference")
 		return
 	}
 
@@ -580,7 +595,7 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 			EpisodesUpdated:  result.EpisodesChanged,
 		}
 		if err := m.db.CreatePlexAutoLanguagesHistory(history); err != nil {
-			log.Warn().Err(err).Msg("Plex Auto Languages: Failed to create history entry")
+			log.Warn().Err(err).Str("user", userLabel).Msg("Plex Auto Languages: Failed to create history entry")
 		}
 
 		// Broadcast SSE event
@@ -626,6 +641,11 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		return
 	}
 
+	userLabel := user.Name
+	if userLabel == "" {
+		userLabel = user.ID
+	}
+
 	// If live data is gone (session already stopped), try to reapply the last known stream
 	// selection from cache so we don't lose mid-playback changes.
 	if !liveData {
@@ -642,6 +662,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 					Str("ratingKey", ratingKey).
 					Int("audio_id", cachedStreams.AudioStreamID).
 					Int("subtitle_id", cachedStreams.SubtitleStreamID).
+					Str("user", userLabel).
 					Msg("Applied cached stream selection after session stop")
 			}
 		}
@@ -659,7 +680,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	// Check if preferences changed
 	pref, err := m.db.GetPlexAutoLanguagesPreference(targetID, user.ID, episode.GrandparentKey)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get preference")
+		log.Error().Err(err).Str("user", userLabel).Msg("Failed to get preference")
 		return
 	}
 
@@ -685,7 +706,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	// User changed tracks - save new preference
 	newPref := m.createPreference(targetID, user.ID, user.Name, episode, selectedAudio, selectedSubtitle)
 	if err := m.db.UpsertPlexAutoLanguagesPreference(newPref); err != nil {
-		log.Error().Err(err).Msg("Failed to save preference")
+		log.Error().Err(err).Str("user", userLabel).Msg("Failed to save preference")
 		return
 	}
 
@@ -705,7 +726,7 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 
 	userToken, err := m.getUserToken(ctx, cache, target, user.ID)
 	if err != nil {
-		log.Debug().Err(err).Str("userID", user.ID).Msg("Plex Auto Languages: Failed to get user token, skipping apply")
+		log.Debug().Err(err).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get user token, skipping apply")
 		userToken = ""
 	}
 	result := m.applyPreferenceToShow(ctx, target, *user, userToken, cache, episode, selectedAudio, selectedSubtitle, config)
@@ -828,12 +849,17 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 	// Apply each user's preference to this episode
 	part := &episode.Parts[0]
 	for _, pref := range prefs {
+		userLabel := pref.PlexUsername
+		if userLabel == "" {
+			userLabel = pref.PlexUserID
+		}
+
 		if config.UpdateStrategy == database.PlexAutoLanguagesUpdateStrategyNext && !episodeAddedAt.IsZero() {
 			if pref.UpdatedAt.After(episodeAddedAt) {
 				log.Trace().
 					Str("show", episode.GrandparentTitle).
 					Str("episode", episode.Title).
-					Str("user", pref.PlexUserID).
+					Str("user", userLabel).
 					Msg("Skipping preference for new episode due to update strategy")
 				continue
 			}
@@ -877,7 +903,7 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 		if err != nil {
 			log.Warn().Err(err).
 				Str("episode", episode.Title).
-				Str("user", pref.PlexUserID).
+				Str("user", userLabel).
 				Msg("Failed to get user token for new episode preference")
 			continue
 		}
@@ -889,7 +915,7 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 			}
 			log.Warn().Err(err).
 				Str("episode", episode.Title).
-				Str("user", pref.PlexUserID).
+				Str("user", userLabel).
 				Msg("Failed to apply preference to new episode")
 			continue
 		}
@@ -898,7 +924,7 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 			Str("target", target.Name()).
 			Str("show", episode.GrandparentTitle).
 			Str("episode", episode.Title).
-			Str("user", pref.PlexUserID).
+			Str("user", userLabel).
 			Msg("Plex Auto Languages: Applied preferences to new episode")
 
 		// Log history
@@ -917,7 +943,7 @@ func (m *Manager) processNewEpisode(targetID int64, target PlexTargetInterface, 
 			EpisodesUpdated:  1,
 		}
 		if err := m.db.CreatePlexAutoLanguagesHistory(history); err != nil {
-			log.Warn().Err(err).Msg("Failed to create history entry")
+			log.Warn().Err(err).Str("user", userLabel).Msg("Failed to create history entry")
 		}
 	}
 }
@@ -984,10 +1010,14 @@ func (m *Manager) applyPreferenceToShow(
 	result := &ChangeResult{}
 
 	if userToken == "" {
+		userLabel := user.Name
+		if userLabel == "" {
+			userLabel = user.ID
+		}
 		result.Errors = append(result.Errors, "missing user token")
 		log.Debug().
 			Str("target", target.Name()).
-			Str("user", user.ID).
+			Str("user", userLabel).
 			Msg("Plex Auto Languages: Missing user token for stream updates")
 		return result
 	}
@@ -1002,9 +1032,14 @@ func (m *Manager) applyPreferenceToShow(
 		if triggerEpisode.ParentKey == "" {
 			err = fmt.Errorf("missing parent key for season update level")
 			result.Errors = append(result.Errors, err.Error())
+			userLabel := user.Name
+			if userLabel == "" {
+				userLabel = user.ID
+			}
 			log.Warn().
 				Str("show", triggerEpisode.GrandparentTitle).
 				Str("episode", triggerEpisode.Title).
+				Str("user", userLabel).
 				Msg("Plex Auto Languages: Missing season key, skipping update")
 			return result
 		}
@@ -1032,11 +1067,16 @@ func (m *Manager) applyPreferenceToShow(
 	// Filter episodes based on update strategy
 	episodesToUpdate := m.filterEpisodesByStrategy(episodes, triggerEpisode, config.UpdateStrategy)
 
+	userLabel := user.Name
+	if userLabel == "" {
+		userLabel = user.ID
+	}
 	log.Debug().
 		Str("show", triggerEpisode.GrandparentTitle).
 		Int("total_episodes", len(episodes)).
 		Int("episodes_to_update", len(episodesToUpdate)).
 		Str("strategy", string(config.UpdateStrategy)).
+		Str("user", userLabel).
 		Msg("Plex Auto Languages: Applying preference to episodes")
 
 	// Apply preference to each episode
@@ -1055,6 +1095,7 @@ func (m *Manager) applyPreferenceToShow(
 			log.Warn().Err(err).
 				Str("episode", ep.Title).
 				Str("ratingKey", ep.RatingKey).
+				Str("user", userLabel).
 				Msg("Plex Auto Languages: Failed to reload episode, skipping")
 			result.Errors = append(result.Errors, err.Error())
 			continue
@@ -1063,6 +1104,7 @@ func (m *Manager) applyPreferenceToShow(
 		if len(fullEpisode.Parts) == 0 {
 			log.Debug().
 				Str("episode", ep.Title).
+				Str("user", userLabel).
 				Msg("Plex Auto Languages: Episode has no media parts, skipping")
 			continue
 		}
@@ -1073,7 +1115,7 @@ func (m *Manager) applyPreferenceToShow(
 		if invalidToken {
 			result.Errors = append(result.Errors, "invalid user token")
 			log.Warn().
-				Str("user", user.ID).
+				Str("user", userLabel).
 				Msg("Plex Auto Languages: Invalid user token, skipping remaining updates")
 			break
 		}
@@ -1090,12 +1132,14 @@ func (m *Manager) applyPreferenceToShow(
 
 			log.Debug().
 				Str("episode", fullEpisode.Title).
+				Str("user", userLabel).
 				Bool("audio_changed", changed.AudioChanged).
 				Bool("subtitle_changed", changed.SubtitleChanged).
 				Msg("Plex Auto Languages: Updated episode streams")
 		} else {
 			log.Debug().
 				Str("episode", fullEpisode.Title).
+				Str("user", userLabel).
 				Msg("Plex Auto Languages: Episode already has correct streams, skipping")
 		}
 	}
@@ -1106,6 +1150,7 @@ func (m *Manager) applyPreferenceToShow(
 			Int("processed", result.EpisodesProcessed).
 			Int("changed", result.EpisodesChanged).
 			Int("skipped", result.EpisodesProcessed-result.EpisodesChanged).
+			Str("user", userLabel).
 			Msg("Plex Auto Languages: Finished applying preferences")
 	}
 
@@ -1173,10 +1218,10 @@ func (m *Manager) applyPreferenceToEpisode(
 	if err := target.SetStreamsAsUser(ctx, part.ID, audioID, subtitleID, userToken); err != nil {
 		if cache != nil && errors.Is(err, ErrInvalidUserToken) {
 			cache.ClearUserToken(userID)
-			log.Warn().Err(err).Int("partID", part.ID).Msg("Invalid user token, aborting updates")
+			log.Warn().Err(err).Int("partID", part.ID).Str("user", userID).Msg("Invalid user token, aborting updates")
 			return change, true
 		}
-		log.Warn().Err(err).Int("partID", part.ID).Msg("Failed to set streams")
+		log.Warn().Err(err).Int("partID", part.ID).Str("user", userID).Msg("Failed to set streams")
 		change.AudioChanged = false
 		change.SubtitleChanged = false
 		return change, false
