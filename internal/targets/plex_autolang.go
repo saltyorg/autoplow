@@ -174,6 +174,7 @@ func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIde
 				} `json:"Media"`
 				Player struct {
 					MachineIdentifier string `json:"machineIdentifier"`
+					ClientIdentifier  string `json:"clientIdentifier"`
 				} `json:"Player"`
 			} `json:"Metadata"`
 		} `json:"MediaContainer"`
@@ -187,7 +188,7 @@ func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIde
 		if meta.RatingKey != ratingKey {
 			continue
 		}
-		if meta.Player.MachineIdentifier != clientIdentifier {
+		if meta.Player.MachineIdentifier != clientIdentifier && meta.Player.ClientIdentifier != clientIdentifier {
 			continue
 		}
 
@@ -677,12 +678,20 @@ func (s *PlexTarget) GetSessionUserMapping(ctx context.Context) (map[string]plex
 		MediaContainer struct {
 			Metadata []struct {
 				User struct {
-					ID    string `json:"id"`
-					Title string `json:"title"`
-					Thumb string `json:"thumb"`
+					ID    json.RawMessage `json:"id"`
+					Title string          `json:"title"`
+					Thumb string          `json:"thumb"`
 				} `json:"User"`
+				Account struct {
+					ID    json.RawMessage `json:"id"`
+					Name  string          `json:"name"`
+					Title string          `json:"title"`
+					Thumb string          `json:"thumb"`
+				} `json:"Account"`
 				Player struct {
-					MachineIdentifier string `json:"machineIdentifier"`
+					MachineIdentifier string          `json:"machineIdentifier"`
+					ClientIdentifier  string          `json:"clientIdentifier"`
+					UserID            json.RawMessage `json:"userID"`
 				} `json:"Player"`
 			} `json:"Metadata"`
 		} `json:"MediaContainer"`
@@ -693,14 +702,74 @@ func (s *PlexTarget) GetSessionUserMapping(ctx context.Context) (map[string]plex
 	}
 
 	mapping := make(map[string]plexautolang.PlexUser)
+	missingNames := make(map[string]struct{})
 	for _, session := range sessionsResp.MediaContainer.Metadata {
-		if session.Player.MachineIdentifier != "" {
-			mapping[session.Player.MachineIdentifier] = plexautolang.PlexUser{
-				ID:       session.User.ID,
-				Name:     session.User.Title,
-				Username: session.User.Title,
-				Thumb:    session.User.Thumb,
+		userID := parsePlexID(session.User.ID)
+		userName := session.User.Title
+		userThumb := session.User.Thumb
+
+		if userID == "" {
+			userID = parsePlexID(session.Account.ID)
+			if userName == "" {
+				if session.Account.Name != "" {
+					userName = session.Account.Name
+				} else if session.Account.Title != "" {
+					userName = session.Account.Title
+				}
 			}
+			if userThumb == "" {
+				userThumb = session.Account.Thumb
+			}
+		}
+
+		if userID == "" {
+			userID = parsePlexID(session.Player.UserID)
+		}
+
+		if userID == "" {
+			continue
+		}
+		if userName == "" {
+			missingNames[userID] = struct{}{}
+		}
+
+		user := plexautolang.PlexUser{
+			ID:       userID,
+			Name:     userName,
+			Username: userName,
+			Thumb:    userThumb,
+		}
+
+		if session.Player.MachineIdentifier != "" {
+			mapping[session.Player.MachineIdentifier] = user
+		}
+		if session.Player.ClientIdentifier != "" {
+			mapping[session.Player.ClientIdentifier] = user
+		}
+	}
+
+	if len(missingNames) > 0 {
+		accounts, err := s.GetSystemAccounts(ctx)
+		if err == nil {
+			accountByID := make(map[string]plexautolang.PlexUser, len(accounts))
+			for _, account := range accounts {
+				accountByID[account.ID] = account
+			}
+			for key, user := range mapping {
+				if user.Name != "" {
+					continue
+				}
+				if account, ok := accountByID[user.ID]; ok {
+					user.Name = account.Name
+					user.Username = account.Username
+					if user.Thumb == "" {
+						user.Thumb = account.Thumb
+					}
+					mapping[key] = user
+				}
+			}
+		} else {
+			log.Debug().Err(err).Msg("Failed to fetch accounts for session user mapping")
 		}
 	}
 
@@ -710,6 +779,21 @@ func (s *PlexTarget) GetSessionUserMapping(ctx context.Context) (map[string]plex
 // DBTarget returns the underlying database target for external access
 func (s *PlexTarget) DBTarget() *database.Target {
 	return s.dbTarget
+}
+
+func parsePlexID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var idString string
+	if err := json.Unmarshal(raw, &idString); err == nil {
+		return idString
+	}
+	var idInt int64
+	if err := json.Unmarshal(raw, &idInt); err == nil {
+		return strconv.FormatInt(idInt, 10)
+	}
+	return ""
 }
 
 // parseStringID safely converts a string numeric ID to int, returning 0 on error
