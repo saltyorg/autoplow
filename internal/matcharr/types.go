@@ -21,6 +21,8 @@ type ArrMedia struct {
 	IMDBID    string `json:"imdb_id,omitempty"` // Both
 	TitleSlug string `json:"title_slug,omitempty"`
 	HasFile   bool   `json:"has_file"`
+	// MovieFilePath is populated from Radarr /movie responses when available.
+	MovieFilePath string `json:"movie_file_path,omitempty"`
 }
 
 // ArrEpisodeFile represents a Sonarr episode with a file path.

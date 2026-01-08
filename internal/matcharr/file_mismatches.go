@@ -196,13 +196,17 @@ func (m *Manager) compareFileMismatches(
 		case database.ArrTypeRadarr:
 			arrFiles, ok := movieCache[match.ArrMedia.ID]
 			if !ok {
-				files, err := arrClient.GetMovieFiles(ctx, match.ArrMedia.ID)
-				if err != nil {
-					runLog.Warn("Failed to fetch movie files for %s: %v", match.ArrMedia.Title, err)
-					continue
+				if match.ArrMedia.MovieFilePath != "" {
+					arrFiles = []ArrMovieFile{{FilePath: match.ArrMedia.MovieFilePath}}
+				} else {
+					files, err := arrClient.GetMovieFiles(ctx, match.ArrMedia.ID)
+					if err != nil {
+						runLog.Warn("Failed to fetch movie files for %s: %v", match.ArrMedia.Title, err)
+						continue
+					}
+					arrFiles = files
 				}
-				movieCache[match.ArrMedia.ID] = files
-				arrFiles = files
+				movieCache[match.ArrMedia.ID] = arrFiles
 			}
 
 			targetFiles, ok := targetMovieCache[match.ServerItem.ItemID]

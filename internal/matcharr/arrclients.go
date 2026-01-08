@@ -165,13 +165,14 @@ type sonarrSeriesStatistics struct {
 
 // radarrMovie represents a movie from Radarr API
 type radarrMovie struct {
-	ID        int    `json:"id"`
-	Title     string `json:"title"`
-	Path      string `json:"path"`
-	TmdbID    int    `json:"tmdbId"`
-	ImdbID    string `json:"imdbId"`
-	TitleSlug string `json:"titleSlug"`
-	HasFile   bool   `json:"hasFile"`
+	ID        int              `json:"id"`
+	Title     string           `json:"title"`
+	Path      string           `json:"path"`
+	TmdbID    int              `json:"tmdbId"`
+	ImdbID    string           `json:"imdbId"`
+	TitleSlug string           `json:"titleSlug"`
+	HasFile   bool             `json:"hasFile"`
+	MovieFile *radarrMovieFile `json:"movieFile"`
 }
 
 type sonarrEpisode struct {
@@ -227,14 +228,20 @@ func (c *ArrClient) parseRadarrResponse(body []byte) ([]ArrMedia, error) {
 
 	media := make([]ArrMedia, 0, len(movies))
 	for _, m := range movies {
+		movieFilePath := ""
+		if m.MovieFile != nil {
+			movieFilePath = strings.TrimSpace(m.MovieFile.Path)
+		}
+
 		media = append(media, ArrMedia{
-			ID:        int64(m.ID),
-			Title:     m.Title,
-			Path:      m.Path,
-			TMDBID:    m.TmdbID,
-			IMDBID:    m.ImdbID,
-			TitleSlug: m.TitleSlug,
-			HasFile:   m.HasFile,
+			ID:            int64(m.ID),
+			Title:         m.Title,
+			Path:          m.Path,
+			TMDBID:        m.TmdbID,
+			IMDBID:        m.ImdbID,
+			TitleSlug:     m.TitleSlug,
+			HasFile:       m.HasFile,
+			MovieFilePath: movieFilePath,
 		})
 	}
 
