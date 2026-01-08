@@ -491,6 +491,22 @@
         });
     }
 
+    function confirmFormSubmit(event, options) {
+        if (event) {
+            event.preventDefault();
+        }
+        const form = event?.currentTarget || event?.target;
+        if (!form) {
+            return false;
+        }
+        showConfirmModal(options || {}).then(confirmed => {
+            if (confirmed) {
+                form.submit();
+            }
+        });
+        return false;
+    }
+
     // Close modal on escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') hideAlertModal();
@@ -718,7 +734,7 @@
 
     acceptBtn.addEventListener('click', function() {
         if (pendingConfirm) {
-            pendingConfirm();
+            pendingConfirm(true);
         }
         hideConfirm();
     });

@@ -1257,7 +1257,7 @@ function getOrCreateBackendGroup(backend) {
 function addOption(backend, optName, optDefault, optHelp, optType, choicesJson) {
     // Check if option already exists
     if (document.querySelector('[name="opt_' + optName + '"]')) {
-        alert('Option "' + optName + '" is already configured');
+        showAlertModal('warning', 'Option Already Configured', 'Option "' + escapeHtml(optName) + '" is already configured.');
         return;
     }
 

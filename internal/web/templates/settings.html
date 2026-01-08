@@ -122,7 +122,7 @@
                 <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Trigger Key</h3>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Regenerate the per-install encryption key for trigger basic-auth passwords and re-encrypt stored secrets.</p>
             </div>
-            <form method="POST" action="/settings/regenerate-trigger-key" onsubmit="return confirm('Regenerate the trigger key and re-encrypt stored trigger passwords? This will invalidate backups without the new key.');">
+            <form method="POST" action="/settings/regenerate-trigger-key" onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Regenerate Trigger Key', body: 'Regenerate the trigger key and re-encrypt stored trigger passwords? This will invalidate backups without the new key.', confirmText: 'Regenerate', cancelText: 'Cancel' });">
                 <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-offset-gray-800">
                     Regenerate Key
                 </button>
@@ -141,7 +141,7 @@
                     <p class="text-sm font-medium text-gray-900 dark:text-white">Clear Upload History</p>
                     <p class="text-xs text-gray-500 dark:text-gray-400">Delete all upload history records. This cannot be undone.</p>
                 </div>
-                <form method="POST" action="/settings/clear-upload-history" onsubmit="return confirm('Are you sure you want to delete all upload history? This cannot be undone.');">
+                <form method="POST" action="/settings/clear-upload-history" onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Clear Upload History', body: 'Are you sure you want to delete all upload history? This cannot be undone.', confirmText: 'Delete', cancelText: 'Cancel' });">
                     <button type="submit" class="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-600 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50">
                         Clear History
                     </button>

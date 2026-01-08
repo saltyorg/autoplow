@@ -197,7 +197,7 @@
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">History of automatic track changes.</p>
                 </div>
                 {{if .Content.History}}
-                <form method="POST" action="/plex-auto-languages/history/clear" onsubmit="return confirm('Are you sure you want to clear all history?');">
+                <form method="POST" action="/plex-auto-languages/history/clear" onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Clear History', body: 'Are you sure you want to clear all history?', confirmText: 'Clear', cancelText: 'Cancel' });">
                     <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
                         Clear History
                     </button>
