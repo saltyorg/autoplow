@@ -274,7 +274,7 @@ func (db *DB) ListPlexAutoLanguagesPreferences(targetID int64) ([]*PlexAutoLangu
 		FROM plex_auto_languages_preferences p
 		JOIN targets t ON p.target_id = t.id
 		WHERE p.target_id = ?
-		ORDER BY p.show_title, p.plex_user_id
+		ORDER BY p.updated_at DESC, p.show_title, p.plex_user_id
 	`, targetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list plex auto languages preferences: %w", err)
@@ -296,7 +296,7 @@ func (db *DB) ListPlexAutoLanguagesPreferencesForShow(targetID int64, showRating
 		FROM plex_auto_languages_preferences p
 		JOIN targets t ON p.target_id = t.id
 		WHERE p.target_id = ? AND p.show_rating_key = ?
-		ORDER BY p.plex_user_id
+		ORDER BY p.updated_at DESC, p.plex_user_id
 	`, targetID, showRatingKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list plex auto languages preferences for show: %w", err)
@@ -505,7 +505,7 @@ func (db *DB) ListPlexAutoLanguagesPreferencesFiltered(targetID int64, userFilte
 			p.created_at, p.updated_at
 		FROM plex_auto_languages_preferences p
 		JOIN targets t ON p.target_id = t.id ` + whereClause + `
-		ORDER BY p.show_title, p.plex_user_id LIMIT ? OFFSET ?`
+		ORDER BY p.updated_at DESC, p.show_title, p.plex_user_id LIMIT ? OFFSET ?`
 	argsWithLimit := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.Query(query, argsWithLimit...)
