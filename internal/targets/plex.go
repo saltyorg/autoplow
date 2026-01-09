@@ -83,9 +83,6 @@ type PlexTarget struct {
 	// Notification callbacks for external observers (e.g., Plex Auto Languages)
 	notificationCallbacks []PlexNotificationCallback
 	callbacksMu           sync.RWMutex
-
-	adminUserID   string
-	adminUserIDMu sync.RWMutex
 }
 
 // NewPlexTarget creates a new Plex target
