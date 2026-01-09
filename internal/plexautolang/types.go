@@ -7,6 +7,9 @@ import "errors"
 // ErrInvalidUserToken indicates a Plex user token is invalid or unauthorized.
 var ErrInvalidUserToken = errors.New("plex user token invalid")
 
+// ErrNoActiveSessions indicates Plex returned no active sessions.
+var ErrNoActiveSessions = errors.New("plex has no active sessions")
+
 // AudioStream represents a Plex audio stream
 type AudioStream struct {
 	ID                   int    `json:"id"`

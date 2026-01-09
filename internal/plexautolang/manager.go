@@ -622,7 +622,17 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	episode, err := target.GetSessionEpisodeWithStreams(ctx, clientIdentifier, ratingKey)
 	if err != nil {
 		liveData = false
-		log.Trace().Err(err).Str("ratingKey", ratingKey).Msg("Failed to get live session episode, falling back to library metadata")
+		if errors.Is(err, ErrNoActiveSessions) {
+			log.Trace().
+				Str("ratingKey", ratingKey).
+				Str("clientIdentifier", clientIdentifier).
+				Msg("No active sessions found, falling back to library metadata")
+		} else {
+			log.Trace().
+				Err(err).
+				Str("ratingKey", ratingKey).
+				Msg("Failed to get live session episode, falling back to library metadata")
+		}
 		episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
 		if err != nil {
 			log.Debug().Err(err).Str("ratingKey", ratingKey).Msg("Failed to get episode")

@@ -136,6 +136,7 @@ func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIde
 	// Parse sessions to locate the matching client/ratingKey
 	var sessionsResp struct {
 		MediaContainer struct {
+			Size     int `json:"size"`
 			Metadata []struct {
 				RatingKey        string `json:"ratingKey"`
 				Key              string `json:"key"`
@@ -182,6 +183,10 @@ func (s *PlexTarget) GetSessionEpisodeWithStreams(ctx context.Context, clientIde
 
 	if err := json.Unmarshal(body, &sessionsResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if sessionsResp.MediaContainer.Size == 0 && len(sessionsResp.MediaContainer.Metadata) == 0 {
+		return nil, plexautolang.ErrNoActiveSessions
 	}
 
 	for _, meta := range sessionsResp.MediaContainer.Metadata {
