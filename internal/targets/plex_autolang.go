@@ -844,10 +844,74 @@ func (s *PlexTarget) GetMachineIdentifier(ctx context.Context) (string, error) {
 	return identityResp.MediaContainer.MachineIdentifier, nil
 }
 
+func (s *PlexTarget) getCachedAdminUserID() (string, bool) {
+	s.adminUserIDMu.RLock()
+	defer s.adminUserIDMu.RUnlock()
+	if s.adminUserID == "" {
+		return "", false
+	}
+	return s.adminUserID, true
+}
+
+func (s *PlexTarget) setAdminUserID(id string) {
+	s.adminUserIDMu.Lock()
+	s.adminUserID = id
+	s.adminUserIDMu.Unlock()
+}
+
+func (s *PlexTarget) getAdminUserID(ctx context.Context) (string, error) {
+	if cachedID, ok := s.getCachedAdminUserID(); ok {
+		return cachedID, nil
+	}
+
+	accountURL := "https://plex.tv/users/account"
+	req, err := http.NewRequestWithContext(ctx, "GET", accountURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("plex.tv returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var accountResp struct {
+		XMLName xml.Name `xml:"user"`
+		ID      int      `xml:"id,attr"`
+	}
+	if err := xml.Unmarshal(body, &accountResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+	if accountResp.ID == 0 {
+		return "", fmt.Errorf("no admin user ID found in response")
+	}
+
+	adminID := strconv.Itoa(accountResp.ID)
+	s.setAdminUserID(adminID)
+	return adminID, nil
+}
+
 // GetUserTokenWithMachineID retrieves the access token for a specific user from plex.tv
 // This token allows making API requests as that user to see their stream preferences
 // The machineID should be cached by the caller to avoid repeated /identity calls
+// If the user is the server owner, this returns the configured admin token.
 func (s *PlexTarget) GetUserTokenWithMachineID(ctx context.Context, userID string, machineID string) (string, error) {
+	if cachedID, ok := s.getCachedAdminUserID(); ok && cachedID == userID {
+		return s.dbTarget.Token, nil
+	}
+
 	// Query plex.tv for shared server tokens
 	sharedServersURL := fmt.Sprintf("https://plex.tv/api/servers/%s/shared_servers", machineID)
 
@@ -898,6 +962,11 @@ func (s *PlexTarget) GetUserTokenWithMachineID(ctx context.Context, userID strin
 		if shared.UserID == userIDInt {
 			return shared.AccessToken, nil
 		}
+	}
+
+	adminID, err := s.getAdminUserID(ctx)
+	if err == nil && adminID == userID {
+		return s.dbTarget.Token, nil
 	}
 
 	return "", fmt.Errorf("no token found for user %s", userID)
