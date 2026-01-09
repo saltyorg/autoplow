@@ -775,6 +775,7 @@ func (s *Server) setupRoutes() {
 			r.Post("/gaps/{id}/recheck", h.MatcharrGapRecheck)
 			r.Post("/gaps/arr/scan-all", h.MatcharrArrGapsScanAll)
 			r.Post("/file-mismatches/{id}/scan", h.MatcharrFileMismatchScan)
+			r.Post("/file-mismatches/{id}/scan-season", h.MatcharrFileMismatchSeasonScan)
 			r.Post("/file-mismatches/{id}/recheck", h.MatcharrFileMismatchRecheck)
 			r.Post("/file-mismatches/{id}/ignore", h.MatcharrFileMismatchIgnore)
 			r.Post("/file-ignores/{id}/remove", h.MatcharrFileIgnoreRemove)

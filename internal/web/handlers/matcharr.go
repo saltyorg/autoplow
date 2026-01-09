@@ -44,6 +44,14 @@ type fileMismatchDetailRow struct {
 	TargetFilePaths string
 }
 
+type fileMismatchSeasonGroup struct {
+	SeasonNumber   int
+	Label          string
+	ScanMismatchID int64
+	MismatchCount  int
+	Details        []fileMismatchDetailRow
+}
+
 type fileMismatchRow struct {
 	ID               int64
 	ArrID            int64
@@ -56,6 +64,7 @@ type fileMismatchRow struct {
 	TargetItemPath   string
 	MismatchCount    int
 	Details          []fileMismatchDetailRow
+	SeasonGroups     []fileMismatchSeasonGroup
 }
 
 // MatcharrPage renders the main matcharr page
@@ -607,6 +616,56 @@ func (h *Handlers) MatcharrFileMismatchScan(w http.ResponseWriter, r *http.Reque
 		if dir := filepath.Dir(scanPath); dir != "." && dir != "/" && dir != "" && scanPath != dir {
 			scanPath = dir
 		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), config.GetTimeouts().ScanOperation)
+	defer cancel()
+
+	result, _ := h.targetsMgr.ScanTarget(ctx, mismatch.TargetID, scanPath, "")
+	if !result.Success {
+		h.jsonError(w, "Scan failed: "+result.Error, http.StatusInternalServerError)
+		return
+	}
+
+	message := "Scan triggered on " + result.Message
+	if result.Error != "" {
+		message = "Scan skipped on " + result.Message + ": " + result.Error
+	}
+	h.jsonSuccess(w, message)
+}
+
+// MatcharrFileMismatchSeasonScan triggers a media server scan for the season folder containing a mismatch.
+func (h *Handlers) MatcharrFileMismatchSeasonScan(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.jsonError(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if h.targetsMgr == nil {
+		h.jsonError(w, "Targets manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	if !h.isScanningEnabled() {
+		h.jsonError(w, "Scanning is disabled", http.StatusBadRequest)
+		return
+	}
+
+	mismatch, err := h.db.GetMatcharrFileMismatch(id)
+	if err != nil {
+		h.jsonError(w, "Failed to load file mismatch", http.StatusInternalServerError)
+		return
+	}
+	if mismatch == nil {
+		h.jsonError(w, "File mismatch not found", http.StatusNotFound)
+		return
+	}
+
+	scanPath := matcharrFileMismatchSeasonScanPath(mismatch)
+	if scanPath == "" {
+		h.jsonError(w, "No scan path available for this season", http.StatusBadRequest)
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), config.GetTimeouts().ScanOperation)
@@ -1340,6 +1399,30 @@ func (h *Handlers) isScanningEnabled() bool {
 	return true
 }
 
+func matcharrFileMismatchSeasonScanPath(mismatch *database.MatcharrFileMismatch) string {
+	scanPath := firstScanPathFromList(mismatch.TargetFilePaths)
+	if scanPath == "" {
+		scanPath = strings.TrimSpace(mismatch.ArrFilePath)
+	}
+	if scanPath == "" {
+		return ""
+	}
+	if dir := filepath.Dir(scanPath); dir != "." && dir != "/" && dir != "" && scanPath != dir {
+		scanPath = dir
+	}
+	return scanPath
+}
+
+func firstScanPathFromList(rawPaths string) string {
+	for _, candidate := range strings.Split(rawPaths, ",") {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func matcharrGapScanPath(gap *database.MatcharrGap) string {
 	if gap == nil {
 		return ""
@@ -1581,10 +1664,62 @@ func buildFileMismatchRows(mismatches []*database.MatcharrFileMismatch) []fileMi
 			}
 			return strings.ToLower(row.Details[i].ArrFileName) < strings.ToLower(row.Details[j].ArrFileName)
 		})
+		row.SeasonGroups = buildFileMismatchSeasonGroups(row.Details)
 		rows = append(rows, *row)
 	}
 
 	return rows
+}
+
+func buildFileMismatchSeasonGroups(details []fileMismatchDetailRow) []fileMismatchSeasonGroup {
+	groups := make(map[int]*fileMismatchSeasonGroup)
+	order := make([]int, 0)
+
+	for _, detail := range details {
+		group, exists := groups[detail.SeasonNumber]
+		if !exists {
+			group = &fileMismatchSeasonGroup{SeasonNumber: detail.SeasonNumber}
+			groups[detail.SeasonNumber] = group
+			order = append(order, detail.SeasonNumber)
+		}
+		group.Details = append(group.Details, detail)
+		group.MismatchCount++
+		if group.ScanMismatchID == 0 && (detail.ArrFilePath != "" || detail.TargetFilePaths != "") {
+			group.ScanMismatchID = detail.ID
+		}
+	}
+
+	sort.Ints(order)
+
+	seasonGroups := make([]fileMismatchSeasonGroup, 0, len(order))
+	for _, season := range order {
+		group := groups[season]
+		sort.Slice(group.Details, func(i, j int) bool {
+			if group.Details[i].EpisodeNumber != group.Details[j].EpisodeNumber {
+				return group.Details[i].EpisodeNumber < group.Details[j].EpisodeNumber
+			}
+			return strings.ToLower(group.Details[i].ArrFileName) < strings.ToLower(group.Details[j].ArrFileName)
+		})
+		group.Label = fileMismatchSeasonLabel(group.SeasonNumber, group.Details)
+		if group.ScanMismatchID == 0 && len(group.Details) > 0 {
+			group.ScanMismatchID = group.Details[0].ID
+		}
+		seasonGroups = append(seasonGroups, *group)
+	}
+
+	return seasonGroups
+}
+
+func fileMismatchSeasonLabel(season int, details []fileMismatchDetailRow) string {
+	if season == 0 {
+		for _, detail := range details {
+			if detail.EpisodeNumber != 0 {
+				return fmt.Sprintf("Season %02d", season)
+			}
+		}
+		return "Movie"
+	}
+	return fmt.Sprintf("Season %02d", season)
 }
 
 func buildFileMismatchArrOptions(mismatches []*database.MatcharrFileMismatch) []gapOption {
