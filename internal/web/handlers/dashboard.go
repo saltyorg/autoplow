@@ -36,7 +36,6 @@ type ThrottleStatusData struct {
 type DashboardStats struct {
 	// Scan stats
 	PendingScans   int
-	ActiveScans    int
 	CompletedScans int
 	FailedScans    int
 	// Upload stats
@@ -100,7 +99,6 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Scan stats - all time totals
 	data.Stats.PendingScans, _ = h.db.CountScansFiltered(string(database.ScanStatusPending))
-	data.Stats.ActiveScans, _ = h.db.CountScansFiltered(string(database.ScanStatusScanning))
 	data.Stats.CompletedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusCompleted))
 	data.Stats.FailedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusFailed))
 
@@ -222,7 +220,6 @@ func (h *Handlers) DashboardStatsPartial(w http.ResponseWriter, r *http.Request)
 
 	// Scan stats - all time totals
 	stats.PendingScans, _ = h.db.CountScansFiltered(string(database.ScanStatusPending))
-	stats.ActiveScans, _ = h.db.CountScansFiltered(string(database.ScanStatusScanning))
 	stats.CompletedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusCompleted))
 	stats.FailedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusFailed))
 

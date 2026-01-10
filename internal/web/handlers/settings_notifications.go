@@ -75,6 +75,45 @@ func (h *Handlers) SettingsNotificationsPage(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// SettingsNotificationsStatsPartial returns notification stats for HTMX refresh
+func (h *Handlers) SettingsNotificationsStatsPartial(w http.ResponseWriter, r *http.Request) {
+	providers, err := h.db.ListNotificationProviders()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list notification providers")
+		providers = []*database.NotificationProvider{}
+	}
+
+	logs, err := h.db.ListNotificationLogs(50)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list notification logs")
+		logs = []*database.NotificationLog{}
+	}
+
+	sent, failed, _ := h.db.GetNotificationStats()
+
+	h.renderPartial(w, "settings.html", "notification_stats", map[string]any{
+		"Providers": providers,
+		"Logs":      logs,
+		"Stats": map[string]int{
+			"Sent":   sent,
+			"Failed": failed,
+		},
+	})
+}
+
+// SettingsNotificationsLogsPartial returns notification logs for HTMX refresh
+func (h *Handlers) SettingsNotificationsLogsPartial(w http.ResponseWriter, r *http.Request) {
+	logs, err := h.db.ListNotificationLogs(50)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list notification logs")
+		logs = []*database.NotificationLog{}
+	}
+
+	h.renderPartial(w, "settings.html", "notification_logs", map[string]any{
+		"Logs": logs,
+	})
+}
+
 // NotificationProviderNew renders the new provider form
 func (h *Handlers) NotificationProviderNew(w http.ResponseWriter, r *http.Request) {
 	providerType := r.URL.Query().Get("type")

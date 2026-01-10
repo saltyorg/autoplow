@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/web/sse"
 )
 
 // EventType represents the type of event that can trigger a notification
@@ -57,6 +58,7 @@ type Manager struct {
 	events    chan Event
 	stopChan  chan struct{}
 	wg        sync.WaitGroup
+	sseBroker *sse.Broker
 
 	// Running state
 	running bool
@@ -69,6 +71,18 @@ func NewManager(db *database.Manager) *Manager {
 		providers: make(map[string]Provider),
 		events:    make(chan Event, 100),
 		stopChan:  make(chan struct{}),
+	}
+}
+
+// SetSSEBroker sets the SSE broker for broadcasting events
+func (m *Manager) SetSSEBroker(broker *sse.Broker) {
+	m.sseBroker = broker
+}
+
+// broadcastEvent broadcasts an SSE event if the broker is configured
+func (m *Manager) broadcastEvent(eventType sse.EventType, data map[string]any) {
+	if m.sseBroker != nil {
+		m.sseBroker.Broadcast(sse.Event{Type: eventType, Data: data})
 	}
 }
 
@@ -268,7 +282,14 @@ func (m *Manager) logNotification(event Event, provider string, sendErr error) {
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to log notification")
+		return
 	}
+
+	m.broadcastEvent(sse.EventNotificationLogged, map[string]any{
+		"provider": provider,
+		"status":   status,
+		"event":    string(event.Type),
+	})
 }
 
 // TestProvider sends a test notification to a specific provider

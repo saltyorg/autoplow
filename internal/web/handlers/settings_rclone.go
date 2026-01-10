@@ -579,6 +579,31 @@ func (h *Handlers) SettingsRcloneStatus(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write([]byte(`<span class="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium ` + statusClass + `">` + statusText + `</span>`))
 }
 
+// SettingsRcloneStatusCardPartial returns the rclone status card for HTMX refresh
+func (h *Handlers) SettingsRcloneStatusCardPartial(w http.ResponseWriter, r *http.Request) {
+	var rcloneStatus map[string]any
+	if h.rcloneMgr != nil {
+		status := h.rcloneMgr.Status()
+		rcloneStatus = map[string]any{
+			"running":       status.Running,
+			"pid":           status.PID,
+			"address":       status.Address,
+			"restart_count": status.RestartCount,
+			"uptime":        formatUptime(status.Uptime),
+			"version":       strings.TrimPrefix(status.Version, "v"),
+		}
+	}
+
+	config := h.loadRcloneConfig()
+
+	h.renderPartial(w, "settings.html", "rclone_status_card", map[string]any{
+		"RcloneStatus": rcloneStatus,
+		"RcloneConfig": map[string]any{
+			"Managed": config.Managed,
+		},
+	})
+}
+
 // SettingsRcloneStartStopBtn returns context-aware start/stop button HTML
 func (h *Handlers) SettingsRcloneStartStopBtn(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")

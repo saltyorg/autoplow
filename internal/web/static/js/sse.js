@@ -10,17 +10,17 @@
     // Map SSE events to HTMX element refreshes
     const eventTargets = {
         // Scan events trigger scan-related element refreshes
-        'scan_queued': ['#dashboard-stats', '#recent-scans'],
-        'scan_started': ['#dashboard-stats', '#recent-scans'],
-        'scan_completed': ['#dashboard-stats', '#recent-scans'],
-        'scan_failed': ['#dashboard-stats', '#recent-scans'],
+        'scan_queued': ['#dashboard-stats', '#recent-scans', '#scan-history-stats', '#scan-history-table'],
+        'scan_started': ['#dashboard-stats', '#recent-scans', '#scan-history-stats', '#scan-history-table'],
+        'scan_completed': ['#dashboard-stats', '#recent-scans', '#scan-history-stats', '#scan-history-table'],
+        'scan_failed': ['#dashboard-stats', '#recent-scans', '#scan-history-stats', '#scan-history-table'],
 
         // Upload events trigger upload-related element refreshes
-        'upload_queued': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination'],
-        'upload_started': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination', '#active-transfers'],
+        'upload_queued': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination', '#upload-history-stats', '#upload-history-table'],
+        'upload_started': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination', '#active-transfers', '#upload-history-stats', '#upload-history-table'],
         'upload_progress': ['#active-transfers'],
-        'upload_completed': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination', '#active-transfers'],
-        'upload_failed': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination', '#active-transfers'],
+        'upload_completed': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination', '#active-transfers', '#upload-history-stats', '#upload-history-table'],
+        'upload_failed': ['#dashboard-upload-stats', '#recent-uploads', '#upload-queue', '#upload-queue-stats', '#upload-queue-pagination', '#active-transfers', '#upload-history-stats', '#upload-history-table'],
 
         // Session events trigger session and throttle refreshes
         'session_started': ['#active-sessions', '#throttle-status-section'],
@@ -36,7 +36,9 @@
         'matcharr_mismatch_updated': ['#matcharr-mismatches', '#matcharr-status', '#quick-actions', '#matcharr-tab-counts'],
 
         // Plex Auto Languages events
-        'plex_auto_languages_track_changed': ['#pal-recent-activity', '#pal-history', '.pal-preferences-target', '#pal-status']
+        'plex_auto_languages_track_changed': ['#pal-recent-activity', '#pal-history', '.pal-preferences-target', '#pal-status'],
+        'notification_logged': ['#notification-stats', '#notification-logs'],
+        'rclone_status_changed': ['#rclone-status-card']
     };
 
     // Debounce refresh requests to avoid hammering the server

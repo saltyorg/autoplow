@@ -116,6 +116,9 @@ func (s *Server) SSEBroker() *sse.Broker {
 // SetRcloneManager sets the rclone manager and updates handlers
 func (s *Server) SetRcloneManager(mgr *rclone.Manager) {
 	s.rcloneMgr = mgr
+	if mgr != nil {
+		mgr.SetSSEBroker(s.sseBroker)
+	}
 	if s.handlers != nil {
 		s.handlers.SetRcloneManager(mgr)
 	}
@@ -256,6 +259,7 @@ func (s *Server) StartUploadSubsystem() error {
 	// Create rclone manager if not exists
 	if s.rcloneMgr == nil {
 		s.rcloneMgr = rclone.NewManager(rcloneConfig)
+		s.rcloneMgr.SetSSEBroker(s.sseBroker)
 		if s.handlers != nil {
 			s.handlers.SetRcloneManager(s.rcloneMgr)
 		}
@@ -348,6 +352,9 @@ func (s *Server) StopUploadSubsystem() error {
 // SetNotificationManager sets the notification manager and updates handlers
 func (s *Server) SetNotificationManager(mgr *notification.Manager) {
 	s.notificationMgr = mgr
+	if mgr != nil {
+		mgr.SetSSEBroker(s.sseBroker)
+	}
 	if s.handlers != nil {
 		s.handlers.SetNotificationManager(mgr)
 		s.handlers.InitNotificationProviders()
@@ -736,6 +743,8 @@ func (s *Server) setupRoutes() {
 
 			// Notification settings
 			r.Get("/notifications", h.SettingsNotificationsPage)
+			r.Get("/notifications/stats", h.SettingsNotificationsStatsPartial)
+			r.Get("/notifications/logs", h.SettingsNotificationsLogsPartial)
 			r.Get("/notifications/new", h.NotificationProviderNew)
 			r.Post("/notifications", h.NotificationProviderCreate)
 			r.Get("/notifications/{id}", h.NotificationProviderEdit)
@@ -758,14 +767,19 @@ func (s *Server) setupRoutes() {
 			r.Post("/rclone/stop", h.SettingsRcloneStop)
 			r.Post("/rclone/restart", h.SettingsRcloneRestart)
 			r.Get("/rclone/status", h.SettingsRcloneStatus)
+			r.Get("/rclone/status-card", h.SettingsRcloneStatusCardPartial)
 			r.Get("/rclone/startstop-btn", h.SettingsRcloneStartStopBtn)
 		})
 
 		// History
 		r.Route("/history", func(r chi.Router) {
 			r.Get("/scans", h.HistoryScans)
+			r.Get("/scans/stats", h.HistoryScansStatsPartial)
+			r.Get("/scans/table", h.HistoryScansTablePartial)
 			r.Post("/scans/{id}/retry", h.RetryScan)
 			r.Get("/uploads", h.HistoryUploads)
+			r.Get("/uploads/stats", h.HistoryUploadsStatsPartial)
+			r.Get("/uploads/table", h.HistoryUploadsTablePartial)
 		})
 
 		// Logs

@@ -1391,7 +1391,7 @@
                     {{range .Content.Destinations}}
                     <tr id="destination-{{.ID}}">
                         <td class="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                            <div class="truncate max-w-xs" title="{{.LocalPath}}">{{.LocalPath}}</div>
+                            <div class="break-all" title="{{.LocalPath}}">{{.LocalPath}}</div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                             {{if .UsePlexTracking}}
@@ -1733,7 +1733,7 @@ document.addEventListener('DOMContentLoaded', () => {
 {{range .}}
 <tr id="upload-{{.ID}}" {{if .WaitState}}data-wait-state="{{.WaitState}}"{{end}} {{if .WaitChecks}}data-wait-checks="{{.WaitChecks}}"{{end}}>
     <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">
-        <div class="truncate max-w-xs" title="{{.LocalPath}}">{{.LocalPath}}</div>
+        <div class="break-all" title="{{.LocalPath}}">{{.LocalPath}}</div>
     </td>
     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.RemoteName}}</td>
     <td class="px-6 py-4 whitespace-nowrap text-sm">

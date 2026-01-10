@@ -251,6 +251,13 @@ func (p *Processor) handleRequest(req ScanRequest) {
 	}
 
 	log.Info().Str("path", path).Int64("scan_id", scan.ID).Msg("Scan created")
+
+	if p.sseBroker != nil {
+		p.sseBroker.Broadcast(sse.Event{
+			Type: sse.EventScanQueued,
+			Data: map[string]any{"scan_id": scan.ID, "path": scan.Path},
+		})
+	}
 }
 
 // batchProcessor periodically processes ready scans

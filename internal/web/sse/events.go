@@ -40,6 +40,8 @@ const (
 	EventMatcharrMismatchUpdated EventType = "matcharr_mismatch_updated"
 
 	EventPlexAutoLanguagesTrackChanged EventType = "plex_auto_languages_track_changed"
+	EventNotificationLogged            EventType = "notification_logged"
+	EventRcloneStatusChanged           EventType = "rclone_status_changed"
 )
 
 // Event represents an SSE event to be sent to clients

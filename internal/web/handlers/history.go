@@ -20,13 +20,10 @@ type ScanHistoryItem struct {
 	Status      string
 	CreatedAt   time.Time
 	CompletedAt *time.Time
-	Duration    string
 	Error       string
 }
 
-// HistoryScans renders the scan history page
-func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
-	// Parse query params
+func (h *Handlers) buildHistoryScansData(r *http.Request) (map[string]any, error) {
 	page := 1
 	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
 		page = p
@@ -36,23 +33,17 @@ func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
 	limit := 50
 	offset := (page - 1) * limit
 
-	// Get scans with filtering
 	scans, err := h.db.ListScansFiltered(status, limit, offset)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list scans")
-		h.flashErr(w, "Failed to load scan history")
-		h.redirect(w, r, "/")
-		return
+		return nil, err
 	}
 
-	// Get trigger names for each scan
 	triggers := make(map[int64]string)
 	triggerList, _ := h.db.ListTriggers()
 	for _, t := range triggerList {
 		triggers[t.ID] = t.Name
 	}
 
-	// Convert to history items
 	var items []ScanHistoryItem
 	for _, s := range scans {
 		item := ScanHistoryItem{
@@ -72,21 +63,15 @@ func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
 		} else {
 			item.TriggerName = "Manual"
 		}
-		if s.CompletedAt != nil && s.StartedAt != nil {
-			duration := s.CompletedAt.Sub(*s.StartedAt)
-			item.Duration = duration.Round(1e9).String() // Round to seconds
-		}
 		items = append(items, item)
 	}
 
-	// Get total count for pagination
 	totalCount, _ := h.db.CountScansFiltered(status)
 	totalPages := (totalCount + limit - 1) / limit
 
-	// Get stats by status
 	stats, _ := h.db.GetScanStatsByStatus()
 
-	h.render(w, r, "history_scans.html", map[string]any{
+	return map[string]any{
 		"Scans":      items,
 		"Page":       page,
 		"TotalPages": totalPages,
@@ -97,7 +82,44 @@ func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
 		"HasNext":    page < totalPages,
 		"PrevPage":   page - 1,
 		"NextPage":   page + 1,
+	}, nil
+}
+
+// HistoryScans renders the scan history page
+func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildHistoryScansData(r)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list scans")
+		h.flashErr(w, "Failed to load scan history")
+		h.redirect(w, r, "/")
+		return
+	}
+
+	h.render(w, r, "history_scans.html", data)
+}
+
+// HistoryScansStatsPartial returns the scan stats section for HTMX refresh
+func (h *Handlers) HistoryScansStatsPartial(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.db.GetScanStatsByStatus()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load scan stats")
+		stats = nil
+	}
+
+	h.renderPartial(w, "history_scans.html", "scan_history_stats", map[string]any{
+		"Stats": stats,
 	})
+}
+
+// HistoryScansTablePartial returns the scan history table for HTMX refresh
+func (h *Handlers) HistoryScansTablePartial(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildHistoryScansData(r)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load scan history")
+		http.Error(w, "Failed to load scan history", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "history_scans.html", "scan_history_table", data)
 }
 
 // RetryScan queues a new scan using the same parameters as a historical scan.
@@ -144,6 +166,46 @@ func (h *Handlers) RetryScan(w http.ResponseWriter, r *http.Request) {
 
 // HistoryUploads renders the upload history page
 func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildHistoryUploadsData(r)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list upload history")
+		h.flashErr(w, "Failed to load upload history")
+		h.redirect(w, r, "/")
+		return
+	}
+
+	h.render(w, r, "history_uploads.html", data)
+}
+
+// HistoryUploadsStatsPartial returns the upload stats section for HTMX refresh
+func (h *Handlers) HistoryUploadsStatsPartial(w http.ResponseWriter, r *http.Request) {
+	remote := r.URL.Query().Get("remote")
+
+	totalUploads, totalBytes, _ := h.db.GetUploadStats()
+	activeCount, _ := h.db.CountUploads(database.UploadStatusUploading)
+	queuedCount, _ := h.db.CountUploads(database.UploadStatusQueued)
+
+	h.renderPartial(w, "history_uploads.html", "upload_history_stats", map[string]any{
+		"Remote":       remote,
+		"TotalUploads": totalUploads,
+		"TotalBytes":   totalBytes,
+		"ActiveCount":  activeCount,
+		"QueuedCount":  queuedCount,
+	})
+}
+
+// HistoryUploadsTablePartial returns the upload history table for HTMX refresh
+func (h *Handlers) HistoryUploadsTablePartial(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildHistoryUploadsData(r)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load upload history")
+		http.Error(w, "Failed to load upload history", http.StatusInternalServerError)
+		return
+	}
+	h.renderPartial(w, "history_uploads.html", "upload_history_table", data)
+}
+
+func (h *Handlers) buildHistoryUploadsData(r *http.Request) (map[string]any, error) {
 	page := 1
 	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
 		page = p
@@ -156,13 +218,9 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 
 	history, err := h.db.ListUploadHistoryFiltered(remote, limit, offset)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list upload history")
-		h.flashErr(w, "Failed to load upload history")
-		h.redirect(w, r, "/")
-		return
+		return nil, err
 	}
 
-	// Convert to display items
 	type UploadHistoryItem struct {
 		ID          int64
 		LocalPath   string
@@ -191,15 +249,13 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 	totalPages := (totalCount + limit - 1) / limit
 	totalUploads, totalBytes, _ := h.db.GetUploadStats()
 
-	// Get queue stats
 	activeCount, _ := h.db.CountUploads(database.UploadStatusUploading)
 	queuedCount, _ := h.db.CountUploads(database.UploadStatusQueued)
 	pendingCount, _ := h.db.CountUploads(database.UploadStatusPending)
 
-	// Get available remotes for filtering
 	remotes, _ := h.db.ListUploadRemotes()
 
-	h.render(w, r, "history_uploads.html", map[string]any{
+	return map[string]any{
 		"Uploads":      items,
 		"Page":         page,
 		"TotalPages":   totalPages,
@@ -215,5 +271,5 @@ func (h *Handlers) HistoryUploads(w http.ResponseWriter, r *http.Request) {
 		"HasNext":      page < totalPages,
 		"PrevPage":     page - 1,
 		"NextPage":     page + 1,
-	})
+	}, nil
 }

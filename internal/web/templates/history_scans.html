@@ -1,3 +1,104 @@
+{{define "scan_history_stats"}}
+<div id="scan-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-3" hx-get="/history/scans/stats" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Pending</dt>
+        <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{if .Stats}}{{add (index .Stats "pending") (index .Stats "retry")}}{{else}}0{{end}}</dd>
+    </div>
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Completed</dt>
+        <dd class="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">{{if .Stats}}{{index .Stats "completed"}}{{else}}0{{end}}</dd>
+    </div>
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Failed</dt>
+        <dd class="mt-1 text-2xl font-semibold text-red-600 dark:text-red-400">{{if .Stats}}{{index .Stats "failed"}}{{else}}0{{end}}</dd>
+    </div>
+</div>
+{{end}}
+
+{{define "scan_history_table"}}
+<div id="scan-history-table" hx-get="/history/scans/table?page={{.Page}}{{if .Status}}&status={{.Status}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+    <!-- Scans Table -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Path</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Trigger</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {{if .Scans}}
+                {{range .Scans}}
+                <tr>
+                    <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                        <div class="break-all" title="{{.Path}}">{{.Path}}</div>
+                        {{if .Error}}
+                        <div class="text-xs text-red-500 dark:text-red-400 truncate mt-1" title="{{.Error}}">{{.Error}}</div>
+                        {{end}}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.TriggerName}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+                            {{if eq .Status "completed"}}bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-green-400{{end}}
+                            {{if eq .Status "pending"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
+                            {{if eq .Status "retry"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
+                            {{if eq .Status "scanning"}}bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{{end}}
+                            {{if eq .Status "failed"}}bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-400{{end}}
+                        ">{{.Status}}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <form method="POST" action="/history/scans/{{.ID}}/retry" class="inline">
+                            <button type="submit" class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 font-medium">Retry</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+                {{else}}
+                <tr>
+                    <td colspan="5" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No scans found</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    {{if gt .TotalPages 1}}
+    <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-b-lg">
+        <div class="text-sm text-gray-700 dark:text-gray-300">
+            <span class="font-medium">{{.TotalCount}}</span> scans
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/history/scans?page=1{{if .Status}}&status={{.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if eq .Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                « First
+            </a>
+            <a href="/history/scans?page={{.PrevPage}}{{if .Status}}&status={{.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if .HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                ‹ Prev
+            </a>
+            <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Page}} / {{.TotalPages}}</span>
+            <a href="/history/scans?page={{.NextPage}}{{if .Status}}&status={{.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if .HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover-bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                Next ›
+            </a>
+            <a href="/history/scans?page={{.TotalPages}}{{if .Status}}&status={{.Status}}{{end}}"
+               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+               {{if eq .Page .TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                Last »
+            </a>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
 {{define "content"}}
 <div class="space-y-6">
     <div>
@@ -6,24 +107,7 @@
     </div>
 
     <!-- Stats cards -->
-    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Pending</dt>
-            <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{if .Content.Stats}}{{index .Content.Stats "pending"}}{{else}}0{{end}}</dd>
-        </div>
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Scanning</dt>
-            <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">{{if .Content.Stats}}{{index .Content.Stats "scanning"}}{{else}}0{{end}}</dd>
-        </div>
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Completed</dt>
-            <dd class="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">{{if .Content.Stats}}{{index .Content.Stats "completed"}}{{else}}0{{end}}</dd>
-        </div>
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Failed</dt>
-            <dd class="mt-1 text-2xl font-semibold text-red-600 dark:text-red-400">{{if .Content.Stats}}{{index .Content.Stats "failed"}}{{else}}0{{end}}</dd>
-        </div>
-    </div>
+    {{template "scan_history_stats" .Content}}
 
     <!-- Filter -->
     <div class="flex flex-wrap items-center gap-3">
@@ -37,10 +121,6 @@
                class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "pending"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
                Pending
             </a>
-            <a href="/history/scans?status=scanning"
-               class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "scanning"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
-               Scanning
-            </a>
             <a href="/history/scans?status=completed"
                class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "completed"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
                Completed
@@ -52,86 +132,7 @@
         </div>
     </div>
 
-    <!-- Scans Table -->
-    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-700">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Path</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Trigger</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Duration</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {{if .Content.Scans}}
-                {{range .Content.Scans}}
-                <tr>
-                    <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                        <div class="truncate max-w-md" title="{{.Path}}">{{.Path}}</div>
-                        {{if .Error}}
-                        <div class="text-xs text-red-500 dark:text-red-400 truncate mt-1" title="{{.Error}}">{{.Error}}</div>
-                        {{end}}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.TriggerName}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
-                            {{if eq .Status "completed"}}bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-green-400{{end}}
-                            {{if eq .Status "pending"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
-                            {{if eq .Status "scanning"}}bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{{end}}
-                            {{if eq .Status "failed"}}bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-400{{end}}
-                        ">{{.Status}}</span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{if .Duration}}{{.Duration}}{{else}}-{{end}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        <form method="POST" action="/history/scans/{{.ID}}/retry" class="inline">
-                            <button type="submit" class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 font-medium">Retry</button>
-                        </form>
-                    </td>
-                </tr>
-                {{end}}
-                {{else}}
-                <tr>
-                    <td colspan="6" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No scans found</td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
-    </div>
-
-    {{if gt .Content.TotalPages 1}}
-    <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-b-lg">
-        <div class="text-sm text-gray-700 dark:text-gray-300">
-            <span class="font-medium">{{.Content.TotalCount}}</span> scans
-        </div>
-        <div class="flex items-center gap-2">
-            <a href="/history/scans?page=1{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
-               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-               {{if eq .Content.Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
-                « First
-            </a>
-            <a href="/history/scans?page={{.Content.PrevPage}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
-               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-               {{if .Content.HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
-                ‹ Prev
-            </a>
-            <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Content.Page}} / {{.Content.TotalPages}}</span>
-            <a href="/history/scans?page={{.Content.NextPage}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
-               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-               {{if .Content.HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover-bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
-                Next ›
-            </a>
-            <a href="/history/scans?page={{.Content.TotalPages}}{{if .Content.Status}}&status={{.Content.Status}}{{end}}"
-               class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-               {{if eq .Content.Page .Content.TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
-                Last »
-            </a>
-        </div>
-    </div>
-    {{end}}
+    {{template "scan_history_table" .Content}}
 </div>
 {{end}}
 

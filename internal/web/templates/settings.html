@@ -1,3 +1,192 @@
+{{define "notification_stats"}}
+<div id="notification-stats" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/notifications/stats" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+    <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Notification Stats (24h)</h3>
+        </div>
+    </div>
+    <div class="px-4 py-5 sm:p-6">
+        <dl class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Sent</dt>
+                <dd class="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">{{.Stats.Sent}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Failed</dt>
+                <dd class="mt-1 text-lg font-semibold text-red-600 dark:text-red-400">{{.Stats.Failed}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Providers</dt>
+                <dd class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{len .Providers}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Recent Logs</dt>
+                <dd class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{len .Logs}}</dd>
+            </div>
+        </dl>
+    </div>
+</div>
+{{end}}
+
+{{define "notification_logs"}}
+<div id="notification-logs" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/notifications/logs" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+    <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Recent Notification Log</h3>
+            {{if .Logs}}
+            <form action="/settings/notifications/logs/clear" method="POST">
+                <button type="submit" class="text-xs text-red-600 dark:text-red-400 hover:text-red-500">Clear logs</button>
+            </form>
+            {{end}}
+        </div>
+    </div>
+    <div class="px-4 py-5 sm:p-6">
+        {{if .Logs}}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead>
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Time</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Provider</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Event</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {{range .Logs}}
+                    <tr>
+                        <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
+                        <td class="px-3 py-2 text-xs text-gray-900 dark:text-white">{{.Provider}}</td>
+                        <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{{.EventType}}</td>
+                        <td class="px-3 py-2 text-xs">
+                            {{if eq .Status "sent"}}
+                            <span class="inline-flex items-center rounded-md bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">Sent</span>
+                            {{else}}
+                            <span class="inline-flex items-center rounded-md bg-red-100 dark:bg-red-900 px-2 py-0.5 text-xs font-medium text-red-800 dark:text-red-200" title="{{.Error}}">Failed</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <p class="text-sm text-gray-500 dark:text-gray-400">No notification logs yet.</p>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{define "rclone_status_card"}}
+<div id="rclone-status-card" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/rclone/status-card" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+    <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Rclone RCD Status</h3>
+                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium {{if and .RcloneConfig .RcloneConfig.Managed}}bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200{{else}}bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200{{end}}">
+                    {{if and .RcloneConfig .RcloneConfig.Managed}}Managed{{else}}Unmanaged{{end}}
+                </span>
+            </div>
+            {{if .RcloneStatus}}
+                {{if .RcloneStatus.running}}
+                <span class="inline-flex items-center rounded-md bg-green-100 dark:bg-green-900 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">Running</span>
+                {{else}}
+                <span class="inline-flex items-center rounded-md bg-red-100 dark:bg-red-900 px-2.5 py-0.5 text-xs font-medium text-red-800 dark:text-red-200">Stopped</span>
+                {{end}}
+            {{else}}
+            <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:text-gray-300">Not initialized</span>
+            {{end}}
+        </div>
+    </div>
+    <div class="px-4 py-5 sm:p-6">
+        <div class="flex flex-wrap gap-3">
+            {{if and .RcloneConfig .RcloneConfig.Managed}}
+            <!-- Managed mode: show start/stop/restart buttons -->
+            <form action="/settings/rclone/start" method="POST" class="inline">
+                <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Start
+                </button>
+            </form>
+            <form action="/settings/rclone/stop" method="POST" class="inline">
+                <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
+                    </svg>
+                    Stop
+                </button>
+            </form>
+            <form action="/settings/rclone/restart" method="POST" class="inline">
+                <button type="submit" class="inline-flex items-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Restart
+                </button>
+            </form>
+            {{else}}
+            <!-- Unmanaged mode: show connect/disconnect buttons -->
+            <form action="/settings/rclone/start" method="POST" class="inline">
+                <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                    </svg>
+                    Connect
+                </button>
+            </form>
+            <form action="/settings/rclone/stop" method="POST" class="inline">
+                <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                    </svg>
+                    Disconnect
+                </button>
+            </form>
+            {{end}}
+            <button type="button" onclick="testRcloneConnection(this)" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Test Connection
+            </button>
+        </div>
+
+        {{if .RcloneStatus}}
+        <div class="mt-4 grid grid-cols-2 sm:grid-cols-{{if and .RcloneConfig .RcloneConfig.Managed}}5{{else}}3{{end}} gap-4">
+            {{if and .RcloneConfig .RcloneConfig.Managed}}
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">PID</dt>
+                <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .RcloneStatus.pid}}{{.RcloneStatus.pid}}{{else}}-{{end}}</dd>
+            </div>
+            {{end}}
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Address</dt>
+                <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.RcloneStatus.address}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Version</dt>
+                <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .RcloneStatus.version}}{{.RcloneStatus.version}}{{else}}-{{end}}</dd>
+            </div>
+            {{if and .RcloneConfig .RcloneConfig.Managed}}
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Uptime</dt>
+                <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .RcloneStatus.uptime}}{{.RcloneStatus.uptime}}{{else}}-{{end}}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Restart Count</dt>
+                <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.RcloneStatus.restart_count}}</dd>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
 {{define "content"}}
 <div class="space-y-6">
     <div>
@@ -582,33 +771,7 @@
     <!-- Notification Settings List -->
     <div class="space-y-6">
         <!-- Stats Card -->
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Notification Stats (24h)</h3>
-                </div>
-            </div>
-            <div class="px-4 py-5 sm:p-6">
-                <dl class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Sent</dt>
-                        <dd class="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">{{.Content.Stats.Sent}}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Failed</dt>
-                        <dd class="mt-1 text-lg font-semibold text-red-600 dark:text-red-400">{{.Content.Stats.Failed}}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Providers</dt>
-                        <dd class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{len .Content.Providers}}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Recent Logs</dt>
-                        <dd class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{len .Content.Logs}}</dd>
-                    </div>
-                </dl>
-            </div>
-        </div>
+        {{template "notification_stats" .Content}}
 
         <!-- Providers List -->
         <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -670,52 +833,7 @@
         </div>
 
         <!-- Recent Logs -->
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Recent Notification Log</h3>
-                    {{if .Content.Logs}}
-                    <form action="/settings/notifications/logs/clear" method="POST">
-                        <button type="submit" class="text-xs text-red-600 dark:text-red-400 hover:text-red-500">Clear logs</button>
-                    </form>
-                    {{end}}
-                </div>
-            </div>
-            <div class="px-4 py-5 sm:p-6">
-                {{if .Content.Logs}}
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead>
-                            <tr>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Time</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Provider</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Event</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                            {{range .Content.Logs}}
-                            <tr>
-                                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
-                                <td class="px-3 py-2 text-xs text-gray-900 dark:text-white">{{.Provider}}</td>
-                                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{{.EventType}}</td>
-                                <td class="px-3 py-2 text-xs">
-                                    {{if eq .Status "sent"}}
-                                    <span class="inline-flex items-center rounded-md bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">Sent</span>
-                                    {{else}}
-                                    <span class="inline-flex items-center rounded-md bg-red-100 dark:bg-red-900 px-2 py-0.5 text-xs font-medium text-red-800 dark:text-red-200" title="{{.Error}}">Failed</span>
-                                    {{end}}
-                                </td>
-                            </tr>
-                            {{end}}
-                        </tbody>
-                    </table>
-                </div>
-                {{else}}
-                <p class="text-sm text-gray-500 dark:text-gray-400">No notification logs yet.</p>
-                {{end}}
-            </div>
-        </div>
+        {{template "notification_logs" .Content}}
     </div>
     {{end}}
     {{end}}
@@ -724,109 +842,7 @@
     <!-- Rclone Settings -->
     <div class="space-y-6">
         <!-- Status Card -->
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-            <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Rclone RCD Status</h3>
-                        <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200{{else}}bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200{{end}}">
-                            {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}Managed{{else}}Unmanaged{{end}}
-                        </span>
-                    </div>
-                    <div id="rclone-status" hx-get="/settings/rclone/status" hx-trigger="load, every 10s">
-                        <span class="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:text-gray-300">
-                            Loading...
-                        </span>
-                    </div>
-                </div>
-            </div>
-            <div class="px-4 py-5 sm:p-6">
-                <div class="flex flex-wrap gap-3">
-                    {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}
-                    <!-- Managed mode: show start/stop/restart buttons -->
-                    <form action="/settings/rclone/start" method="POST" class="inline">
-                        <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
-                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Start
-                        </button>
-                    </form>
-                    <form action="/settings/rclone/stop" method="POST" class="inline">
-                        <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
-                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
-                            </svg>
-                            Stop
-                        </button>
-                    </form>
-                    <form action="/settings/rclone/restart" method="POST" class="inline">
-                        <button type="submit" class="inline-flex items-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500">
-                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                            </svg>
-                            Restart
-                        </button>
-                    </form>
-                    {{else}}
-                    <!-- Unmanaged mode: show connect/disconnect buttons -->
-                    <form action="/settings/rclone/start" method="POST" class="inline">
-                        <button type="submit" class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
-                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-                            </svg>
-                            Connect
-                        </button>
-                    </form>
-                    <form action="/settings/rclone/stop" method="POST" class="inline">
-                        <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
-                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-                            </svg>
-                            Disconnect
-                        </button>
-                    </form>
-                    {{end}}
-                    <button type="button" onclick="testRcloneConnection(this)" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        Test Connection
-                    </button>
-                </div>
-
-                {{if .Content.RcloneStatus}}
-                <div class="mt-4 grid grid-cols-2 sm:grid-cols-{{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}5{{else}}3{{end}} gap-4">
-                    {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">PID</dt>
-                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .Content.RcloneStatus.pid}}{{.Content.RcloneStatus.pid}}{{else}}-{{end}}</dd>
-                    </div>
-                    {{end}}
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Address</dt>
-                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.Content.RcloneStatus.address}}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Version</dt>
-                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .Content.RcloneStatus.version}}{{.Content.RcloneStatus.version}}{{else}}-{{end}}</dd>
-                    </div>
-                    {{if and .Content.RcloneConfig .Content.RcloneConfig.Managed}}
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Uptime</dt>
-                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{if .Content.RcloneStatus.uptime}}{{.Content.RcloneStatus.uptime}}{{else}}-{{end}}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Restart Count</dt>
-                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{.Content.RcloneStatus.restart_count}}</dd>
-                    </div>
-                    {{end}}
-                </div>
-                {{end}}
-            </div>
-        </div>
+        {{template "rclone_status_card" .Content}}
 
         <!-- Transfer Options Card -->
         {{if .Content.RcloneRunning}}

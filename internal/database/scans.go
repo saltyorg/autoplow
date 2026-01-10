@@ -335,13 +335,23 @@ func (db *db) ListScansFiltered(status string, limit, offset int) ([]*Scan, erro
 	var err error
 
 	if status != "" && status != "all" {
-		rows, err = db.query(`
-			SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
-			FROM scans
-			WHERE status = ?
-			ORDER BY created_at DESC
-			LIMIT ? OFFSET ?
-		`, status, limit, offset)
+		if status == string(ScanStatusPending) {
+			rows, err = db.query(`
+				SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
+				FROM scans
+				WHERE status IN (?, ?)
+				ORDER BY created_at DESC
+				LIMIT ? OFFSET ?
+			`, ScanStatusPending, ScanStatusRetry, limit, offset)
+		} else {
+			rows, err = db.query(`
+				SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
+				FROM scans
+				WHERE status = ?
+				ORDER BY created_at DESC
+				LIMIT ? OFFSET ?
+			`, status, limit, offset)
+		}
 	} else {
 		rows, err = db.query(`
 			SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
@@ -364,7 +374,11 @@ func (db *db) CountScansFiltered(status string) (int, error) {
 	var err error
 
 	if status != "" && status != "all" {
-		err = db.queryRow("SELECT COUNT(*) FROM scans WHERE status = ?", status).Scan(&count)
+		if status == string(ScanStatusPending) {
+			err = db.queryRow("SELECT COUNT(*) FROM scans WHERE status IN (?, ?)", ScanStatusPending, ScanStatusRetry).Scan(&count)
+		} else {
+			err = db.queryRow("SELECT COUNT(*) FROM scans WHERE status = ?", status).Scan(&count)
+		}
 	} else {
 		err = db.queryRow("SELECT COUNT(*) FROM scans").Scan(&count)
 	}

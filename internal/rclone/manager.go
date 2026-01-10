@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/saltyorg/autoplow/internal/web/sse"
 )
 
 // ManagerConfig holds process manager configuration
@@ -78,6 +80,7 @@ type Manager struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
+	sseBroker    *sse.Broker
 
 	// Cached rclone config data (populated after RCD starts)
 	providers     []Provider
@@ -120,6 +123,23 @@ func NewManager(config ManagerConfig) *Manager {
 	return m
 }
 
+// SetSSEBroker sets the SSE broker for broadcasting events
+func (m *Manager) SetSSEBroker(broker *sse.Broker) {
+	m.sseBroker = broker
+}
+
+func (m *Manager) broadcastEvent(eventType sse.EventType, data map[string]any) {
+	if m.sseBroker != nil {
+		m.sseBroker.Broadcast(sse.Event{Type: eventType, Data: data})
+	}
+}
+
+func (m *Manager) broadcastStatusChange(running bool) {
+	m.broadcastEvent(sse.EventRcloneStatusChanged, map[string]any{
+		"running": running,
+	})
+}
+
 // Start starts the rclone RCD process (managed mode) or connects to an existing one (unmanaged mode)
 func (m *Manager) Start() error {
 	m.mu.Lock()
@@ -146,9 +166,11 @@ func (m *Manager) Start() error {
 		// Wait for RCD to be ready
 		if err := m.waitForReady(); err != nil {
 			m.running = false
+			m.broadcastStatusChange(false)
 			return fmt.Errorf("failed to connect to rclone RCD at %s: %w", m.config.Address, err)
 		}
 
+		m.broadcastStatusChange(true)
 		return nil
 	}
 
@@ -278,6 +300,7 @@ func (m *Manager) Start() error {
 
 	m.running = true
 	m.startedAt = time.Now()
+	m.broadcastStatusChange(true)
 
 	log.Info().
 		Str("binary", m.config.BinaryPath).
@@ -331,6 +354,7 @@ func (m *Manager) Stop() error {
 		log.Info().Str("address", m.config.Address).Msg("Disconnecting from external rclone RCD instance (unmanaged mode)")
 		m.running = false
 		m.mu.Unlock()
+		m.broadcastStatusChange(false)
 		return nil
 	}
 
@@ -338,6 +362,7 @@ func (m *Manager) Stop() error {
 	if m.cmd == nil || m.cmd.Process == nil {
 		m.running = false
 		m.mu.Unlock()
+		m.broadcastStatusChange(false)
 		return nil
 	}
 
@@ -353,6 +378,7 @@ func (m *Manager) Stop() error {
 
 	m.running = false
 	m.mu.Unlock()
+	m.broadcastStatusChange(false)
 
 	// Wait for monitor goroutine to finish (it will handle process exit)
 	// Use a timeout to prevent hanging forever
@@ -502,6 +528,7 @@ func (m *Manager) monitorProcess() {
 			m.running = false
 			uptime := time.Since(m.startedAt)
 			m.mu.Unlock()
+			m.broadcastStatusChange(false)
 
 			// Check if shutdown was requested - don't log error or restart
 			select {

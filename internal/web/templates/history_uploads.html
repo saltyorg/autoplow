@@ -1,3 +1,92 @@
+{{define "upload_history_stats"}}
+<div id="upload-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-4" hx-get="/history/uploads/stats{{if .Remote}}?remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active</dt>
+        <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">{{.ActiveCount}}</dd>
+    </div>
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Queued</dt>
+        <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{.QueuedCount}}</dd>
+    </div>
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Uploads</dt>
+        <dd class="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">{{.TotalUploads}}</dd>
+    </div>
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Uploaded</dt>
+        <dd class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{formatBytes .TotalBytes}}</dd>
+    </div>
+</div>
+{{end}}
+
+{{define "upload_history_table"}}
+<div id="upload-history-table" hx-get="/history/uploads/table?page={{.Page}}{{if .Remote}}&remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+    <!-- Uploads Table -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Local Path</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Remote</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Size</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Completed</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {{if .Uploads}}
+                {{range .Uploads}}
+                <tr>
+                    <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                        <div class="break-all" title="{{.LocalPath}}">{{.LocalPath}}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.RemoteName}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{formatBytes .SizeBytes}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CompletedAt}}">{{formatTime .CompletedAt}}</span></td>
+                </tr>
+                {{end}}
+                {{else}}
+                <tr>
+                    <td colspan="4" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No upload history found</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{if gt .TotalPages 1}}
+        <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="text-sm text-gray-700 dark:text-gray-300">
+                <span class="font-medium">{{.TotalCount}}</span> uploads
+            </div>
+            <div class="flex items-center gap-2">
+                {{if gt .TotalPages 1}}
+                <a href="/history/uploads?page=1{{if .Remote}}&remote={{.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if eq .Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                    « First
+                </a>
+                <a href="/history/uploads?page={{.PrevPage}}{{if .Remote}}&remote={{.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if .HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                    ‹ Prev
+                </a>
+                <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Page}} / {{.TotalPages}}</span>
+                <a href="/history/uploads?page={{.NextPage}}{{if .Remote}}&remote={{.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if .HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                    Next ›
+                </a>
+                <a href="/history/uploads?page={{.TotalPages}}{{if .Remote}}&remote={{.Remote}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if eq .Page .TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                    Last »
+                </a>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
 {{define "content"}}
 <div class="space-y-6">
     <div>
@@ -6,24 +95,7 @@
     </div>
 
     <!-- Stats cards -->
-    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active</dt>
-            <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">{{.Content.ActiveCount}}</dd>
-        </div>
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Queued</dt>
-            <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{.Content.QueuedCount}}</dd>
-        </div>
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Uploads</dt>
-            <dd class="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">{{.Content.TotalUploads}}</dd>
-        </div>
-        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
-            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Uploaded</dt>
-            <dd class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{formatBytes .Content.TotalBytes}}</dd>
-        </div>
-    </div>
+    {{template "upload_history_stats" .Content}}
 
     <!-- Remote Filter -->
     <div class="flex flex-wrap items-center gap-3">
@@ -78,69 +150,7 @@
     })();
     </script>
 
-    <!-- Uploads Table -->
-    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-700">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Local Path</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Remote</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Size</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Completed</th>
-                </tr>
-            </thead>
-            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {{if .Content.Uploads}}
-                {{range .Content.Uploads}}
-                <tr>
-                    <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                        <div class="truncate max-w-sm" title="{{.LocalPath}}">{{.LocalPath}}</div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.RemoteName}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{formatBytes .SizeBytes}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CompletedAt}}">{{formatTime .CompletedAt}}</span></td>
-                </tr>
-                {{end}}
-                {{else}}
-                <tr>
-                    <td colspan="4" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No upload history found</td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
-        {{if gt .Content.TotalPages 1}}
-        <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div class="text-sm text-gray-700 dark:text-gray-300">
-                <span class="font-medium">{{.Content.TotalCount}}</span> uploads
-            </div>
-            <div class="flex items-center gap-2">
-                {{if gt .Content.TotalPages 1}}
-                <a href="/history/uploads?page=1{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
-                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-                   {{if eq .Content.Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
-                    « First
-                </a>
-                <a href="/history/uploads?page={{.Content.PrevPage}}{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
-                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-                   {{if .Content.HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
-                    ‹ Prev
-                </a>
-                <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Content.Page}} / {{.Content.TotalPages}}</span>
-                <a href="/history/uploads?page={{.Content.NextPage}}{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
-                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-                   {{if .Content.HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
-                    Next ›
-                </a>
-                <a href="/history/uploads?page={{.Content.TotalPages}}{{if .Content.Remote}}&remote={{.Content.Remote}}{{end}}"
-                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
-                   {{if eq .Content.Page .Content.TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
-                    Last »
-                </a>
-                {{end}}
-            </div>
-        </div>
-        {{end}}
-    </div>
+    {{template "upload_history_table" .Content}}
 </div>
 {{end}}
 
