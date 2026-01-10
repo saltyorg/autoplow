@@ -102,7 +102,7 @@ func (b *Broker) run() {
 			b.mu.Lock()
 			b.clients[client.ID] = client
 			b.mu.Unlock()
-			log.Debug().Str("client_id", client.ID).Int("total_clients", len(b.clients)).Msg("SSE client connected")
+			log.Trace().Str("client_id", client.ID).Int("total_clients", len(b.clients)).Msg("SSE client connected")
 
 		case client := <-b.unregister:
 			b.mu.Lock()
@@ -111,7 +111,7 @@ func (b *Broker) run() {
 				close(client.Messages)
 			}
 			b.mu.Unlock()
-			log.Debug().Str("client_id", client.ID).Int("total_clients", len(b.clients)).Msg("SSE client disconnected")
+			log.Trace().Str("client_id", client.ID).Int("total_clients", len(b.clients)).Msg("SSE client disconnected")
 
 		case event := <-b.broadcast:
 			data, err := json.Marshal(event)

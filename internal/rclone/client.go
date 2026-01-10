@@ -196,7 +196,7 @@ func (c *Client) call(ctx context.Context, endpoint string, params any, result a
 	}
 	body := bytes.NewReader(jsonData)
 
-	log.Debug().Str("endpoint", endpoint).RawJSON("params", jsonData).Msg("Rclone API request")
+	log.Trace().Str("endpoint", endpoint).RawJSON("params", jsonData).Msg("Rclone API request")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
