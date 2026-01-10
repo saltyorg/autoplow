@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/rclone/rclone/fs/config/configmap"
+	"github.com/rclone/rclone/fs/fspath"
 	"github.com/rs/zerolog/log"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/rclone"
@@ -712,10 +714,14 @@ func (m *Manager) handleRequest(req UploadRequest) {
 	// Create upload record for the first (highest priority) remote
 	firstRemote := dest.Remotes[0]
 
-	// Calculate relative path from destination base
-	relativePath := strings.TrimPrefix(req.LocalPath, dest.LocalPath)
-	relativePath = strings.TrimPrefix(relativePath, "/")
-	remotePath := filepath.Join(firstRemote.RemotePath, relativePath)
+	relativePath, ok := relativePathForUpload(req.LocalPath, dest)
+	if !ok || relativePath == "" {
+		log.Warn().
+			Str("path", req.LocalPath).
+			Str("destination", dest.LocalPath).
+			Msg("Unable to determine relative upload path")
+		return
+	}
 
 	// Check for duplicate
 	existing, err := m.db.FindDuplicateUpload(req.LocalPath, firstRemote.RemoteName)
@@ -745,7 +751,7 @@ func (m *Manager) handleRequest(req UploadRequest) {
 		TriggerID:      req.TriggerID,
 		LocalPath:      req.LocalPath,
 		RemoteName:     firstRemote.RemoteName,
-		RemotePath:     remotePath,
+		RemotePath:     relativePath,
 		Status:         status,
 		SizeBytes:      sizeBytes,
 		RemotePriority: firstRemote.Priority,
@@ -961,6 +967,109 @@ func (m *Manager) failUpload(upload *database.Upload, msg string, err error) {
 	})
 }
 
+func formatRcloneOptionValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []string:
+		return strings.Join(v, ",")
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			parts = append(parts, formatRcloneOptionValue(item))
+		}
+		return strings.Join(parts, ",")
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func relativePathForUpload(localPath string, dest *database.Destination) (string, bool) {
+	if dest == nil {
+		return "", false
+	}
+
+	base := filepath.Clean(dest.LocalPath)
+	local := filepath.Clean(localPath)
+	if base == "" || local == "" {
+		return "", false
+	}
+
+	rel, err := filepath.Rel(base, local)
+	if err != nil {
+		return "", false
+	}
+	if rel == "." {
+		return "", false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", false
+	}
+	return rel, true
+}
+
+func findDestinationRemote(dest *database.Destination, remoteName string) *database.DestinationRemote {
+	if dest == nil || remoteName == "" {
+		return nil
+	}
+	for _, remote := range dest.Remotes {
+		if remote.RemoteName == remoteName {
+			return remote
+		}
+	}
+	return nil
+}
+
+func (m *Manager) buildRemoteFs(remote *database.Remote, remotePath string) string {
+	if remote == nil {
+		return ""
+	}
+
+	remoteDir := path.Dir(filepath.ToSlash(remotePath))
+	if remoteDir == "." {
+		remoteDir = ""
+	}
+
+	remoteName, baseRoot, err := fspath.SplitFs(remote.RcloneRemote)
+	if err != nil {
+		return fspath.JoinRootPath(remote.RcloneRemote, remoteDir)
+	}
+
+	baseRoot = strings.TrimPrefix(baseRoot, "/")
+	root := baseRoot
+	if remoteDir != "" {
+		if root != "" {
+			root = path.Join(root, remoteDir)
+		} else {
+			root = remoteDir
+		}
+	}
+
+	if len(remote.TransferOptions) == 0 {
+		return fspath.JoinRootPath(remote.RcloneRemote, root)
+	}
+
+	name := strings.TrimSuffix(remoteName, ":")
+	if name == "" {
+		return fspath.JoinRootPath(remote.RcloneRemote, root)
+	}
+
+	opts := configmap.Simple{}
+	for key, value := range remote.TransferOptions {
+		opts[key] = formatRcloneOptionValue(value)
+	}
+
+	configString := opts.String()
+	if configString != "" {
+		name = name + "," + configString
+	}
+
+	if root == "" {
+		return name + ":"
+	}
+	return name + ":" + root
+}
+
 // checkUploadReadiness checks if upload meets mode conditions
 func (m *Manager) checkUploadReadiness(upload *database.Upload) (bool, string, string) {
 	// Find the destination configuration
@@ -1143,6 +1252,38 @@ func (m *Manager) startBatch(uploads []*database.Upload) {
 		uploads = uploads[:maxSize]
 	}
 
+	readyUploads := uploads[:0]
+	for _, upload := range uploads {
+		if !m.validateUploadPath(upload) {
+			continue
+		}
+		ready, waitState, waitChecks := m.checkUploadReadiness(upload)
+		if !ready {
+			if waitState != upload.WaitState || waitChecks != upload.WaitChecks {
+				if err := m.db.UpdateUploadWaitState(upload.ID, waitState, waitChecks); err != nil {
+					m.handleDatabaseError(err, "UpdateUploadWaitState")
+					return
+				}
+			}
+			if err := m.db.UpdateUploadStatus(upload.ID, database.UploadStatusPending); err != nil {
+				m.handleDatabaseError(err, "UpdateUploadStatus (queued to pending)")
+				return
+			}
+			continue
+		}
+		if waitState != upload.WaitState || waitChecks != upload.WaitChecks {
+			if err := m.db.UpdateUploadWaitState(upload.ID, waitState, waitChecks); err != nil {
+				m.handleDatabaseError(err, "UpdateUploadWaitState")
+				return
+			}
+		}
+		readyUploads = append(readyUploads, upload)
+	}
+	uploads = readyUploads
+	if len(uploads) == 0 {
+		return
+	}
+
 	// Get all remote configurations upfront
 	remotes, err := m.db.ListRemotes()
 	if err != nil {
@@ -1163,9 +1304,6 @@ func (m *Manager) startBatch(uploads []*database.Upload) {
 	destCache := make(map[string]*database.Destination)
 
 	for _, upload := range uploads {
-		if !m.validateUploadPath(upload) {
-			continue
-		}
 		remote, ok := remoteMap[upload.RemoteName]
 		if !ok {
 			log.Warn().
@@ -1197,11 +1335,29 @@ func (m *Manager) startBatch(uploads []*database.Upload) {
 			opPath = "operations/movefile"
 		}
 
+		relativePath, ok := relativePathForUpload(upload.LocalPath, dest)
+		if !ok || relativePath == "" {
+			m.failUpload(upload, "unable to determine relative upload path", nil)
+			continue
+		}
+
+		destRemote := findDestinationRemote(dest, upload.RemoteName)
+		if destRemote == nil {
+			m.failUpload(upload, "remote not configured for destination", nil)
+			continue
+		}
+
+		remotePath := relativePath
+		if destRemote.RemotePath != "" {
+			remotePath = filepath.Join(destRemote.RemotePath, relativePath)
+		}
+		upload.RemotePath = remotePath
+
 		// Build rclone parameters
 		srcFs := filepath.Dir(upload.LocalPath)
 		srcRemote := filepath.Base(upload.LocalPath)
-		dstFs := remote.RcloneRemote + filepath.Dir(upload.RemotePath)
-		dstRemote := filepath.Base(upload.RemotePath)
+		dstFs := m.buildRemoteFs(remote, remotePath)
+		dstRemote := filepath.Base(remotePath)
 
 		params := map[string]any{
 			"srcFs":     srcFs,
@@ -1210,9 +1366,6 @@ func (m *Manager) startBatch(uploads []*database.Upload) {
 			"dstRemote": dstRemote,
 			"_group":    "autoplow", // Stats group for progress tracking
 		}
-
-		// Merge transfer options from remote
-		maps.Copy(params, remote.TransferOptions)
 
 		batchInputs = append(batchInputs, rclone.BatchInput{
 			Path:   opPath,
@@ -1715,13 +1868,13 @@ func (m *Manager) failoverToNextRemote(upload *database.Upload) bool {
 		return false // No more remotes to try
 	}
 
-	// Calculate remote path
-	relativePath := strings.TrimPrefix(upload.LocalPath, dest.LocalPath)
-	relativePath = strings.TrimPrefix(relativePath, "/")
-	remotePath := filepath.Join(nextRemote.RemotePath, relativePath)
+	relativePath, ok := relativePathForUpload(upload.LocalPath, dest)
+	if !ok || relativePath == "" {
+		return false
+	}
 
 	// Update upload to use next remote
-	if err := m.db.UpdateUploadRemote(upload.ID, nextRemote.RemoteName, remotePath, nextRemote.Priority); err != nil {
+	if err := m.db.UpdateUploadRemote(upload.ID, nextRemote.RemoteName, relativePath, nextRemote.Priority); err != nil {
 		m.handleDatabaseError(err, "UpdateUploadRemote (failover)")
 		return false
 	}
