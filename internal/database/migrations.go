@@ -854,6 +854,22 @@ var migrations = []migration{
 			ALTER TABLE destinations_new RENAME TO destinations;
 		`,
 	},
+	{
+		Version: 28,
+		Name:    "upload_requests",
+		SQL: `
+			-- Durable queue for upload requests
+			CREATE TABLE upload_requests (
+				id INTEGER PRIMARY KEY,
+				scan_id INTEGER,
+				local_path TEXT NOT NULL,
+				priority INTEGER NOT NULL DEFAULT 0,
+				trigger_id INTEGER,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+			CREATE INDEX idx_upload_requests_created ON upload_requests(created_at);
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

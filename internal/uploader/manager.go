@@ -60,8 +60,8 @@ type Manager struct {
 	config    Config
 	sseBroker *sse.Broker
 
-	// Channel for receiving upload requests
-	requests chan UploadRequest
+	// Signal that new upload requests were queued
+	requestReady chan struct{}
 
 	// Active batch tracking
 	activeBatch   *activeBatch
@@ -120,7 +120,7 @@ func New(db *database.DB, rcloneMgr *rclone.Manager, config Config) *Manager {
 		db:                  db,
 		rcloneMgr:           rcloneMgr,
 		config:              config,
-		requests:            make(chan UploadRequest, 100),
+		requestReady:        make(chan struct{}, 1),
 		batchActive:         make(chan struct{}, 1),
 		batchReady:          make(chan struct{}, 1),
 		sizeCheckInProgress: make(map[int64]bool),
@@ -408,15 +408,24 @@ func (m *Manager) shouldSkipNewUploads() bool {
 
 // QueueUpload queues a path for upload
 func (m *Manager) QueueUpload(req UploadRequest) {
+	entry := &database.UploadRequestEntry{
+		ScanID:    req.ScanID,
+		LocalPath: req.LocalPath,
+		Priority:  req.Priority,
+		TriggerID: req.TriggerID,
+	}
+	if err := m.db.CreateUploadRequest(entry); err != nil {
+		m.handleDatabaseError(err, "CreateUploadRequest")
+		return
+	}
+
+	log.Debug().
+		Str("path", req.LocalPath).
+		Msg("Upload request queued")
+
 	select {
-	case m.requests <- req:
-		log.Debug().
-			Str("path", req.LocalPath).
-			Msg("Upload request queued")
+	case m.requestReady <- struct{}{}:
 	default:
-		log.Warn().
-			Str("path", req.LocalPath).
-			Msg("Upload request queue full, dropping request")
 	}
 }
 
@@ -441,11 +450,13 @@ func (m *Manager) Stats() Stats {
 		}
 	}
 
+	queueCount, _ := m.db.CountUploadRequests()
+
 	return Stats{
 		ActiveUploads:  activeCount,
 		PendingUploads: pendingCount,
 		QueuedUploads:  queuedCount,
-		QueueSize:      len(m.requests),
+		QueueSize:      queueCount,
 		CurrentSpeed:   currentSpeed,
 	}
 }
@@ -501,12 +512,58 @@ func (m *Manager) GetActiveTransfers() *ActiveTransfers {
 
 // requestProcessor handles incoming upload requests
 func (m *Manager) requestProcessor() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	m.drainUploadRequests()
+
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
-		case req := <-m.requests:
-			m.handleRequest(req)
+		case <-m.requestReady:
+			m.drainUploadRequests()
+		case <-ticker.C:
+			m.drainUploadRequests()
+		}
+	}
+}
+
+func (m *Manager) drainUploadRequests() {
+	const batchSize = 200
+
+	if m.HasDatabaseError() {
+		return
+	}
+
+	for {
+		requests, err := m.db.ListUploadRequests(batchSize)
+		if err != nil {
+			m.handleDatabaseError(err, "ListUploadRequests")
+			return
+		}
+		if len(requests) == 0 {
+			return
+		}
+
+		ids := make([]int64, 0, len(requests))
+		for _, req := range requests {
+			m.handleRequest(UploadRequest{
+				LocalPath: req.LocalPath,
+				ScanID:    req.ScanID,
+				Priority:  req.Priority,
+				TriggerID: req.TriggerID,
+			})
+			ids = append(ids, req.ID)
+		}
+
+		if err := m.db.DeleteUploadRequests(ids); err != nil {
+			m.handleDatabaseError(err, "DeleteUploadRequests")
+			return
+		}
+
+		if len(requests) < batchSize {
+			return
 		}
 	}
 }
