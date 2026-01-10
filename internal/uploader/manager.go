@@ -1032,6 +1032,13 @@ func isSizeOptionKey(key string) bool {
 func formatSizeOptionValue(value any) (string, bool) {
 	switch v := value.(type) {
 	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return v, true
+		}
+		if normalized, err := rclone.NormalizeSizeBytes(trimmed); err == nil {
+			return normalized, true
+		}
 		return v, true
 	case json.Number:
 		if intVal, err := v.Int64(); err == nil {
@@ -1068,7 +1075,7 @@ func formatSizeOptionValue(value any) (string, bool) {
 }
 
 func formatSizeOptionValueBytes(value int64) string {
-	return rclone.FormatSizeSuffix(value)
+	return rclone.FormatSizeBytes(value)
 }
 
 func formatRcloneFloat(value float64) string {
@@ -1491,28 +1498,6 @@ func (m *Manager) startBatch(uploads []*database.Upload) {
 	if len(batchInputs) == 0 {
 		log.Debug().Msg("No valid uploads for batch")
 		return
-	}
-
-	// Pre-create unique remote directories to avoid race conditions
-	// when multiple concurrent uploads try to create the same parent directory
-	uniqueDirs := make(map[string]struct{})
-	for _, input := range batchInputs {
-		if dstFs, ok := input.Params["dstFs"].(string); ok {
-			uniqueDirs[dstFs] = struct{}{}
-		}
-	}
-
-	for dir := range uniqueDirs {
-		ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
-		err := m.rcloneMgr.Client().Mkdir(ctx, dir)
-		cancel()
-		if err != nil {
-			// Log but don't fail - the directory might already exist
-			// or the backend might not support explicit mkdir
-			log.Debug().Err(err).Str("dir", dir).Msg("Pre-creating directory (may already exist)")
-		} else {
-			log.Debug().Str("dir", dir).Msg("Pre-created remote directory")
-		}
 	}
 
 	// Submit batch to rclone

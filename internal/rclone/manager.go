@@ -76,6 +76,8 @@ type Manager struct {
 	running      bool
 	startedAt    time.Time
 	restartCount int
+	version      string
+	versionReady bool
 	mu           sync.RWMutex
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -148,6 +150,7 @@ func (m *Manager) Start() error {
 	if m.running {
 		return nil // Already running
 	}
+	m.resetVersionCacheLocked()
 
 	// Validate credentials for both modes
 	if m.config.Username == "" || m.config.Password == "" {
@@ -353,6 +356,7 @@ func (m *Manager) Stop() error {
 	if !m.config.Managed {
 		log.Info().Str("address", m.config.Address).Msg("Disconnecting from external rclone RCD instance (unmanaged mode)")
 		m.running = false
+		m.resetVersionCacheLocked()
 		m.mu.Unlock()
 		m.broadcastStatusChange(false)
 		return nil
@@ -361,6 +365,7 @@ func (m *Manager) Stop() error {
 	// Managed mode - actually stop the process
 	if m.cmd == nil || m.cmd.Process == nil {
 		m.running = false
+		m.resetVersionCacheLocked()
 		m.mu.Unlock()
 		m.broadcastStatusChange(false)
 		return nil
@@ -377,6 +382,7 @@ func (m *Manager) Stop() error {
 	}
 
 	m.running = false
+	m.resetVersionCacheLocked()
 	m.mu.Unlock()
 	m.broadcastStatusChange(false)
 
@@ -454,15 +460,11 @@ func (m *Manager) Status() Status {
 		RestartCount: m.restartCount,
 	}
 
-	if m.running && m.cmd != nil && m.cmd.Process != nil {
-		status.PID = m.cmd.Process.Pid
-		status.Uptime = time.Since(m.startedAt)
-
-		// Try to get version
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if version, err := m.client.Version(ctx); err == nil {
-			status.Version = version.Version
+	if m.running {
+		status.Version = m.version
+		if m.cmd != nil && m.cmd.Process != nil {
+			status.PID = m.cmd.Process.Pid
+			status.Uptime = time.Since(m.startedAt)
 		}
 	}
 
@@ -592,6 +594,7 @@ func (m *Manager) waitForReady() error {
 			if err := m.client.Ping(ctx); err == nil {
 				log.Info().Msg("Rclone RCD is ready")
 				// Populate cache after RCD is ready
+				go m.cacheVersion()
 				go m.RefreshCache()
 				// Invoke callback for post-start setup (e.g., applying saved settings)
 				m.invokeOnReady()
@@ -599,6 +602,38 @@ func (m *Manager) waitForReady() error {
 			}
 		}
 	}
+}
+
+func (m *Manager) resetVersionCacheLocked() {
+	m.version = ""
+	m.versionReady = false
+}
+
+func (m *Manager) cacheVersion() {
+	m.mu.Lock()
+	if m.versionReady || !m.running {
+		m.mu.Unlock()
+		return
+	}
+	m.versionReady = true
+	m.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	version, err := m.client.Version(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch rclone version")
+		return
+	}
+
+	m.mu.Lock()
+	if !m.running || !m.versionReady {
+		m.mu.Unlock()
+		return
+	}
+	m.version = version.Version
+	m.mu.Unlock()
 }
 
 // RefreshCache refreshes the cached providers and remotes from rclone RCD

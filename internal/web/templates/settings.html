@@ -78,7 +78,7 @@
 {{end}}
 
 {{define "rclone_status_card"}}
-<div id="rclone-status-card" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/rclone/status-card" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+<div id="rclone-status-card" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/rclone/status-card" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#rclone-status-card > *" data-sse-polling-fallback="10s">
     <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
@@ -870,22 +870,25 @@
                         </div>
                         <div>
                             <label for="buffer_size" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Buffer Size</label>
-                            <input type="text" inputmode="text" name="buffer_size" id="buffer_size" value="{{.BufferSize}}" list="buffer_size_options" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" placeholder="16M">
-                            <datalist id="buffer_size_options">
-                                <option value="256K">256K</option>
-                                <option value="512K">512K</option>
-                                <option value="1M">1M</option>
-                                <option value="2M">2M</option>
-                                <option value="4M">4M</option>
-                                <option value="8M">8M</option>
-                                <option value="16M">16M</option>
-                                <option value="32M">32M</option>
-                                <option value="64M">64M</option>
-                                <option value="128M">128M</option>
-                                <option value="256M">256M</option>
-                                <option value="512M">512M</option>
-                                <option value="1G">1G</option>
-                            </datalist>
+                            {{ $bufferSize := .BufferSize }}
+                            <select name="buffer_size" id="buffer_size" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                {{if not $bufferSize}}
+                                <option value="" selected>Select size...</option>
+                                {{end}}
+                                <option value="256K" {{if eq $bufferSize "256K"}}selected{{end}}>256K</option>
+                                <option value="512K" {{if eq $bufferSize "512K"}}selected{{end}}>512K</option>
+                                <option value="1M" {{if eq $bufferSize "1M"}}selected{{end}}>1M</option>
+                                <option value="2M" {{if eq $bufferSize "2M"}}selected{{end}}>2M</option>
+                                <option value="4M" {{if eq $bufferSize "4M"}}selected{{end}}>4M</option>
+                                <option value="8M" {{if eq $bufferSize "8M"}}selected{{end}}>8M</option>
+                                <option value="16M" {{if eq $bufferSize "16M"}}selected{{end}}>16M</option>
+                                <option value="32M" {{if eq $bufferSize "32M"}}selected{{end}}>32M</option>
+                                <option value="64M" {{if eq $bufferSize "64M"}}selected{{end}}>64M</option>
+                                <option value="128M" {{if eq $bufferSize "128M"}}selected{{end}}>128M</option>
+                                <option value="256M" {{if eq $bufferSize "256M"}}selected{{end}}>256M</option>
+                                <option value="512M" {{if eq $bufferSize "512M"}}selected{{end}}>512M</option>
+                                <option value="1G" {{if eq $bufferSize "1G"}}selected{{end}}>1G</option>
+                            </select>
                             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Buffer size (e.g., 16M, 128M, 1G) (--buffer-size)</p>
                         </div>
                     </div>

@@ -188,6 +188,14 @@ func FormatSizeSuffix(bytes int64) string {
 	return strconv.FormatInt(bytes, 10)
 }
 
+// FormatSizeBytes formats a byte count as raw bytes with a trailing B.
+func FormatSizeBytes(bytes int64) string {
+	if bytes < 0 {
+		return "off"
+	}
+	return strconv.FormatInt(bytes, 10) + "B"
+}
+
 // NormalizeSizeSuffix validates and normalizes size suffix input.
 func NormalizeSizeSuffix(value string) (string, error) {
 	value = strings.TrimSpace(value)
@@ -204,6 +212,24 @@ func NormalizeSizeSuffix(value string) (string, error) {
 		return "", fmt.Errorf("unexpected size type %T", parsed)
 	}
 	return FormatSizeSuffix(sizeVal), nil
+}
+
+// NormalizeSizeBytes validates and normalizes size suffix input to raw bytes.
+func NormalizeSizeBytes(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, "\"")
+	if value == "" {
+		return "", fmt.Errorf("empty size")
+	}
+	parsed, err := ParseOptionValue("SizeSuffix", value)
+	if err != nil {
+		return "", err
+	}
+	sizeVal, ok := parsed.(int64)
+	if !ok {
+		return "", fmt.Errorf("unexpected size type %T", parsed)
+	}
+	return FormatSizeBytes(sizeVal), nil
 }
 
 func formatSizeSuffixFloat(value float64) string {
