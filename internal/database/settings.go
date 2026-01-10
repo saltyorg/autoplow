@@ -134,7 +134,12 @@ var DefaultSettings = map[string]any{
 	"rclone.max_restarts":                    10,
 	"rclone.transfers":                       4,     // concurrent file transfers
 	"rclone.checkers":                        8,     // concurrent file checkers
-	"rclone.buffer_size":                     "16M", // buffer size per transfer
+	"rclone.buffer_size":                     "16M", // buffer size per transfer (SizeSuffix)
+	"rclone.log.level":                       "NOTICE",
+	"rclone.log.file_max_age":                "0s",
+	"rclone.log.file_max_backups":            0,
+	"rclone.log.file_max_size":               "0",
+	"rclone.log.file_compress":               false,
 	"notifications.discord.enabled":          false,
 	"notifications.discord.webhook_url":      "",
 	"notifications.discord.events":           []string{"upload_complete", "upload_failed"},

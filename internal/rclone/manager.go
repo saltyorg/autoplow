@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,20 +36,33 @@ type ManagerConfig struct {
 	Address  string `json:"address"`  // 127.0.0.1:5572 (unmanaged) or just port for managed
 	Username string `json:"username"` // RCD authentication
 	Password string `json:"password"`
+
+	// Managed mode logging (ignored for unmanaged mode)
+	LogLevel          string `json:"log_level"`
+	LogFilePath       string `json:"log_file_path"`
+	LogFileMaxAge     string `json:"log_file_max_age"`
+	LogFileMaxBackups int    `json:"log_file_max_backups"`
+	LogFileMaxSize    string `json:"log_file_max_size"`
+	LogFileCompress   bool   `json:"log_file_compress"`
 }
 
 // DefaultManagerConfig returns default manager configuration
 func DefaultManagerConfig() ManagerConfig {
 	return ManagerConfig{
-		Managed:       true, // Default to managed mode
-		BinaryPath:    "rclone",
-		ConfigPath:    "~/.config/rclone/rclone.conf",
-		Address:       "127.0.0.1:5572",
-		AutoStart:     true,
-		RestartOnFail: true,
-		RestartDelay:  5 * time.Second,
-		MaxRestarts:   10,
-		HealthCheck:   30 * time.Second,
+		Managed:           true, // Default to managed mode
+		BinaryPath:        "rclone",
+		ConfigPath:        "~/.config/rclone/rclone.conf",
+		Address:           "127.0.0.1:5572",
+		AutoStart:         true,
+		RestartOnFail:     true,
+		RestartDelay:      5 * time.Second,
+		MaxRestarts:       10,
+		HealthCheck:       30 * time.Second,
+		LogLevel:          "NOTICE",
+		LogFileMaxAge:     "0s",
+		LogFileMaxBackups: 0,
+		LogFileMaxSize:    "0",
+		LogFileCompress:   false,
 	}
 }
 
@@ -227,6 +241,28 @@ func (m *Manager) Start() error {
 	args = append(args, "--rc-user", m.config.Username)
 	args = append(args, "--rc-pass", m.config.Password)
 
+	if m.config.LogLevel != "" {
+		args = append(args, "--log-level", m.config.LogLevel)
+	}
+	if m.config.LogFilePath != "" {
+		if err := ensureLogDir(m.config.LogFilePath); err != nil {
+			log.Warn().Err(err).Str("path", m.config.LogFilePath).Msg("Failed to prepare rclone log directory")
+		}
+		args = append(args, "--log-file", m.config.LogFilePath)
+		if m.config.LogFileMaxAge != "" {
+			args = append(args, "--log-file-max-age", m.config.LogFileMaxAge)
+		}
+		if m.config.LogFileMaxBackups >= 0 {
+			args = append(args, "--log-file-max-backups", strconv.Itoa(m.config.LogFileMaxBackups))
+		}
+		if m.config.LogFileMaxSize != "" {
+			args = append(args, "--log-file-max-size", m.config.LogFileMaxSize)
+		}
+		if m.config.LogFileCompress {
+			args = append(args, "--log-file-compress")
+		}
+	}
+
 	m.cmd = exec.Command(m.config.BinaryPath, args...)
 
 	// Redirect stdout/stderr to logs
@@ -263,6 +299,20 @@ func (m *Manager) Start() error {
 	}
 
 	return nil
+}
+
+// PrepareShutdown disables automatic restarts without stopping the process.
+// This lets dependents shut down cleanly while preventing restart loops.
+func (m *Manager) PrepareShutdown() {
+	m.mu.Lock()
+	if !m.running {
+		m.mu.Unlock()
+		return
+	}
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.mu.Unlock()
 }
 
 // Stop stops the rclone RCD process gracefully (managed mode) or disconnects (unmanaged mode)
@@ -598,6 +648,14 @@ func (w *rcloneLogWriter) Write(p []byte) (n int, err error) {
 	}
 
 	return len(p), nil
+}
+
+func ensureLogDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "" || dir == "." {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
 }
 
 // FindRcloneBinary attempts to find the rclone binary

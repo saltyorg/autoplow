@@ -2,6 +2,7 @@ package rclone
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -153,6 +154,66 @@ func GetEncodingFlags() []string {
 	validStr := encoder.ValidStrings()
 	flags := strings.Split(validStr, ", ")
 	return flags
+}
+
+// FormatSizeSuffix formats a byte count using K/M/G suffixes (binary units).
+func FormatSizeSuffix(bytes int64) string {
+	if bytes < 0 {
+		return "off"
+	}
+	if bytes == 0 {
+		return "0"
+	}
+
+	type suffixUnit struct {
+		suffix string
+		size   int64
+	}
+	units := []suffixUnit{
+		{suffix: "E", size: 1 << 60},
+		{suffix: "P", size: 1 << 50},
+		{suffix: "T", size: 1 << 40},
+		{suffix: "G", size: 1 << 30},
+		{suffix: "M", size: 1 << 20},
+		{suffix: "K", size: 1 << 10},
+	}
+
+	for _, unit := range units {
+		if bytes >= unit.size {
+			scaled := float64(bytes) / float64(unit.size)
+			return formatSizeSuffixFloat(scaled) + unit.suffix
+		}
+	}
+
+	return strconv.FormatInt(bytes, 10)
+}
+
+// NormalizeSizeSuffix validates and normalizes size suffix input.
+func NormalizeSizeSuffix(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, "\"")
+	if value == "" {
+		return "", fmt.Errorf("empty size")
+	}
+	parsed, err := ParseOptionValue("SizeSuffix", value)
+	if err != nil {
+		return "", err
+	}
+	sizeVal, ok := parsed.(int64)
+	if !ok {
+		return "", fmt.Errorf("unexpected size type %T", parsed)
+	}
+	return FormatSizeSuffix(sizeVal), nil
+}
+
+func formatSizeSuffixFloat(value float64) string {
+	if value == math.Trunc(value) {
+		return strconv.FormatInt(int64(value), 10)
+	}
+	formatted := fmt.Sprintf("%.3f", value)
+	formatted = strings.TrimRight(formatted, "0")
+	formatted = strings.TrimRight(formatted, ".")
+	return formatted
 }
 
 // GetCacheModeChoices returns valid CacheMode values.

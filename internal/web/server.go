@@ -20,6 +20,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/inotify"
+	"github.com/saltyorg/autoplow/internal/logging"
 	"github.com/saltyorg/autoplow/internal/matcharr"
 	"github.com/saltyorg/autoplow/internal/notification"
 	"github.com/saltyorg/autoplow/internal/plexautolang"
@@ -183,8 +184,20 @@ func (s *Server) applyRcloneSettings() {
 	}
 
 	// Load buffer size setting
-	if v, err := s.db.GetSetting("rclone.buffer_size"); err == nil && v != "" {
-		mainOpts["BufferSize"] = handlers.ParseSizeString(v)
+	const defaultBufferSize = "16M"
+	if v, err := s.db.GetSetting("rclone.buffer_size"); err == nil {
+		normalized, parseErr := rclone.NormalizeSizeSuffix(v)
+		if parseErr != nil || normalized == "" {
+			normalized = defaultBufferSize
+			if err := s.db.SetSetting("rclone.buffer_size", normalized); err != nil {
+				log.Error().Err(err).Msg("Failed to normalize rclone.buffer_size setting")
+			}
+		} else if normalized != v {
+			if err := s.db.SetSetting("rclone.buffer_size", normalized); err != nil {
+				log.Error().Err(err).Msg("Failed to normalize rclone.buffer_size setting")
+			}
+		}
+		mainOpts["BufferSize"] = normalized
 	}
 
 	if len(mainOpts) > 0 {
@@ -238,6 +251,7 @@ func (s *Server) StartUploadSubsystem() error {
 	if binaryPath, _ := s.db.GetSetting("rclone.binary_path"); binaryPath == "" || binaryPath == "/usr/bin/rclone" {
 		rcloneConfig.BinaryPath = rclone.FindRcloneBinary()
 	}
+	rcloneConfig.LogFilePath = logging.RcloneFilePathForDB(s.db.Path())
 
 	// Create rclone manager if not exists
 	if s.rcloneMgr == nil {

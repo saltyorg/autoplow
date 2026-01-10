@@ -272,7 +272,9 @@ func (h *Handlers) RcloneOptionsUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Parse buffer size (stored in bytes)
 	if v := r.FormValue("buffer_size"); v != "" {
-		mainOpts["BufferSize"] = ParseSizeString(v)
+		if size, err := strconv.ParseInt(v, 10, 64); err == nil {
+			mainOpts["BufferSize"] = size
+		}
 	}
 
 	// Parse bandwidth limit
@@ -294,33 +296,4 @@ func (h *Handlers) RcloneOptionsUpdate(w http.ResponseWriter, r *http.Request) {
 
 	h.flash(w, "Rclone options updated successfully")
 	h.redirect(w, r, "/rclone")
-}
-
-// ParseSizeString converts size strings like "16M" to bytes
-func ParseSizeString(s string) int64 {
-	if s == "" {
-		return 0
-	}
-
-	multiplier := int64(1)
-	numStr := s
-
-	// Check for suffix
-	if len(s) > 0 {
-		suffix := s[len(s)-1]
-		switch suffix {
-		case 'K', 'k':
-			multiplier = 1024
-			numStr = s[:len(s)-1]
-		case 'M', 'm':
-			multiplier = 1024 * 1024
-			numStr = s[:len(s)-1]
-		case 'G', 'g':
-			multiplier = 1024 * 1024 * 1024
-			numStr = s[:len(s)-1]
-		}
-	}
-
-	num, _ := strconv.ParseInt(numStr, 10, 64)
-	return num * multiplier
 }

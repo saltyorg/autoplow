@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/saltyorg/autoplow/internal/logging"
 	"github.com/saltyorg/autoplow/internal/rclone"
 )
 
@@ -82,12 +84,32 @@ func LoadRcloneConfigFromDB(db interface {
 		}
 	}
 
+	if val, _ := db.GetSetting("rclone.log.level"); val != "" {
+		config.LogLevel = strings.Trim(val, "\"")
+	}
+	if val, _ := db.GetSetting("rclone.log.file_max_age"); val != "" {
+		config.LogFileMaxAge = strings.Trim(val, "\"")
+	}
+	if val, _ := db.GetSetting("rclone.log.file_max_size"); val != "" {
+		config.LogFileMaxSize = strings.Trim(val, "\"")
+	}
+	if val, _ := db.GetSetting("rclone.log.file_max_backups"); val != "" {
+		if n, err := strconv.Atoi(strings.Trim(val, "\"")); err == nil {
+			config.LogFileMaxBackups = n
+		}
+	}
+	if val, _ := db.GetSetting("rclone.log.file_compress"); val != "" {
+		config.LogFileCompress = val == "true"
+	}
+
 	return config
 }
 
 // loadRcloneConfig loads rclone configuration from database settings
 func (h *Handlers) loadRcloneConfig() rclone.ManagerConfig {
-	return LoadRcloneConfigFromDB(h.db)
+	config := LoadRcloneConfigFromDB(h.db)
+	config.LogFilePath = logging.RcloneFilePathForDB(h.db.Path())
+	return config
 }
 
 // formatUptime formats a duration as a human-readable string with whole units
@@ -142,6 +164,48 @@ func formatUptime(d time.Duration) string {
 	return strings.Join(parts, " ")
 }
 
+func normalizeSizeSuffixValue(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return "", false
+		}
+		if normalized, err := rclone.NormalizeSizeSuffix(trimmed); err == nil {
+			return normalized, true
+		}
+		return trimmed, true
+	case json.Number:
+		if intVal, err := v.Int64(); err == nil {
+			return rclone.FormatSizeSuffix(intVal), true
+		}
+	case float64:
+		if v == math.Trunc(v) {
+			return rclone.FormatSizeSuffix(int64(v)), true
+		}
+	case float32:
+		floatVal := float64(v)
+		if floatVal == math.Trunc(floatVal) {
+			return rclone.FormatSizeSuffix(int64(floatVal)), true
+		}
+	case int64:
+		return rclone.FormatSizeSuffix(v), true
+	case int:
+		return rclone.FormatSizeSuffix(int64(v)), true
+	case int32:
+		return rclone.FormatSizeSuffix(int64(v)), true
+	case uint64:
+		if v <= math.MaxInt64 {
+			return rclone.FormatSizeSuffix(int64(v)), true
+		}
+	case uint:
+		return rclone.FormatSizeSuffix(int64(v)), true
+	case uint32:
+		return rclone.FormatSizeSuffix(int64(v)), true
+	}
+	return "", false
+}
+
 // SettingsRclonePage renders rclone settings page
 func (h *Handlers) SettingsRclonePage(w http.ResponseWriter, r *http.Request) {
 	var rcloneStatus map[string]any
@@ -165,6 +229,13 @@ func (h *Handlers) SettingsRclonePage(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 			defer cancel()
 			globalOptions, _ = h.rcloneMgr.Client().GetOptions(ctx)
+			if mainOpts, ok := globalOptions["main"].(map[string]any); ok {
+				if bufferSize, ok := mainOpts["BufferSize"]; ok {
+					if normalized, ok := normalizeSizeSuffixValue(bufferSize); ok {
+						mainOpts["BufferSize"] = normalized
+					}
+				}
+			}
 		}
 	}
 
@@ -172,20 +243,27 @@ func (h *Handlers) SettingsRclonePage(w http.ResponseWriter, r *http.Request) {
 	config := h.loadRcloneConfig()
 
 	h.render(w, r, "settings.html", map[string]any{
-		"Tab":           "rclone",
-		"RcloneStatus":  rcloneStatus,
-		"RcloneRunning": rcloneRunning,
-		"GlobalOptions": globalOptions,
+		"Tab":             "rclone",
+		"RcloneStatus":    rcloneStatus,
+		"RcloneRunning":   rcloneRunning,
+		"GlobalOptions":   globalOptions,
+		"RcloneLogLevels": rclone.GetLogLevelChoices(),
 		"RcloneConfig": map[string]any{
-			"Managed":       config.Managed,
-			"BinaryPath":    config.BinaryPath,
-			"ConfigPath":    config.ConfigPath,
-			"Address":       config.Address,
-			"Username":      config.Username,
-			"Password":      config.Password,
-			"AutoStart":     config.AutoStart,
-			"RestartOnFail": config.RestartOnFail,
-			"MaxRestarts":   config.MaxRestarts,
+			"Managed":           config.Managed,
+			"BinaryPath":        config.BinaryPath,
+			"ConfigPath":        config.ConfigPath,
+			"Address":           config.Address,
+			"Username":          config.Username,
+			"Password":          config.Password,
+			"AutoStart":         config.AutoStart,
+			"RestartOnFail":     config.RestartOnFail,
+			"MaxRestarts":       config.MaxRestarts,
+			"LogLevel":          config.LogLevel,
+			"LogFilePath":       config.LogFilePath,
+			"LogFileMaxAge":     config.LogFileMaxAge,
+			"LogFileMaxBackups": config.LogFileMaxBackups,
+			"LogFileMaxSize":    config.LogFileMaxSize,
+			"LogFileCompress":   config.LogFileCompress,
 		},
 	})
 }
@@ -197,6 +275,8 @@ func (h *Handlers) SettingsRcloneUpdate(w http.ResponseWriter, r *http.Request) 
 		h.redirect(w, r, "/settings/rclone")
 		return
 	}
+
+	defaultConfig := rclone.DefaultManagerConfig()
 
 	// Get form values
 	managed := r.FormValue("managed") == "on"
@@ -219,17 +299,63 @@ func (h *Handlers) SettingsRcloneUpdate(w http.ResponseWriter, r *http.Request) 
 		address = "127.0.0.1:5572" // Default for unmanaged
 	}
 
+	logLevel := strings.TrimSpace(r.FormValue("log_level"))
+	if logLevel == "" {
+		logLevel = defaultConfig.LogLevel
+	}
+	logLevel = strings.ToUpper(logLevel)
+	validLogLevel := false
+	for _, level := range rclone.GetLogLevelChoices() {
+		if strings.EqualFold(level, logLevel) {
+			logLevel = level
+			validLogLevel = true
+			break
+		}
+	}
+	if !validLogLevel {
+		logLevel = defaultConfig.LogLevel
+	}
+
+	logFileMaxAge := strings.TrimSpace(r.FormValue("log_file_max_age"))
+	if logFileMaxAge == "" {
+		logFileMaxAge = defaultConfig.LogFileMaxAge
+	}
+	if err := rclone.ValidateOptionValue("Duration", logFileMaxAge); err != nil {
+		logFileMaxAge = defaultConfig.LogFileMaxAge
+	}
+
+	logFileMaxSize := strings.TrimSpace(r.FormValue("log_file_max_size"))
+	if logFileMaxSize == "" {
+		logFileMaxSize = defaultConfig.LogFileMaxSize
+	}
+	if err := rclone.ValidateOptionValue("SizeSuffix", logFileMaxSize); err != nil {
+		logFileMaxSize = defaultConfig.LogFileMaxSize
+	}
+
+	logFileMaxBackups := defaultConfig.LogFileMaxBackups
+	if value := strings.TrimSpace(r.FormValue("log_file_max_backups")); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
+			logFileMaxBackups = parsed
+		}
+	}
+	logFileCompress := r.FormValue("log_file_compress") == "on"
+
 	// Save rclone settings to database
 	settings := map[string]string{
-		"rclone.managed":         strconv.FormatBool(managed),
-		"rclone.binary_path":     r.FormValue("binary_path"),
-		"rclone.config_path":     r.FormValue("config_path"),
-		"rclone.rcd_address":     address,
-		"rclone.username":        username,
-		"rclone.password":        password,
-		"rclone.auto_start":      strconv.FormatBool(r.FormValue("auto_start") == "on"),
-		"rclone.restart_on_fail": strconv.FormatBool(r.FormValue("restart_on_fail") == "on"),
-		"rclone.max_restarts":    r.FormValue("max_restarts"),
+		"rclone.managed":              strconv.FormatBool(managed),
+		"rclone.binary_path":          r.FormValue("binary_path"),
+		"rclone.config_path":          r.FormValue("config_path"),
+		"rclone.rcd_address":          address,
+		"rclone.username":             username,
+		"rclone.password":             password,
+		"rclone.auto_start":           strconv.FormatBool(r.FormValue("auto_start") == "on"),
+		"rclone.restart_on_fail":      strconv.FormatBool(r.FormValue("restart_on_fail") == "on"),
+		"rclone.max_restarts":         r.FormValue("max_restarts"),
+		"rclone.log.level":            logLevel,
+		"rclone.log.file_max_age":     logFileMaxAge,
+		"rclone.log.file_max_backups": strconv.Itoa(logFileMaxBackups),
+		"rclone.log.file_max_size":    logFileMaxSize,
+		"rclone.log.file_compress":    strconv.FormatBool(logFileCompress),
 	}
 
 	for key, value := range settings {
@@ -397,10 +523,14 @@ func (h *Handlers) SettingsRcloneOptionsUpdate(w http.ResponseWriter, r *http.Re
 	}
 
 	// Parse and save buffer size
-	if v := r.FormValue("buffer_size"); v != "" {
-		mainOpts["BufferSize"] = ParseSizeString(v)
-		if err := h.db.SetSetting("rclone.buffer_size", v); err != nil {
-			log.Error().Err(err).Msg("Failed to save rclone.buffer_size setting")
+	if v := strings.TrimSpace(r.FormValue("buffer_size")); v != "" {
+		if normalized, err := rclone.NormalizeSizeSuffix(v); err == nil {
+			mainOpts["BufferSize"] = normalized
+			if err := h.db.SetSetting("rclone.buffer_size", normalized); err != nil {
+				log.Error().Err(err).Msg("Failed to save rclone.buffer_size setting")
+			}
+		} else {
+			log.Warn().Err(err).Msg("Invalid buffer size value, ignoring")
 		}
 	}
 

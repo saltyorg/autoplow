@@ -1480,6 +1480,104 @@ function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+const sizeOptions = [
+    { value: '256K', bytes: 262144, label: '256K' },
+    { value: '512K', bytes: 524288, label: '512K' },
+    { value: '1M', bytes: 1048576, label: '1M' },
+    { value: '2M', bytes: 2097152, label: '2M' },
+    { value: '4M', bytes: 4194304, label: '4M' },
+    { value: '8M', bytes: 8388608, label: '8M' },
+    { value: '16M', bytes: 16777216, label: '16M' },
+    { value: '32M', bytes: 33554432, label: '32M' },
+    { value: '64M', bytes: 67108864, label: '64M' },
+    { value: '128M', bytes: 134217728, label: '128M' },
+    { value: '256M', bytes: 268435456, label: '256M' },
+    { value: '512M', bytes: 536870912, label: '512M' },
+    { value: '1G', bytes: 1073741824, label: '1G' }
+];
+
+function isSizeOption(optType, optName) {
+    if (optType === 'SizeSuffix') return true;
+    const name = String(optName || '').toLowerCase();
+    return /(?:chunk|buffer|block|part).*size/.test(name);
+}
+
+function parseSizeToBytes(value) {
+    if (value === null || value === undefined) return null;
+    const raw = String(value).trim();
+    if (raw === '') return null;
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) {
+        return Math.round(numeric);
+    }
+    const match = raw.match(/^(\d+(?:\.\d+)?)([KMGTP]?)(?:i?B)?$/i);
+    if (!match) return null;
+    const num = Number(match[1]);
+    if (!Number.isFinite(num)) return null;
+    const suffix = (match[2] || '').toUpperCase();
+    const multipliers = {
+        '': 1,
+        K: 1024,
+        M: 1024 * 1024,
+        G: 1024 * 1024 * 1024,
+        T: 1024 * 1024 * 1024 * 1024,
+        P: 1024 * 1024 * 1024 * 1024 * 1024
+    };
+    const multiplier = multipliers[suffix] || 1;
+    return Math.round(num * multiplier);
+}
+
+function formatSizeLabel(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value)) return String(bytes);
+    const units = ['B', 'K', 'M', 'G', 'T'];
+    let unitIndex = 0;
+    let scaled = value;
+    while (scaled >= 1024 && unitIndex < units.length - 1) {
+        scaled /= 1024;
+        unitIndex++;
+    }
+    const formatted = scaled % 1 === 0 ? String(scaled) : scaled.toFixed(1);
+    return `${formatted}${units[unitIndex]}`;
+}
+
+function buildSizeOptionsHtml(selectedValue) {
+    const selectedBytes = parseSizeToBytes(selectedValue);
+    const selectedStr = selectedValue === null || selectedValue === undefined ? null : String(selectedValue).trim();
+    const options = [];
+    if (selectedBytes === null) {
+        options.push('<option value="" selected>Select size...</option>');
+    }
+    let matched = false;
+    sizeOptions.forEach(opt => {
+        const selected = selectedBytes !== null && selectedBytes === opt.bytes ? ' selected' : '';
+        if (selected) matched = true;
+        options.push(`<option value="${opt.value}"${selected}>${opt.label}</option>`);
+    });
+    if (selectedStr) {
+        if (!matched) {
+            const label = selectedBytes === null ? selectedStr : formatSizeLabel(selectedBytes);
+            options.unshift(`<option value="${selectedStr}" selected>Current (${label})</option>`);
+        }
+    }
+    return options.join('');
+}
+
+function upgradeExistingSizeOptions() {
+    const container = document.getElementById('configured-options');
+    if (!container) return;
+    const inputs = container.querySelectorAll('input[type="text"][name^="opt_"]');
+    inputs.forEach(input => {
+        const optName = input.name.replace(/^opt_/, '');
+        if (!isSizeOption('', optName)) return;
+        const select = document.createElement('select');
+        select.name = input.name;
+        select.className = input.className;
+        select.innerHTML = buildSizeOptionsHtml(input.value);
+        input.replaceWith(select);
+    });
+}
+
 function getOrCreateBackendGroup(backend) {
     const container = document.getElementById('configured-options');
     const safeBackend = escapeHtml(backend);
@@ -1549,6 +1647,9 @@ function addOption(backend, optName, optDefault, optHelp, optType, choicesJson) 
         inputHtml = `
             <input type="text" name="opt_${safeName}" id="opt-input-${safeName}" value="${safeDefault}" oninput="updateEncodingCheckboxes('${safeName}')" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-500 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1.5 border mb-2">
             <div id="opt-checkboxes-${safeName}" class="grid grid-cols-3 gap-1 p-2 bg-gray-50 dark:bg-gray-700 rounded max-h-32 overflow-y-auto">${checkboxes}</div>`;
+    } else if (isSizeOption(optType, optName)) {
+        const optionsHtml = buildSizeOptionsHtml(defaultVal);
+        inputHtml = `<select name="opt_${safeName}" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-500 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-2 py-1.5 border">${optionsHtml}</select>`;
     } else if (choices && choices.length > 0) {
         // Use a dropdown for types with limited choices
         const options = choices.map(c => {
@@ -1620,6 +1721,10 @@ function updateEncodingCheckboxes(optName) {
         });
     }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    upgradeExistingSizeOptions();
+});
 </script>
 {{end}}
 

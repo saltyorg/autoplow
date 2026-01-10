@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	DefaultLogFilePath = "autoplow.log"
-	DefaultMaxSizeMB   = 50
-	DefaultMaxBackups  = 5
-	DefaultMaxAgeDays  = 30
-	DefaultCompress    = true
+	DefaultLogFilePath       = "autoplow.log"
+	DefaultRcloneLogFilePath = "rclone.log"
+	DefaultMaxSizeMB         = 50
+	DefaultMaxBackups        = 5
+	DefaultMaxAgeDays        = 30
+	DefaultCompress          = true
 )
 
 // Apply sets the global log level and output writers (console + rotating file).
@@ -96,6 +97,16 @@ func FilePathForDB(dbPath string) string {
 		return filepath.Join(filepath.Dir(dbPath), DefaultLogFilePath)
 	}
 	return filepath.Join(filepath.Dir(absDBPath), DefaultLogFilePath)
+}
+
+// RcloneFilePathForDB returns a log file path for rclone alongside the app log.
+func RcloneFilePathForDB(dbPath string) string {
+	logPath := FilePathForDB(dbPath)
+	dir := filepath.Dir(logPath)
+	if dir == "" || dir == "." {
+		return DefaultRcloneLogFilePath
+	}
+	return filepath.Join(dir, DefaultRcloneLogFilePath)
 }
 
 func ensureLogDir(path string) error {

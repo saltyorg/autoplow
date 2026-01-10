@@ -114,7 +114,7 @@ func (db *db) GetActiveSessionCount() (int, error) {
 	return count, err
 }
 
-// GetTotalActiveBitrate returns the sum of all active session bitrates in bits per second
+// GetTotalActiveBitrate returns the sum of all active session bitrate in bits per second
 func (db *db) GetTotalActiveBitrate() (int64, error) {
 	var total sql.NullInt64
 	err := db.queryRow("SELECT SUM(bitrate) FROM active_sessions").Scan(&total)

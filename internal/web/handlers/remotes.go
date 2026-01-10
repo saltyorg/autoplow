@@ -137,6 +137,16 @@ func parseTransferOptions(r *http.Request) map[string]any {
 			optType := r.FormValue("opt_type_" + optName)
 
 			if optType != "" {
+				if optType == "SizeSuffix" {
+					normalized, err := rclone.NormalizeSizeSuffix(value)
+					if err != nil {
+						log.Warn().Err(err).Str("option", optName).Str("type", optType).Msg("Failed to parse option value, using string")
+						options[optName] = value
+					} else {
+						options[optName] = normalized
+					}
+					continue
+				}
 				// Use type-aware parsing
 				parsedValue, err := rclone.ParseOptionValue(optType, value)
 				if err != nil {

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -971,6 +974,18 @@ func formatRcloneOptionValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
+	case json.Number:
+		if intVal, err := v.Int64(); err == nil {
+			return strconv.FormatInt(intVal, 10)
+		}
+		if floatVal, err := v.Float64(); err == nil {
+			return formatRcloneFloat(floatVal)
+		}
+		return v.String()
+	case float64:
+		return formatRcloneFloat(v)
+	case float32:
+		return formatRcloneFloat(float64(v))
 	case []string:
 		return strings.Join(v, ",")
 	case []any:
@@ -982,6 +997,76 @@ func formatRcloneOptionValue(value any) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+var sizeOptionKeyRe = regexp.MustCompile(`(?i)(?:chunk|buffer|block|part).*size`)
+
+func formatRcloneOptionValueForKey(key string, value any) string {
+	if isSizeOptionKey(key) {
+		if formatted, ok := formatSizeOptionValue(value); ok {
+			return formatted
+		}
+	}
+	return formatRcloneOptionValue(value)
+}
+
+func isSizeOptionKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	return sizeOptionKeyRe.MatchString(key)
+}
+
+func formatSizeOptionValue(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case json.Number:
+		if intVal, err := v.Int64(); err == nil {
+			return formatSizeOptionValueBytes(intVal), true
+		}
+		if floatVal, err := v.Float64(); err == nil && floatVal == math.Trunc(floatVal) {
+			return formatSizeOptionValueBytes(int64(floatVal)), true
+		}
+	case float64:
+		if v == math.Trunc(v) {
+			return formatSizeOptionValueBytes(int64(v)), true
+		}
+	case float32:
+		floatVal := float64(v)
+		if floatVal == math.Trunc(floatVal) {
+			return formatSizeOptionValueBytes(int64(floatVal)), true
+		}
+	case int:
+		return formatSizeOptionValueBytes(int64(v)), true
+	case int64:
+		return formatSizeOptionValueBytes(v), true
+	case int32:
+		return formatSizeOptionValueBytes(int64(v)), true
+	case uint:
+		return formatSizeOptionValueBytes(int64(v)), true
+	case uint64:
+		if v <= math.MaxInt64 {
+			return formatSizeOptionValueBytes(int64(v)), true
+		}
+	case uint32:
+		return formatSizeOptionValueBytes(int64(v)), true
+	}
+	return "", false
+}
+
+func formatSizeOptionValueBytes(value int64) string {
+	return rclone.FormatSizeSuffix(value)
+}
+
+func formatRcloneFloat(value float64) string {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fmt.Sprint(value)
+	}
+	if value == math.Trunc(value) && value <= math.MaxInt64 && value >= math.MinInt64 {
+		return strconv.FormatInt(int64(value), 10)
+	}
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 func relativePathForUpload(localPath string, dest *database.Destination) (string, bool) {
@@ -1056,10 +1141,10 @@ func (m *Manager) buildRemoteFs(remote *database.Remote, remotePath string) stri
 
 	opts := configmap.Simple{}
 	for key, value := range remote.TransferOptions {
-		opts[key] = formatRcloneOptionValue(value)
+		opts[key] = formatRcloneOptionValueForKey(key, value)
 	}
 
-	configString := opts.String()
+	configString := opts.Human()
 	if configString != "" {
 		name = name + "," + configString
 	}

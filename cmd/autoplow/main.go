@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -183,6 +184,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if binaryPath, _ := db.GetSetting("rclone.binary_path"); binaryPath == "" || binaryPath == "/usr/bin/rclone" {
 		rcloneConfig.BinaryPath = rclone.FindRcloneBinary()
 	}
+	rcloneConfig.LogFilePath = logging.RcloneFilePathForDB(db.Path())
 
 	// Check if uploads are enabled - this controls auto-start behavior
 	uploadsEnabled := true // default
@@ -250,19 +252,23 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Defer cleanup for upload subsystem
-	defer func() {
-		if throttleMgr != nil {
-			throttleMgr.Stop()
-		}
-		if uploadMgr != nil {
-			uploadMgr.Stop()
-		}
-		if rcloneMgr.IsRunning() {
-			if err := rcloneMgr.Stop(); err != nil {
-				log.Error().Err(err).Msg("Failed to stop rclone RCD")
+	var stopUploadOnce sync.Once
+	stopUploadSubsystem := func() {
+		stopUploadOnce.Do(func() {
+			if throttleMgr != nil {
+				throttleMgr.Stop()
 			}
-		}
-	}()
+			if uploadMgr != nil {
+				uploadMgr.Stop()
+			}
+			if rcloneMgr.IsRunning() {
+				if err := rcloneMgr.Stop(); err != nil {
+					log.Error().Err(err).Msg("Failed to stop rclone RCD")
+				}
+			}
+		})
+	}
+	defer stopUploadSubsystem()
 
 	// Initialize notification manager
 	notificationMgr := notification.NewManager(db)
@@ -344,12 +350,9 @@ func run(cmd *cobra.Command, args []string) error {
 	go func() {
 		sig := <-sigChan
 		log.Info().Str("signal", sig.String()).Msg("Received shutdown signal")
-		// Stop rclone first to prevent restart attempts when child process receives SIGINT
-		if rcloneMgr.IsRunning() {
-			if err := rcloneMgr.Stop(); err != nil {
-				log.Debug().Err(err).Msg("Error stopping rclone during shutdown (ignored)")
-			}
-		}
+		// Prevent rclone restarts while we shut down uploads first.
+		rcloneMgr.PrepareShutdown()
+		stopUploadSubsystem()
 		cancel()
 	}()
 
