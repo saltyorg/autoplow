@@ -21,8 +21,8 @@ type ActiveSession struct {
 }
 
 // UpsertActiveSession creates or updates an active session
-func (db *DB) UpsertActiveSession(session *ActiveSession) error {
-	_, err := db.Exec(`
+func (db *db) UpsertActiveSession(session *ActiveSession) error {
+	_, err := db.exec(`
 		INSERT INTO active_sessions (id, server_type, server_id, username, media_title, media_type, resolution, bitrate, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -37,8 +37,8 @@ func (db *DB) UpsertActiveSession(session *ActiveSession) error {
 }
 
 // ListActiveSessions returns all active sessions
-func (db *DB) ListActiveSessions() ([]*ActiveSession, error) {
-	rows, err := db.Query(`
+func (db *db) ListActiveSessions() ([]*ActiveSession, error) {
+	rows, err := db.query(`
 		SELECT id, server_type, server_id, username, media_title, media_type, resolution, bitrate, updated_at
 		FROM active_sessions
 		ORDER BY updated_at DESC
@@ -61,8 +61,8 @@ func (db *DB) ListActiveSessions() ([]*ActiveSession, error) {
 }
 
 // ListActiveSessionsByServer returns active sessions for a specific server
-func (db *DB) ListActiveSessionsByServer(serverType, serverID string) ([]*ActiveSession, error) {
-	rows, err := db.Query(`
+func (db *db) ListActiveSessionsByServer(serverType, serverID string) ([]*ActiveSession, error) {
+	rows, err := db.query(`
 		SELECT id, server_type, server_id, username, media_title, media_type, resolution, bitrate, updated_at
 		FROM active_sessions
 		WHERE server_type = ? AND server_id = ?
@@ -86,15 +86,15 @@ func (db *DB) ListActiveSessionsByServer(serverType, serverID string) ([]*Active
 }
 
 // DeleteActiveSession removes an active session
-func (db *DB) DeleteActiveSession(id string) error {
-	_, err := db.Exec("DELETE FROM active_sessions WHERE id = ?", id)
+func (db *db) DeleteActiveSession(id string) error {
+	_, err := db.exec("DELETE FROM active_sessions WHERE id = ?", id)
 	return err
 }
 
 // DeleteStaleSessions removes sessions not updated in the given duration
-func (db *DB) DeleteStaleSessions(staleAfter time.Duration) (int64, error) {
+func (db *db) DeleteStaleSessions(staleAfter time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-staleAfter)
-	result, err := db.Exec("DELETE FROM active_sessions WHERE updated_at < ?", cutoff)
+	result, err := db.exec("DELETE FROM active_sessions WHERE updated_at < ?", cutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -102,22 +102,22 @@ func (db *DB) DeleteStaleSessions(staleAfter time.Duration) (int64, error) {
 }
 
 // DeleteSessionsByServer removes all sessions for a specific server
-func (db *DB) DeleteSessionsByServer(serverType, serverID string) error {
-	_, err := db.Exec("DELETE FROM active_sessions WHERE server_type = ? AND server_id = ?", serverType, serverID)
+func (db *db) DeleteSessionsByServer(serverType, serverID string) error {
+	_, err := db.exec("DELETE FROM active_sessions WHERE server_type = ? AND server_id = ?", serverType, serverID)
 	return err
 }
 
 // GetActiveSessionCount returns the number of active sessions
-func (db *DB) GetActiveSessionCount() (int, error) {
+func (db *db) GetActiveSessionCount() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM active_sessions").Scan(&count)
 	return count, err
 }
 
 // GetTotalActiveBitrate returns the sum of all active session bitrates in bits per second
-func (db *DB) GetTotalActiveBitrate() (int64, error) {
+func (db *db) GetTotalActiveBitrate() (int64, error) {
 	var total sql.NullInt64
-	err := db.QueryRow("SELECT SUM(bitrate) FROM active_sessions").Scan(&total)
+	err := db.queryRow("SELECT SUM(bitrate) FROM active_sessions").Scan(&total)
 	if err != nil {
 		return 0, err
 	}

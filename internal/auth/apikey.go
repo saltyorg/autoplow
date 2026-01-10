@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/saltyorg/autoplow/internal/database"
 )
@@ -16,23 +18,23 @@ const (
 
 // TriggerAuthService handles trigger authentication (both API key and basic auth)
 type TriggerAuthService struct {
-	db *database.DB
+	db *database.Manager
 }
 
 // NewTriggerAuthService creates a new trigger auth service
-func NewTriggerAuthService(db *database.DB) *TriggerAuthService {
+func NewTriggerAuthService(db *database.Manager) *TriggerAuthService {
 	return &TriggerAuthService{db: db}
 }
 
 // APIKeyService handles API key management
 // Deprecated: Use TriggerAuthService instead
 type APIKeyService struct {
-	db *database.DB
+	db *database.Manager
 }
 
 // NewAPIKeyService creates a new API key service
 // Deprecated: Use NewTriggerAuthService instead
-func NewAPIKeyService(db *database.DB) *APIKeyService {
+func NewAPIKeyService(db *database.Manager) *APIKeyService {
 	return &APIKeyService{db: db}
 }
 
@@ -52,28 +54,26 @@ func GenerateAPIKey() (string, error) {
 
 // ValidateAPIKey checks if an API key is valid and returns the trigger ID and type
 func (s *APIKeyService) ValidateAPIKey(apiKey string) (triggerID int64, triggerType string, err error) {
-	err = s.db.QueryRow(`
-		SELECT id, type FROM triggers WHERE api_key = ? AND enabled = true
-	`, apiKey).Scan(&triggerID, &triggerType)
-	if err == sql.ErrNoRows {
-		return 0, "", nil
-	}
+	trigger, err := s.db.GetTriggerByAPIKey(apiKey)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to validate api key: %w", err)
 	}
-	return triggerID, triggerType, nil
+	if trigger == nil || !trigger.Enabled {
+		return 0, "", nil
+	}
+	return trigger.ID, string(trigger.Type), nil
 }
 
 // ValidateTriggerAPIKey checks if an API key matches a specific trigger ID
 func (s *APIKeyService) ValidateTriggerAPIKey(triggerID int64, apiKey string) (bool, error) {
-	var count int
-	err := s.db.QueryRow(`
-		SELECT COUNT(*) FROM triggers WHERE id = ? AND api_key = ? AND enabled = true
-	`, triggerID, apiKey).Scan(&count)
+	trigger, err := s.db.GetTrigger(triggerID)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate trigger api key: %w", err)
 	}
-	return count > 0, nil
+	if trigger == nil || !trigger.Enabled {
+		return false, nil
+	}
+	return trigger.APIKey == apiKey, nil
 }
 
 // RegenerateAPIKey generates a new API key for a trigger
@@ -83,19 +83,8 @@ func (s *APIKeyService) RegenerateAPIKey(triggerID int64) (string, error) {
 		return "", err
 	}
 
-	result, err := s.db.Exec(`
-		UPDATE triggers SET api_key = ? WHERE id = ?
-	`, apiKey, triggerID)
-	if err != nil {
+	if err := s.db.UpdateTriggerAPIKey(triggerID, apiKey); err != nil {
 		return "", fmt.Errorf("failed to update api key: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return "", fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
-		return "", fmt.Errorf("trigger not found: %d", triggerID)
 	}
 
 	return apiKey, nil
@@ -103,22 +92,30 @@ func (s *APIKeyService) RegenerateAPIKey(triggerID int64) (string, error) {
 
 // GetTriggerByAPIKey retrieves a trigger by its API key
 func (s *APIKeyService) GetTriggerByAPIKey(apiKey string) (*Trigger, error) {
-	trigger := &Trigger{}
-	err := s.db.QueryRow(`
-		SELECT id, name, type, api_key, priority, enabled, config, created_at, updated_at
-		FROM triggers WHERE api_key = ?
-	`, apiKey).Scan(
-		&trigger.ID, &trigger.Name, &trigger.Type, &trigger.APIKey,
-		&trigger.Priority, &trigger.Enabled, &trigger.Config,
-		&trigger.CreatedAt, &trigger.UpdatedAt,
-	)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+	record, err := s.db.GetTriggerByAPIKey(apiKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trigger by api key: %w", err)
 	}
-	return trigger, nil
+	if record == nil {
+		return nil, nil
+	}
+
+	configJSON, _ := json.Marshal(record.Config)
+
+	createdAt := record.CreatedAt.Format(time.RFC3339)
+	updatedAt := record.UpdatedAt.Format(time.RFC3339)
+
+	return &Trigger{
+		ID:        record.ID,
+		Name:      record.Name,
+		Type:      string(record.Type),
+		APIKey:    sql.NullString{String: record.APIKey, Valid: record.APIKey != ""},
+		Priority:  record.Priority,
+		Enabled:   record.Enabled,
+		Config:    string(configJSON),
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}, nil
 }
 
 // Trigger represents a webhook/inotify trigger
@@ -141,49 +138,43 @@ func (s *TriggerAuthService) GenerateKey() (string, error) {
 
 // ValidateAPIKey checks if an API key is valid and returns the trigger ID and type
 func (s *TriggerAuthService) ValidateAPIKey(apiKey string) (triggerID int64, triggerType string, err error) {
-	err = s.db.QueryRow(`
-		SELECT id, type FROM triggers WHERE api_key = ? AND enabled = true AND auth_type = 'api_key'
-	`, apiKey).Scan(&triggerID, &triggerType)
-	if err == sql.ErrNoRows {
-		return 0, "", nil
-	}
+	trigger, err := s.db.GetTriggerByAPIKey(apiKey)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to validate api key: %w", err)
 	}
-	return triggerID, triggerType, nil
+	if trigger == nil || !trigger.Enabled || trigger.AuthType != database.AuthTypeAPIKey {
+		return 0, "", nil
+	}
+	return trigger.ID, string(trigger.Type), nil
 }
 
 // ValidateTriggerAPIKey checks if an API key matches a specific trigger ID
 func (s *TriggerAuthService) ValidateTriggerAPIKey(triggerID int64, apiKey string) (bool, error) {
-	var count int
-	err := s.db.QueryRow(`
-		SELECT COUNT(*) FROM triggers WHERE id = ? AND api_key = ? AND enabled = true AND auth_type = 'api_key'
-	`, triggerID, apiKey).Scan(&count)
+	trigger, err := s.db.GetTrigger(triggerID)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate trigger api key: %w", err)
 	}
-	return count > 0, nil
+	if trigger == nil || !trigger.Enabled || trigger.AuthType != database.AuthTypeAPIKey {
+		return false, nil
+	}
+	return trigger.APIKey == apiKey, nil
 }
 
 // ValidateTriggerBasicAuth checks username/password for a specific trigger ID
 func (s *TriggerAuthService) ValidateTriggerBasicAuth(triggerID int64, username, password string) (bool, error) {
-	var encryptedPassword sql.NullString
-	err := s.db.QueryRow(`
-		SELECT password_hash FROM triggers WHERE id = ? AND username = ? AND enabled = true AND auth_type = 'basic'
-	`, triggerID, username).Scan(&encryptedPassword)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
+	trigger, err := s.db.GetTrigger(triggerID)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate trigger basic auth: %w", err)
 	}
-
-	if !encryptedPassword.Valid || encryptedPassword.String == "" {
+	if trigger == nil || !trigger.Enabled || trigger.AuthType != database.AuthTypeBasic {
+		return false, nil
+	}
+	if trigger.Username != username || trigger.Password == "" {
 		return false, nil
 	}
 
 	// Decrypt the stored password and compare
-	storedPassword, err := DecryptTriggerPassword(encryptedPassword.String)
+	storedPassword, err := DecryptTriggerPassword(trigger.Password)
 	if err != nil {
 		return false, fmt.Errorf("failed to decrypt password: %w", err)
 	}
@@ -193,22 +184,17 @@ func (s *TriggerAuthService) ValidateTriggerBasicAuth(triggerID int64, username,
 
 // GetTriggerAuthType returns the auth type for a trigger
 func (s *TriggerAuthService) GetTriggerAuthType(triggerID int64) (database.AuthType, error) {
-	var authType sql.NullString
-	err := s.db.QueryRow(`
-		SELECT auth_type FROM triggers WHERE id = ? AND enabled = true
-	`, triggerID).Scan(&authType)
-	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("trigger not found or disabled")
-	}
+	trigger, err := s.db.GetTrigger(triggerID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get trigger auth type: %w", err)
 	}
-
-	if !authType.Valid || authType.String == "" {
-		return database.AuthTypeAPIKey, nil // default for backward compatibility
+	if trigger == nil || !trigger.Enabled {
+		return "", fmt.Errorf("trigger not found or disabled")
 	}
-
-	return database.AuthType(authType.String), nil
+	if trigger.AuthType == "" {
+		return database.AuthTypeAPIKey, nil
+	}
+	return trigger.AuthType, nil
 }
 
 // RegenerateAPIKey generates a new API key for a trigger
@@ -218,19 +204,15 @@ func (s *TriggerAuthService) RegenerateAPIKey(triggerID int64) (string, error) {
 		return "", err
 	}
 
-	result, err := s.db.Exec(`
-		UPDATE triggers SET api_key = ? WHERE id = ? AND auth_type = 'api_key'
-	`, apiKey, triggerID)
+	trigger, err := s.db.GetTrigger(triggerID)
 	if err != nil {
 		return "", fmt.Errorf("failed to update api key: %w", err)
 	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return "", fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rows == 0 {
+	if trigger == nil || trigger.AuthType != database.AuthTypeAPIKey {
 		return "", fmt.Errorf("trigger not found or not using API key auth: %d", triggerID)
+	}
+	if err := s.db.UpdateTriggerAPIKey(triggerID, apiKey); err != nil {
+		return "", fmt.Errorf("failed to update api key: %w", err)
 	}
 
 	return apiKey, nil

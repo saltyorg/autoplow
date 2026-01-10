@@ -55,7 +55,7 @@ type UploadRequest struct {
 
 // Manager handles upload processing
 type Manager struct {
-	db        *database.DB
+	db        *database.Manager
 	rcloneMgr *rclone.Manager
 	config    Config
 	sseBroker *sse.Broker
@@ -115,7 +115,7 @@ type Stats struct {
 }
 
 // New creates a new upload manager
-func New(db *database.DB, rcloneMgr *rclone.Manager, config Config) *Manager {
+func New(db *database.Manager, rcloneMgr *rclone.Manager, config Config) *Manager {
 	return &Manager{
 		db:                  db,
 		rcloneMgr:           rcloneMgr,
@@ -422,6 +422,35 @@ func (m *Manager) QueueUpload(req UploadRequest) {
 	log.Debug().
 		Str("path", req.LocalPath).
 		Msg("Upload request queued")
+
+	select {
+	case m.requestReady <- struct{}{}:
+	default:
+	}
+}
+
+// QueueUploads queues multiple paths for upload in a single batched database write.
+func (m *Manager) QueueUploads(reqs []UploadRequest) {
+	if len(reqs) == 0 {
+		return
+	}
+
+	entries := make([]*database.UploadRequestEntry, 0, len(reqs))
+	for _, req := range reqs {
+		entries = append(entries, &database.UploadRequestEntry{
+			ScanID:    req.ScanID,
+			LocalPath: req.LocalPath,
+			Priority:  req.Priority,
+			TriggerID: req.TriggerID,
+		})
+	}
+
+	if err := m.db.CreateUploadRequests(entries); err != nil {
+		m.handleDatabaseError(err, "CreateUploadRequests")
+		return
+	}
+
+	log.Debug().Int("count", len(entries)).Msg("Upload requests queued")
 
 	select {
 	case m.requestReady <- struct{}{}:

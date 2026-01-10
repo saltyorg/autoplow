@@ -9,11 +9,11 @@ import (
 )
 
 // Migrate runs all database migrations
-func (db *DB) Migrate() error {
+func (db *db) Migrate() error {
 	log.Info().Msg("Running database migrations")
 
 	// Create migrations table if not exists
-	_, err := db.Exec(`
+	_, err := db.exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INTEGER PRIMARY KEY,
 			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -25,7 +25,7 @@ func (db *DB) Migrate() error {
 
 	// Get current version
 	var currentVersion int
-	err = db.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&currentVersion)
+	err = db.queryRow("SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&currentVersion)
 	if err != nil {
 		return fmt.Errorf("failed to get current migration version: %w", err)
 	}
@@ -37,7 +37,7 @@ func (db *DB) Migrate() error {
 		if migration.Version > currentVersion {
 			log.Info().Int("version", migration.Version).Str("name", migration.Name).Msg("Applying migration")
 
-			if err := db.Transaction(func(tx *sql.Tx) error {
+			if err := db.transaction(func(tx *sql.Tx) error {
 				// Execute migration SQL - split by semicolons and execute each statement
 				// This ensures each statement is properly executed and errors are caught
 				statements := splitSQLStatements(migration.SQL)
@@ -873,7 +873,7 @@ var migrations = []migration{
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped
-func (db *DB) ensureMatcharrMismatchSchema() error {
+func (db *db) ensureMatcharrMismatchSchema() error {
 	cols, err := db.tableColumns("matcharr_mismatches")
 	if err != nil {
 		return err
@@ -892,7 +892,7 @@ func (db *DB) ensureMatcharrMismatchSchema() error {
 			continue
 		}
 		log.Warn().Str("table", "matcharr_mismatches").Str("column", col.name).Msg("Adding missing column")
-		if _, err := db.Exec(fmt.Sprintf("ALTER TABLE matcharr_mismatches ADD COLUMN %s %s", col.name, col.definition)); err != nil {
+		if _, err := db.exec(fmt.Sprintf("ALTER TABLE matcharr_mismatches ADD COLUMN %s %s", col.name, col.definition)); err != nil {
 			return fmt.Errorf("failed to add column %s: %w", col.name, err)
 		}
 	}
@@ -901,8 +901,8 @@ func (db *DB) ensureMatcharrMismatchSchema() error {
 }
 
 // tableColumns returns a set of column names for a given table
-func (db *DB) tableColumns(table string) (map[string]struct{}, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+func (db *db) tableColumns(table string) (map[string]struct{}, error) {
+	rows, err := db.query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get table info for %s: %w", table, err)
 	}

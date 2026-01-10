@@ -18,7 +18,7 @@ import (
 
 // Watcher watches filesystem paths for changes and triggers scans
 type Watcher struct {
-	db            *database.DB
+	db            *database.Manager
 	processor     *processor.Processor
 	uploadManager *uploader.Manager
 	watcher       *fsnotify.Watcher
@@ -52,7 +52,7 @@ type pendingEvent struct {
 }
 
 // New creates a new filesystem watcher
-func New(db *database.DB, proc *processor.Processor) (*Watcher, error) {
+func New(db *database.Manager, proc *processor.Processor) (*Watcher, error) {
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err

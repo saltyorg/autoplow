@@ -3,8 +3,11 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/saltyorg/autoplow/internal/database"
 )
 
 // DashboardData contains data for the dashboard page
@@ -96,64 +99,62 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data.Stats.UploadsEnabled = uploadsEnabled
 
 	// Scan stats - all time totals
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&data.Stats.PendingScans)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&data.Stats.ActiveScans)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'completed'").Scan(&data.Stats.CompletedScans)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'failed'").Scan(&data.Stats.FailedScans)
+	data.Stats.PendingScans, _ = h.db.CountScansFiltered(string(database.ScanStatusPending))
+	data.Stats.ActiveScans, _ = h.db.CountScansFiltered(string(database.ScanStatusScanning))
+	data.Stats.CompletedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusCompleted))
+	data.Stats.FailedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusFailed))
 
 	// Upload stats - all time totals (only if enabled)
 	if uploadsEnabled {
-		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&data.Stats.ActiveUploads)
-		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&data.Stats.QueuedUploads)
-		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'completed'").Scan(&data.Stats.CompletedUploads)
-		_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'failed'").Scan(&data.Stats.FailedUploads)
+		data.Stats.ActiveUploads, _ = h.db.CountUploads(database.UploadStatusUploading)
+		data.Stats.QueuedUploads, _ = h.db.CountUploads(database.UploadStatusQueued)
+		data.Stats.CompletedUploads, _ = h.db.CountUploads(database.UploadStatusCompleted)
+		data.Stats.FailedUploads, _ = h.db.CountUploads(database.UploadStatusFailed)
 	}
 
 	// Get active sessions count
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM active_sessions").Scan(&data.Stats.ActiveSessions)
+	data.Stats.ActiveSessions, _ = h.db.GetActiveSessionCount()
 
 	// Get recent scans
-	rows, err := h.db.Query(`
-		SELECT s.id, s.path, s.status, COALESCE(t.name, 'Unknown') as trigger_name, s.created_at
-		FROM scans s
-		LEFT JOIN triggers t ON s.trigger_id = t.id
-		ORDER BY s.created_at DESC
-		LIMIT 10
-	`)
+	scans, err := h.db.ListRecentScans(10)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get recent scans")
 	} else {
-		defer rows.Close()
-		for rows.Next() {
-			var scan ScanSummary
-			if err := rows.Scan(&scan.ID, &scan.Path, &scan.Status, &scan.Trigger, &scan.CreatedAt); err != nil {
-				log.Error().Err(err).Msg("Failed to scan row")
-				continue
+		for _, scan := range scans {
+			triggerName := "Unknown"
+			if scan.TriggerID != nil {
+				if trigger, err := h.db.GetTrigger(*scan.TriggerID); err == nil && trigger != nil {
+					triggerName = trigger.Name
+				}
 			}
-			data.RecentScans = append(data.RecentScans, scan)
+			data.RecentScans = append(data.RecentScans, ScanSummary{
+				ID:        scan.ID,
+				Path:      scan.Path,
+				Status:    string(scan.Status),
+				Trigger:   triggerName,
+				CreatedAt: scan.CreatedAt.Format(time.RFC3339),
+			})
 		}
 	}
 
 	// Get recent uploads
-	rows, err = h.db.Query(`
-		SELECT id, local_path, status,
-			CASE WHEN size_bytes > 0 THEN (progress_bytes * 100 / size_bytes) ELSE 0 END as progress,
-			remote_name, created_at
-		FROM uploads
-		ORDER BY created_at DESC
-		LIMIT 10
-	`)
+	uploads, err := h.db.ListRecentUploads(10)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get recent uploads")
 	} else {
-		defer rows.Close()
-		for rows.Next() {
-			var upload UploadSummary
-			if err := rows.Scan(&upload.ID, &upload.Path, &upload.Status, &upload.Progress, &upload.Remote, &upload.CreatedAt); err != nil {
-				log.Error().Err(err).Msg("Failed to scan row")
-				continue
+		for _, upload := range uploads {
+			progress := 0
+			if upload.SizeBytes != nil && *upload.SizeBytes > 0 {
+				progress = int(upload.ProgressBytes * 100 / *upload.SizeBytes)
 			}
-			data.RecentUploads = append(data.RecentUploads, upload)
+			data.RecentUploads = append(data.RecentUploads, UploadSummary{
+				ID:        upload.ID,
+				Path:      upload.LocalPath,
+				Status:    string(upload.Status),
+				Progress:  progress,
+				Remote:    upload.RemoteName,
+				CreatedAt: upload.CreatedAt.Format(time.RFC3339),
+			})
 		}
 	}
 
@@ -168,24 +169,19 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get active sessions
-	rows, err = h.db.Query(`
-		SELECT id, server_type, username, media_title, resolution, bitrate
-		FROM active_sessions
-		ORDER BY updated_at DESC
-	`)
+	sessions, err := h.db.ListActiveSessions()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get active sessions")
 	} else {
-		defer rows.Close()
-		for rows.Next() {
-			var session SessionSummary
-			var bitrate int64
-			if err := rows.Scan(&session.ID, &session.Server, &session.User, &session.Title, &session.Format, &bitrate); err != nil {
-				log.Error().Err(err).Msg("Failed to scan row")
-				continue
-			}
-			session.Bitrate = formatBitrateWithOptions(bitrate, useBinary, useBits)
-			data.ActiveSessions = append(data.ActiveSessions, session)
+		for _, session := range sessions {
+			data.ActiveSessions = append(data.ActiveSessions, SessionSummary{
+				ID:      session.ID,
+				Server:  session.ServerType,
+				User:    session.Username,
+				Title:   session.MediaTitle,
+				Format:  session.Format,
+				Bitrate: formatBitrateWithOptions(session.Bitrate, useBinary, useBits),
+			})
 		}
 	}
 
@@ -225,10 +221,10 @@ func (h *Handlers) DashboardStatsPartial(w http.ResponseWriter, r *http.Request)
 	stats := DashboardStats{}
 
 	// Scan stats - all time totals
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'pending'").Scan(&stats.PendingScans)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'scanning'").Scan(&stats.ActiveScans)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'completed'").Scan(&stats.CompletedScans)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM scans WHERE status = 'failed'").Scan(&stats.FailedScans)
+	stats.PendingScans, _ = h.db.CountScansFiltered(string(database.ScanStatusPending))
+	stats.ActiveScans, _ = h.db.CountScansFiltered(string(database.ScanStatusScanning))
+	stats.CompletedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusCompleted))
+	stats.FailedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusFailed))
 
 	h.renderPartial(w, "dashboard.html", "scan_stats", stats)
 }
@@ -238,10 +234,10 @@ func (h *Handlers) DashboardUploadStatsPartial(w http.ResponseWriter, r *http.Re
 	stats := DashboardStats{}
 
 	// Upload stats - all time totals
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'uploading'").Scan(&stats.ActiveUploads)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'queued'").Scan(&stats.QueuedUploads)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'completed'").Scan(&stats.CompletedUploads)
-	_ = h.db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = 'failed'").Scan(&stats.FailedUploads)
+	stats.ActiveUploads, _ = h.db.CountUploads(database.UploadStatusUploading)
+	stats.QueuedUploads, _ = h.db.CountUploads(database.UploadStatusQueued)
+	stats.CompletedUploads, _ = h.db.CountUploads(database.UploadStatusCompleted)
+	stats.FailedUploads, _ = h.db.CountUploads(database.UploadStatusFailed)
 
 	h.renderPartial(w, "dashboard.html", "upload_stats", stats)
 }
@@ -250,20 +246,22 @@ func (h *Handlers) DashboardUploadStatsPartial(w http.ResponseWriter, r *http.Re
 func (h *Handlers) DashboardScansPartial(w http.ResponseWriter, r *http.Request) {
 	var scans []ScanSummary
 
-	rows, err := h.db.Query(`
-		SELECT s.id, s.path, s.status, COALESCE(t.name, 'Unknown') as trigger_name, s.created_at
-		FROM scans s
-		LEFT JOIN triggers t ON s.trigger_id = t.id
-		ORDER BY s.created_at DESC
-		LIMIT 10
-	`)
+	recentScans, err := h.db.ListRecentScans(10)
 	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var scan ScanSummary
-			if err := rows.Scan(&scan.ID, &scan.Path, &scan.Status, &scan.Trigger, &scan.CreatedAt); err == nil {
-				scans = append(scans, scan)
+		for _, scan := range recentScans {
+			triggerName := "Unknown"
+			if scan.TriggerID != nil {
+				if trigger, err := h.db.GetTrigger(*scan.TriggerID); err == nil && trigger != nil {
+					triggerName = trigger.Name
+				}
 			}
+			scans = append(scans, ScanSummary{
+				ID:        scan.ID,
+				Path:      scan.Path,
+				Status:    string(scan.Status),
+				Trigger:   triggerName,
+				CreatedAt: scan.CreatedAt.Format(time.RFC3339),
+			})
 		}
 	}
 
@@ -274,21 +272,21 @@ func (h *Handlers) DashboardScansPartial(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) DashboardUploadsPartial(w http.ResponseWriter, r *http.Request) {
 	var uploads []UploadSummary
 
-	rows, err := h.db.Query(`
-		SELECT id, local_path, status,
-			CASE WHEN size_bytes > 0 THEN (progress_bytes * 100 / size_bytes) ELSE 0 END as progress,
-			remote_name, created_at
-		FROM uploads
-		ORDER BY created_at DESC
-		LIMIT 10
-	`)
+	recentUploads, err := h.db.ListRecentUploads(10)
 	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var upload UploadSummary
-			if err := rows.Scan(&upload.ID, &upload.Path, &upload.Status, &upload.Progress, &upload.Remote, &upload.CreatedAt); err == nil {
-				uploads = append(uploads, upload)
+		for _, upload := range recentUploads {
+			progress := 0
+			if upload.SizeBytes != nil && *upload.SizeBytes > 0 {
+				progress = int(upload.ProgressBytes * 100 / *upload.SizeBytes)
 			}
+			uploads = append(uploads, UploadSummary{
+				ID:        upload.ID,
+				Path:      upload.LocalPath,
+				Status:    string(upload.Status),
+				Progress:  progress,
+				Remote:    upload.RemoteName,
+				CreatedAt: upload.CreatedAt.Format(time.RFC3339),
+			})
 		}
 	}
 
@@ -309,20 +307,17 @@ func (h *Handlers) DashboardSessionsPartial(w http.ResponseWriter, r *http.Reque
 		useBits = false
 	}
 
-	rows, err := h.db.Query(`
-		SELECT id, server_type, username, media_title, resolution, bitrate
-		FROM active_sessions
-		ORDER BY updated_at DESC
-	`)
+	activeSessions, err := h.db.ListActiveSessions()
 	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var session SessionSummary
-			var bitrate int64
-			if err := rows.Scan(&session.ID, &session.Server, &session.User, &session.Title, &session.Format, &bitrate); err == nil {
-				session.Bitrate = formatBitrateWithOptions(bitrate, useBinary, useBits)
-				sessions = append(sessions, session)
-			}
+		for _, session := range activeSessions {
+			sessions = append(sessions, SessionSummary{
+				ID:      session.ID,
+				Server:  session.ServerType,
+				User:    session.Username,
+				Title:   session.MediaTitle,
+				Format:  session.Format,
+				Bitrate: formatBitrateWithOptions(session.Bitrate, useBinary, useBits),
+			})
 		}
 	}
 

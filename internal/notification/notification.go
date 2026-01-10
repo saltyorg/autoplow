@@ -51,7 +51,7 @@ type Provider interface {
 
 // Manager handles notification dispatch
 type Manager struct {
-	db        *database.DB
+	db        *database.Manager
 	providers map[string]Provider
 	mu        sync.RWMutex
 	events    chan Event
@@ -63,7 +63,7 @@ type Manager struct {
 }
 
 // NewManager creates a new notification manager
-func NewManager(db *database.DB) *Manager {
+func NewManager(db *database.Manager) *Manager {
 	return &Manager{
 		db:        db,
 		providers: make(map[string]Provider),

@@ -153,13 +153,13 @@ type MatcharrFileIgnore struct {
 }
 
 // CreateMatcharrArr creates a new Arr instance
-func (db *DB) CreateMatcharrArr(arr *MatcharrArr) error {
+func (db *db) CreateMatcharrArr(arr *MatcharrArr) error {
 	pathMappingsJSON, err := marshalToString(arr.PathMappings)
 	if err != nil {
 		return fmt.Errorf("failed to marshal path mappings: %w", err)
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		INSERT INTO matcharr_arrs (name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`, arr.Name, arr.Type, arr.URL, arr.APIKey, arr.Enabled, arr.FileConcurrency, pathMappingsJSON)
@@ -177,12 +177,12 @@ func (db *DB) CreateMatcharrArr(arr *MatcharrArr) error {
 }
 
 // GetMatcharrArr retrieves an Arr instance by ID
-func (db *DB) GetMatcharrArr(id int64) (*MatcharrArr, error) {
+func (db *db) GetMatcharrArr(id int64) (*MatcharrArr, error) {
 	var arr MatcharrArr
 	var pathMappingsJSON string
 	var enabled int
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at
 		FROM matcharr_arrs WHERE id = ?
 	`, id).Scan(
@@ -206,8 +206,8 @@ func (db *DB) GetMatcharrArr(id int64) (*MatcharrArr, error) {
 }
 
 // ListMatcharrArrs retrieves all Arr instances
-func (db *DB) ListMatcharrArrs() ([]*MatcharrArr, error) {
-	rows, err := db.Query(`
+func (db *db) ListMatcharrArrs() ([]*MatcharrArr, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at
 		FROM matcharr_arrs ORDER BY name
 	`)
@@ -242,8 +242,8 @@ func (db *DB) ListMatcharrArrs() ([]*MatcharrArr, error) {
 }
 
 // ListEnabledMatcharrArrs retrieves all enabled Arr instances
-func (db *DB) ListEnabledMatcharrArrs() ([]*MatcharrArr, error) {
-	rows, err := db.Query(`
+func (db *db) ListEnabledMatcharrArrs() ([]*MatcharrArr, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, url, api_key, enabled, file_concurrency, path_mappings, created_at, updated_at
 		FROM matcharr_arrs WHERE enabled = 1 ORDER BY name
 	`)
@@ -278,13 +278,13 @@ func (db *DB) ListEnabledMatcharrArrs() ([]*MatcharrArr, error) {
 }
 
 // UpdateMatcharrArr updates an Arr instance
-func (db *DB) UpdateMatcharrArr(arr *MatcharrArr) error {
+func (db *db) UpdateMatcharrArr(arr *MatcharrArr) error {
 	pathMappingsJSON, err := marshalToString(arr.PathMappings)
 	if err != nil {
 		return fmt.Errorf("failed to marshal path mappings: %w", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = db.exec(`
 		UPDATE matcharr_arrs
 		SET name = ?, type = ?, url = ?, api_key = ?, enabled = ?, file_concurrency = ?, path_mappings = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
@@ -297,8 +297,8 @@ func (db *DB) UpdateMatcharrArr(arr *MatcharrArr) error {
 }
 
 // DeleteMatcharrArr deletes an Arr instance
-func (db *DB) DeleteMatcharrArr(id int64) error {
-	_, err := db.Exec(`DELETE FROM matcharr_arrs WHERE id = ?`, id)
+func (db *db) DeleteMatcharrArr(id int64) error {
+	_, err := db.exec(`DELETE FROM matcharr_arrs WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete matcharr arr: %w", err)
 	}
@@ -306,8 +306,8 @@ func (db *DB) DeleteMatcharrArr(id int64) error {
 }
 
 // CreateMatcharrRun creates a new matcharr run
-func (db *DB) CreateMatcharrRun(run *MatcharrRun) error {
-	result, err := db.Exec(`
+func (db *db) CreateMatcharrRun(run *MatcharrRun) error {
+	result, err := db.exec(`
 		INSERT INTO matcharr_runs (started_at, status, total_compared, mismatches_found, mismatches_fixed, triggered_by)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, run.StartedAt, run.Status, run.TotalCompared, run.MismatchesFound, run.MismatchesFixed, run.TriggeredBy)
@@ -325,8 +325,8 @@ func (db *DB) CreateMatcharrRun(run *MatcharrRun) error {
 }
 
 // UpdateMatcharrRun updates a matcharr run
-func (db *DB) UpdateMatcharrRun(run *MatcharrRun) error {
-	_, err := db.Exec(`
+func (db *db) UpdateMatcharrRun(run *MatcharrRun) error {
+	_, err := db.exec(`
 		UPDATE matcharr_runs
 		SET completed_at = ?, status = ?, total_compared = ?, mismatches_found = ?, mismatches_fixed = ?, error = ?, logs = ?
 		WHERE id = ?
@@ -338,13 +338,13 @@ func (db *DB) UpdateMatcharrRun(run *MatcharrRun) error {
 }
 
 // GetMatcharrRun retrieves a matcharr run by ID
-func (db *DB) GetMatcharrRun(id int64) (*MatcharrRun, error) {
+func (db *db) GetMatcharrRun(id int64) (*MatcharrRun, error) {
 	var run MatcharrRun
 	var completedAt sql.NullTime
 	var errorStr sql.NullString
 	var logs sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, started_at, completed_at, status, total_compared, mismatches_found, mismatches_fixed, error, triggered_by, logs
 		FROM matcharr_runs WHERE id = ?
 	`, id).Scan(
@@ -373,12 +373,12 @@ func (db *DB) GetMatcharrRun(id int64) (*MatcharrRun, error) {
 }
 
 // GetLatestMatcharrRun retrieves the most recent matcharr run
-func (db *DB) GetLatestMatcharrRun() (*MatcharrRun, error) {
+func (db *db) GetLatestMatcharrRun() (*MatcharrRun, error) {
 	var run MatcharrRun
 	var completedAt sql.NullTime
 	var errorStr sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, started_at, completed_at, status, total_compared, mismatches_found, mismatches_fixed, error, triggered_by
 		FROM matcharr_runs ORDER BY started_at DESC LIMIT 1
 	`).Scan(
@@ -404,8 +404,8 @@ func (db *DB) GetLatestMatcharrRun() (*MatcharrRun, error) {
 }
 
 // ListMatcharrRuns retrieves matcharr runs with pagination
-func (db *DB) ListMatcharrRuns(limit, offset int) ([]*MatcharrRun, error) {
-	rows, err := db.Query(`
+func (db *db) ListMatcharrRuns(limit, offset int) ([]*MatcharrRun, error) {
+	rows, err := db.query(`
 		SELECT id, started_at, completed_at, status, total_compared, mismatches_found, mismatches_fixed, error, triggered_by
 		FROM matcharr_runs ORDER BY started_at DESC LIMIT ? OFFSET ?
 	`, limit, offset)
@@ -442,9 +442,9 @@ func (db *DB) ListMatcharrRuns(limit, offset int) ([]*MatcharrRun, error) {
 }
 
 // CountMatcharrRuns returns the total number of matcharr runs
-func (db *DB) CountMatcharrRuns() (int, error) {
+func (db *db) CountMatcharrRuns() (int, error) {
 	var count int
-	err := db.QueryRow(`SELECT COUNT(*) FROM matcharr_runs`).Scan(&count)
+	err := db.queryRow(`SELECT COUNT(*) FROM matcharr_runs`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count matcharr runs: %w", err)
 	}
@@ -452,8 +452,8 @@ func (db *DB) CountMatcharrRuns() (int, error) {
 }
 
 // CreateMatcharrMismatch creates a new mismatch record
-func (db *DB) CreateMatcharrMismatch(mismatch *MatcharrMismatch) error {
-	result, err := db.Exec(`
+func (db *db) CreateMatcharrMismatch(mismatch *MatcharrMismatch) error {
+	result, err := db.exec(`
 		INSERT INTO matcharr_mismatches (
 			run_id, arr_id, target_id, arr_type, arr_name, target_name,
 			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
@@ -478,8 +478,8 @@ func (db *DB) CreateMatcharrMismatch(mismatch *MatcharrMismatch) error {
 }
 
 // CreateMatcharrGap creates a missing-path record
-func (db *DB) CreateMatcharrGap(gap *MatcharrGap) error {
-	result, err := db.Exec(`
+func (db *db) CreateMatcharrGap(gap *MatcharrGap) error {
+	result, err := db.exec(`
 		INSERT INTO matcharr_gaps (run_id, arr_id, target_id, source, title, arr_name, target_name, arr_path, target_path)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, gap.RunID, gap.ArrID, gap.TargetID, gap.Source, gap.Title, gap.ArrName, gap.TargetName, gap.ArrPath, gap.TargetPath)
@@ -497,8 +497,8 @@ func (db *DB) CreateMatcharrGap(gap *MatcharrGap) error {
 }
 
 // DeleteMatcharrGap removes a missing-path record by ID.
-func (db *DB) DeleteMatcharrGap(id int64) error {
-	_, err := db.Exec(`DELETE FROM matcharr_gaps WHERE id = ?`, id)
+func (db *db) DeleteMatcharrGap(id int64) error {
+	_, err := db.exec(`DELETE FROM matcharr_gaps WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete matcharr gap: %w", err)
 	}
@@ -506,8 +506,8 @@ func (db *DB) DeleteMatcharrGap(id int64) error {
 }
 
 // CreateMatcharrFileMismatch creates a new filename mismatch record.
-func (db *DB) CreateMatcharrFileMismatch(mismatch *MatcharrFileMismatch) error {
-	result, err := db.Exec(`
+func (db *db) CreateMatcharrFileMismatch(mismatch *MatcharrFileMismatch) error {
+	result, err := db.exec(`
 		INSERT INTO matcharr_file_mismatches (
 			run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
@@ -530,9 +530,9 @@ func (db *DB) CreateMatcharrFileMismatch(mismatch *MatcharrFileMismatch) error {
 }
 
 // GetMatcharrFileMismatch retrieves a filename mismatch by ID.
-func (db *DB) GetMatcharrFileMismatch(id int64) (*MatcharrFileMismatch, error) {
+func (db *db) GetMatcharrFileMismatch(id int64) (*MatcharrFileMismatch, error) {
 	var mismatch MatcharrFileMismatch
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
 			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
@@ -555,8 +555,8 @@ func (db *DB) GetMatcharrFileMismatch(id int64) (*MatcharrFileMismatch, error) {
 }
 
 // ListMatcharrFileMismatches retrieves filename mismatches for a run.
-func (db *DB) ListMatcharrFileMismatches(runID int64) ([]*MatcharrFileMismatch, error) {
-	rows, err := db.Query(`
+func (db *db) ListMatcharrFileMismatches(runID int64) ([]*MatcharrFileMismatch, error) {
+	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
 			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
@@ -587,8 +587,8 @@ func (db *DB) ListMatcharrFileMismatches(runID int64) ([]*MatcharrFileMismatch, 
 }
 
 // ListMatcharrFileMismatchesForMedia retrieves filename mismatches for a single media item.
-func (db *DB) ListMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMediaID int64) ([]*MatcharrFileMismatch, error) {
-	rows, err := db.Query(`
+func (db *db) ListMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMediaID int64) ([]*MatcharrFileMismatch, error) {
+	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
 			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
@@ -619,8 +619,8 @@ func (db *DB) ListMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMedi
 }
 
 // UpdateMatcharrFileMismatch updates stored filename mismatch details.
-func (db *DB) UpdateMatcharrFileMismatch(id int64, targetFileNames, arrFilePath, targetItemPath, targetFilePaths string) error {
-	_, err := db.Exec(`
+func (db *db) UpdateMatcharrFileMismatch(id int64, targetFileNames, arrFilePath, targetItemPath, targetFilePaths string) error {
+	_, err := db.exec(`
 		UPDATE matcharr_file_mismatches
 		SET target_file_names = ?, arr_file_path = ?, target_item_path = ?, target_file_paths = ?
 		WHERE id = ?
@@ -632,16 +632,16 @@ func (db *DB) UpdateMatcharrFileMismatch(id int64, targetFileNames, arrFilePath,
 }
 
 // DeleteMatcharrFileMismatch deletes a filename mismatch by ID.
-func (db *DB) DeleteMatcharrFileMismatch(id int64) error {
-	if _, err := db.Exec(`DELETE FROM matcharr_file_mismatches WHERE id = ?`, id); err != nil {
+func (db *db) DeleteMatcharrFileMismatch(id int64) error {
+	if _, err := db.exec(`DELETE FROM matcharr_file_mismatches WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("failed to delete matcharr file mismatch: %w", err)
 	}
 	return nil
 }
 
 // DeleteMatcharrFileMismatchesForMedia removes filename mismatches for a media item.
-func (db *DB) DeleteMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMediaID int64) error {
-	_, err := db.Exec(`
+func (db *db) DeleteMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMediaID int64) error {
+	_, err := db.exec(`
 		DELETE FROM matcharr_file_mismatches
 		WHERE run_id = ? AND arr_id = ? AND target_id = ? AND arr_media_id = ?
 	`, runID, arrID, targetID, arrMediaID)
@@ -652,8 +652,8 @@ func (db *DB) DeleteMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMe
 }
 
 // CreateMatcharrFileIgnore creates a new filename ignore rule.
-func (db *DB) CreateMatcharrFileIgnore(ignore *MatcharrFileIgnore) error {
-	result, err := db.Exec(`
+func (db *db) CreateMatcharrFileIgnore(ignore *MatcharrFileIgnore) error {
+	result, err := db.exec(`
 		INSERT INTO matcharr_file_ignores (
 			arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, season_number, episode_number, arr_file_name, arr_file_path
@@ -673,9 +673,9 @@ func (db *DB) CreateMatcharrFileIgnore(ignore *MatcharrFileIgnore) error {
 }
 
 // GetMatcharrFileIgnore retrieves a filename ignore by ID.
-func (db *DB) GetMatcharrFileIgnore(id int64) (*MatcharrFileIgnore, error) {
+func (db *db) GetMatcharrFileIgnore(id int64) (*MatcharrFileIgnore, error) {
 	var ignore MatcharrFileIgnore
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, season_number, episode_number, arr_file_name, arr_file_path, created_at
 		FROM matcharr_file_ignores WHERE id = ?
@@ -694,8 +694,8 @@ func (db *DB) GetMatcharrFileIgnore(id int64) (*MatcharrFileIgnore, error) {
 }
 
 // ListMatcharrFileIgnores retrieves all filename ignore rules.
-func (db *DB) ListMatcharrFileIgnores() ([]*MatcharrFileIgnore, error) {
-	rows, err := db.Query(`
+func (db *db) ListMatcharrFileIgnores() ([]*MatcharrFileIgnore, error) {
+	rows, err := db.query(`
 		SELECT id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, season_number, episode_number, arr_file_name, arr_file_path, created_at
 		FROM matcharr_file_ignores
@@ -722,22 +722,22 @@ func (db *DB) ListMatcharrFileIgnores() ([]*MatcharrFileIgnore, error) {
 }
 
 // DeleteMatcharrFileIgnore removes a filename ignore rule by ID.
-func (db *DB) DeleteMatcharrFileIgnore(id int64) error {
-	if _, err := db.Exec(`DELETE FROM matcharr_file_ignores WHERE id = ?`, id); err != nil {
+func (db *db) DeleteMatcharrFileIgnore(id int64) error {
+	if _, err := db.exec(`DELETE FROM matcharr_file_ignores WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("failed to delete matcharr file ignore: %w", err)
 	}
 	return nil
 }
 
 // UpdateMatcharrMismatchStatus updates the status of a mismatch
-func (db *DB) UpdateMatcharrMismatchStatus(id int64, status MatcharrMismatchStatus, errorMsg string) error {
+func (db *db) UpdateMatcharrMismatchStatus(id int64, status MatcharrMismatchStatus, errorMsg string) error {
 	var fixedAt any
 	if status == MatcharrMismatchStatusFixed {
 		now := time.Now()
 		fixedAt = now
 	}
 
-	_, err := db.Exec(`
+	_, err := db.exec(`
 		UPDATE matcharr_mismatches SET status = ?, fixed_at = ?, error = ? WHERE id = ?
 	`, status, fixedAt, errorMsg, id)
 	if err != nil {
@@ -747,13 +747,13 @@ func (db *DB) UpdateMatcharrMismatchStatus(id int64, status MatcharrMismatchStat
 }
 
 // GetMatcharrMismatch retrieves a mismatch by ID
-func (db *DB) GetMatcharrMismatch(id int64) (*MatcharrMismatch, error) {
+func (db *db) GetMatcharrMismatch(id int64) (*MatcharrMismatch, error) {
 	var mismatch MatcharrMismatch
 	var fixedAt sql.NullTime
 	var errorStr sql.NullString
 	var targetIDValue sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
 			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
@@ -786,10 +786,10 @@ func (db *DB) GetMatcharrMismatch(id int64) (*MatcharrMismatch, error) {
 }
 
 // GetMatcharrGap retrieves a gap by ID
-func (db *DB) GetMatcharrGap(id int64) (*MatcharrGap, error) {
+func (db *db) GetMatcharrGap(id int64) (*MatcharrGap, error) {
 	var gap MatcharrGap
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, run_id, arr_id, target_id, source, title, arr_name, target_name, arr_path, target_path, created_at
 		FROM matcharr_gaps WHERE id = ?
 	`, id).Scan(
@@ -807,8 +807,8 @@ func (db *DB) GetMatcharrGap(id int64) (*MatcharrGap, error) {
 }
 
 // ListMatcharrMismatches retrieves mismatches for a run
-func (db *DB) ListMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
-	rows, err := db.Query(`
+func (db *db) ListMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
+	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
 			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
@@ -823,8 +823,8 @@ func (db *DB) ListMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
 }
 
 // GetPendingMatcharrMismatches retrieves all pending mismatches for a run
-func (db *DB) GetPendingMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
-	rows, err := db.Query(`
+func (db *db) GetPendingMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
+	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
 			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
@@ -839,7 +839,7 @@ func (db *DB) GetPendingMatcharrMismatches(runID int64) ([]*MatcharrMismatch, er
 }
 
 // GetLatestPendingMatcharrMismatches retrieves pending mismatches from the latest run
-func (db *DB) GetLatestPendingMatcharrMismatches() ([]*MatcharrMismatch, error) {
+func (db *db) GetLatestPendingMatcharrMismatches() ([]*MatcharrMismatch, error) {
 	latestRun, err := db.GetLatestMatcharrRun()
 	if err != nil {
 		return nil, err
@@ -852,8 +852,8 @@ func (db *DB) GetLatestPendingMatcharrMismatches() ([]*MatcharrMismatch, error) 
 
 // GetActionableMatcharrMismatches retrieves pending and failed mismatches for a run
 // (items that need attention - either pending action or failed and may need retry)
-func (db *DB) GetActionableMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
-	rows, err := db.Query(`
+func (db *db) GetActionableMatcharrMismatches(runID int64) ([]*MatcharrMismatch, error) {
+	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
 			target_title, media_title, media_path, target_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
@@ -868,8 +868,8 @@ func (db *DB) GetActionableMatcharrMismatches(runID int64) ([]*MatcharrMismatch,
 }
 
 // GetMatcharrGaps retrieves gaps for a run filtered by source
-func (db *DB) GetMatcharrGaps(runID int64, source MatcharrGapSource) ([]*MatcharrGap, error) {
-	rows, err := db.Query(`
+func (db *db) GetMatcharrGaps(runID int64, source MatcharrGapSource) ([]*MatcharrGap, error) {
+	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, source, title, arr_name, target_name, arr_path, target_path, created_at
 		FROM matcharr_gaps
 		WHERE run_id = ? AND source = ?
@@ -893,7 +893,7 @@ func (db *DB) GetMatcharrGaps(runID int64, source MatcharrGapSource) ([]*Matchar
 }
 
 // GetLatestActionableMatcharrMismatches retrieves pending and failed mismatches from the latest run
-func (db *DB) GetLatestActionableMatcharrMismatches() ([]*MatcharrMismatch, error) {
+func (db *db) GetLatestActionableMatcharrMismatches() ([]*MatcharrMismatch, error) {
 	latestRun, err := db.GetLatestMatcharrRun()
 	if err != nil {
 		return nil, err
@@ -905,8 +905,8 @@ func (db *DB) GetLatestActionableMatcharrMismatches() ([]*MatcharrMismatch, erro
 }
 
 // GetMatcharrFixHistory retrieves fixed and skipped mismatches (most recent first)
-func (db *DB) GetMatcharrFixHistory(limit, offset int) ([]*MatcharrMismatch, error) {
-	rows, err := db.Query(`
+func (db *db) GetMatcharrFixHistory(limit, offset int) ([]*MatcharrMismatch, error) {
+	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name,
 			media_title, media_path, arr_id_type, arr_id_value,
 			target_id_type, target_id_value, target_metadata_id, status, fixed_at, error, created_at
@@ -959,8 +959,8 @@ func scanMatcharrMismatches(rows *sql.Rows) ([]*MatcharrMismatch, error) {
 }
 
 // DeleteOldMatcharrRuns deletes runs older than the specified number of days
-func (db *DB) DeleteOldMatcharrRuns(daysToKeep int) (int64, error) {
-	result, err := db.Exec(`
+func (db *db) DeleteOldMatcharrRuns(daysToKeep int) (int64, error) {
+	result, err := db.exec(`
 		DELETE FROM matcharr_runs
 		WHERE started_at < datetime('now', '-' || ? || ' days')
 	`, daysToKeep)
@@ -971,8 +971,8 @@ func (db *DB) DeleteOldMatcharrRuns(daysToKeep int) (int64, error) {
 }
 
 // IncrementMatcharrRunFixed increments the mismatches_fixed counter for a run
-func (db *DB) IncrementMatcharrRunFixed(runID int64) error {
-	_, err := db.Exec(`
+func (db *db) IncrementMatcharrRunFixed(runID int64) error {
+	_, err := db.exec(`
 		UPDATE matcharr_runs SET mismatches_fixed = mismatches_fixed + 1 WHERE id = ?
 	`, runID)
 	if err != nil {
@@ -982,24 +982,24 @@ func (db *DB) IncrementMatcharrRunFixed(runID int64) error {
 }
 
 // ClearMatcharrHistory deletes all matcharr runs and their associated mismatches
-func (db *DB) ClearMatcharrHistory() error {
+func (db *db) ClearMatcharrHistory() error {
 	// Delete mismatches first (foreign keys may not be enabled in SQLite)
-	_, err := db.Exec(`DELETE FROM matcharr_mismatches`)
+	_, err := db.exec(`DELETE FROM matcharr_mismatches`)
 	if err != nil {
 		return fmt.Errorf("failed to clear matcharr mismatches: %w", err)
 	}
 
 	// Delete gaps
-	if _, err := db.Exec(`DELETE FROM matcharr_gaps`); err != nil {
+	if _, err := db.exec(`DELETE FROM matcharr_gaps`); err != nil {
 		return fmt.Errorf("failed to clear matcharr gaps: %w", err)
 	}
 
-	if _, err := db.Exec(`DELETE FROM matcharr_file_mismatches`); err != nil {
+	if _, err := db.exec(`DELETE FROM matcharr_file_mismatches`); err != nil {
 		return fmt.Errorf("failed to clear matcharr file mismatches: %w", err)
 	}
 
 	// Then delete runs
-	_, err = db.Exec(`DELETE FROM matcharr_runs`)
+	_, err = db.exec(`DELETE FROM matcharr_runs`)
 	if err != nil {
 		return fmt.Errorf("failed to clear matcharr runs: %w", err)
 	}

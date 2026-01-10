@@ -17,7 +17,7 @@ import (
 
 // Poller watches filesystem paths for changes using interval-based polling
 type Poller struct {
-	db            *database.DB
+	db            *database.Manager
 	processor     *processor.Processor
 	uploadManager *uploader.Manager
 	triggers      map[int64]*triggerPoll
@@ -42,7 +42,7 @@ type triggerPoll struct {
 }
 
 // New creates a new filesystem poller
-func New(db *database.DB, proc *processor.Processor) *Poller {
+func New(db *database.Manager, proc *processor.Processor) *Poller {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Poller{
@@ -356,19 +356,22 @@ func (p *Poller) doScan(tp *triggerPoll) {
 		}
 
 		if uploadsEnabled && p.uploadManager != nil {
+			uploadRequests := make([]uploader.UploadRequest, 0, len(newFiles))
 			for _, path := range newFiles {
 				log.Info().
 					Str("path", path).
 					Int64("trigger_id", triggerID).
 					Msg("Polling trigger queuing upload")
 
-				p.uploadManager.QueueUpload(uploader.UploadRequest{
+				uploadRequests = append(uploadRequests, uploader.UploadRequest{
 					LocalPath: path,
 					ScanID:    nil,
 					Priority:  tp.trigger.Priority,
 					TriggerID: &triggerID,
 				})
 			}
+
+			p.uploadManager.QueueUploads(uploadRequests)
 
 			log.Info().
 				Int("files", len(newFiles)).

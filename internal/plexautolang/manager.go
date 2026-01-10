@@ -75,7 +75,7 @@ type TargetGetter interface {
 
 // Manager manages Plex Auto Languages for all targets
 type Manager struct {
-	db           *database.DB
+	db           *database.Manager
 	targetGetter TargetGetter
 	sseBroker    *sse.Broker
 	mu           sync.RWMutex
@@ -92,7 +92,7 @@ type Manager struct {
 }
 
 // NewManager creates a new Plex Auto Languages manager
-func NewManager(db *database.DB, targetGetter TargetGetter) *Manager {
+func NewManager(db *database.Manager, targetGetter TargetGetter) *Manager {
 	return &Manager{
 		db:             db,
 		targetGetter:   targetGetter,

@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+const (
+	uploadRequestColumns  = 5
+	maxSQLiteVariables    = 999
+	maxUploadRequestBatch = maxSQLiteVariables / uploadRequestColumns
+)
+
 // UploadRequestEntry represents a queued upload request persisted in the database.
 type UploadRequestEntry struct {
 	ID        int64
@@ -18,9 +24,9 @@ type UploadRequestEntry struct {
 }
 
 // CreateUploadRequest adds a new upload request to the durable queue.
-func (db *DB) CreateUploadRequest(req *UploadRequestEntry) error {
+func (db *db) CreateUploadRequest(req *UploadRequestEntry) error {
 	now := time.Now()
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		INSERT INTO upload_requests (scan_id, local_path, priority, trigger_id, created_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, req.ScanID, req.LocalPath, req.Priority, req.TriggerID, now)
@@ -36,13 +42,55 @@ func (db *DB) CreateUploadRequest(req *UploadRequestEntry) error {
 	return nil
 }
 
+// CreateUploadRequests adds multiple upload requests to the durable queue in batches.
+func (db *db) CreateUploadRequests(reqs []*UploadRequestEntry) error {
+	if len(reqs) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	for _, req := range reqs {
+		req.CreatedAt = now
+	}
+
+	return db.transaction(func(tx *sql.Tx) error {
+		for start := 0; start < len(reqs); start += maxUploadRequestBatch {
+			end := start + maxUploadRequestBatch
+			if end > len(reqs) {
+				end = len(reqs)
+			}
+			batch := reqs[start:end]
+
+			query := buildUploadRequestInsertQuery(len(batch))
+			args := make([]any, 0, len(batch)*uploadRequestColumns)
+			for _, req := range batch {
+				args = append(args, req.ScanID, req.LocalPath, req.Priority, req.TriggerID, req.CreatedAt)
+			}
+
+			result, err := tx.Exec(query, args...)
+			if err != nil {
+				return fmt.Errorf("failed to create upload request batch: %w", err)
+			}
+
+			if lastID, err := result.LastInsertId(); err == nil {
+				firstID := lastID - int64(len(batch)) + 1
+				for i, req := range batch {
+					req.ID = firstID + int64(i)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 // ListUploadRequests returns the oldest queued upload requests, up to the limit.
-func (db *DB) ListUploadRequests(limit int) ([]*UploadRequestEntry, error) {
+func (db *db) ListUploadRequests(limit int) ([]*UploadRequestEntry, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 
-	rows, err := db.Query(`
+	rows, err := db.query(`
 		SELECT id, scan_id, local_path, priority, trigger_id, created_at
 		FROM upload_requests
 		ORDER BY id ASC
@@ -72,8 +120,24 @@ func (db *DB) ListUploadRequests(limit int) ([]*UploadRequestEntry, error) {
 	return requests, nil
 }
 
+func buildUploadRequestInsertQuery(count int) string {
+	if count <= 0 {
+		return ""
+	}
+
+	values := make([]string, count)
+	for i := 0; i < count; i++ {
+		values[i] = "(?, ?, ?, ?, ?)"
+	}
+
+	return fmt.Sprintf(
+		"INSERT INTO upload_requests (scan_id, local_path, priority, trigger_id, created_at) VALUES %s",
+		strings.Join(values, ","),
+	)
+}
+
 // DeleteUploadRequests removes queued upload requests by id.
-func (db *DB) DeleteUploadRequests(ids []int64) error {
+func (db *db) DeleteUploadRequests(ids []int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -86,16 +150,16 @@ func (db *DB) DeleteUploadRequests(ids []int64) error {
 	}
 
 	query := fmt.Sprintf("DELETE FROM upload_requests WHERE id IN (%s)", strings.Join(placeholders, ","))
-	if _, err := db.Exec(query, args...); err != nil {
+	if _, err := db.exec(query, args...); err != nil {
 		return fmt.Errorf("failed to delete upload requests: %w", err)
 	}
 	return nil
 }
 
 // CountUploadRequests returns the number of queued upload requests.
-func (db *DB) CountUploadRequests() (int, error) {
+func (db *db) CountUploadRequests() (int, error) {
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM upload_requests").Scan(&count); err != nil {
+	if err := db.queryRow("SELECT COUNT(*) FROM upload_requests").Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to count upload requests: %w", err)
 	}
 	return count, nil

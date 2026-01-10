@@ -108,7 +108,7 @@ type SessionCallback func(targetID int64, targetName string, sessions []Session)
 
 // Manager manages multiple targets
 type Manager struct {
-	db      *database.DB
+	db      *database.Manager
 	targets map[int64]Target
 
 	// WebSocket management
@@ -122,7 +122,7 @@ type Manager struct {
 }
 
 // NewManager creates a new target manager
-func NewManager(db *database.DB) *Manager {
+func NewManager(db *database.Manager) *Manager {
 	return &Manager{
 		db:         db,
 		targets:    make(map[int64]Target),

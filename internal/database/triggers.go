@@ -328,7 +328,7 @@ func (t *Trigger) WebhookURL(baseURL string) string {
 }
 
 // CreateTrigger creates a new trigger
-func (db *DB) CreateTrigger(trigger *Trigger) error {
+func (db *db) CreateTrigger(trigger *Trigger) error {
 	configJSON, err := marshalToString(trigger.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -351,7 +351,7 @@ func (db *DB) CreateTrigger(trigger *Trigger) error {
 		passwordHash = sql.NullString{String: trigger.Password, Valid: true}
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		INSERT INTO triggers (name, type, auth_type, api_key, username, password_hash, priority, enabled, config, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, trigger.Name, trigger.Type, trigger.AuthType, apiKey, username, passwordHash, trigger.Priority, trigger.Enabled, configJSON, time.Now(), time.Now())
@@ -369,12 +369,12 @@ func (db *DB) CreateTrigger(trigger *Trigger) error {
 }
 
 // GetTrigger retrieves a trigger by ID
-func (db *DB) GetTrigger(id int64) (*Trigger, error) {
+func (db *db) GetTrigger(id int64) (*Trigger, error) {
 	var trigger Trigger
 	var configJSON string
 	var apiKey, authType, username, passwordHash sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, name, type, auth_type, api_key, username, password_hash, priority, enabled, config, created_at, updated_at
 		FROM triggers WHERE id = ?
 	`, id).Scan(&trigger.ID, &trigger.Name, &trigger.Type, &authType, &apiKey, &username, &passwordHash, &trigger.Priority, &trigger.Enabled, &configJSON, &trigger.CreatedAt, &trigger.UpdatedAt)
@@ -415,12 +415,12 @@ func (db *DB) GetTrigger(id int64) (*Trigger, error) {
 }
 
 // GetTriggerByAPIKey retrieves a trigger by its API key
-func (db *DB) GetTriggerByAPIKey(apiKey string) (*Trigger, error) {
+func (db *db) GetTriggerByAPIKey(apiKey string) (*Trigger, error) {
 	var trigger Trigger
 	var configJSON string
 	var key, authType, username, passwordHash sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, name, type, auth_type, api_key, username, password_hash, priority, enabled, config, created_at, updated_at
 		FROM triggers WHERE api_key = ?
 	`, apiKey).Scan(&trigger.ID, &trigger.Name, &trigger.Type, &authType, &key, &username, &passwordHash, &trigger.Priority, &trigger.Enabled, &configJSON, &trigger.CreatedAt, &trigger.UpdatedAt)
@@ -461,8 +461,8 @@ func (db *DB) GetTriggerByAPIKey(apiKey string) (*Trigger, error) {
 }
 
 // ListTriggers retrieves all triggers
-func (db *DB) ListTriggers() ([]*Trigger, error) {
-	rows, err := db.Query(`
+func (db *db) ListTriggers() ([]*Trigger, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, auth_type, api_key, username, password_hash, priority, enabled, config, created_at, updated_at
 		FROM triggers ORDER BY name ASC
 	`)
@@ -514,8 +514,8 @@ func (db *DB) ListTriggers() ([]*Trigger, error) {
 }
 
 // ListTriggersByType retrieves triggers of a specific type
-func (db *DB) ListTriggersByType(triggerType TriggerType) ([]*Trigger, error) {
-	rows, err := db.Query(`
+func (db *db) ListTriggersByType(triggerType TriggerType) ([]*Trigger, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, auth_type, api_key, username, password_hash, priority, enabled, config, created_at, updated_at
 		FROM triggers WHERE type = ? ORDER BY name ASC
 	`, triggerType)
@@ -567,13 +567,13 @@ func (db *DB) ListTriggersByType(triggerType TriggerType) ([]*Trigger, error) {
 }
 
 // UpdateTrigger updates an existing trigger
-func (db *DB) UpdateTrigger(trigger *Trigger) error {
+func (db *db) UpdateTrigger(trigger *Trigger) error {
 	configJSON, err := marshalToString(trigger.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		UPDATE triggers SET name = ?, type = ?, priority = ?, enabled = ?, config = ?, updated_at = ?
 		WHERE id = ?
 	`, trigger.Name, trigger.Type, trigger.Priority, trigger.Enabled, configJSON, time.Now(), trigger.ID)
@@ -593,8 +593,8 @@ func (db *DB) UpdateTrigger(trigger *Trigger) error {
 }
 
 // UpdateTriggerAPIKey updates a trigger's API key
-func (db *DB) UpdateTriggerAPIKey(id int64, apiKey string) error {
-	result, err := db.Exec(`
+func (db *db) UpdateTriggerAPIKey(id int64, apiKey string) error {
+	result, err := db.exec(`
 		UPDATE triggers SET api_key = ?, updated_at = ? WHERE id = ?
 	`, apiKey, time.Now(), id)
 	if err != nil {
@@ -613,7 +613,7 @@ func (db *DB) UpdateTriggerAPIKey(id int64, apiKey string) error {
 }
 
 // UpdateTriggerAuth updates a trigger's authentication type and credentials
-func (db *DB) UpdateTriggerAuth(id int64, authType AuthType, apiKey, username, passwordHash string) error {
+func (db *db) UpdateTriggerAuth(id int64, authType AuthType, apiKey, username, passwordHash string) error {
 	var apiKeyVal, usernameVal, passwordHashVal sql.NullString
 	if apiKey != "" {
 		apiKeyVal = sql.NullString{String: apiKey, Valid: true}
@@ -625,7 +625,7 @@ func (db *DB) UpdateTriggerAuth(id int64, authType AuthType, apiKey, username, p
 		passwordHashVal = sql.NullString{String: passwordHash, Valid: true}
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		UPDATE triggers SET auth_type = ?, api_key = ?, username = ?, password_hash = ?, updated_at = ? WHERE id = ?
 	`, authType, apiKeyVal, usernameVal, passwordHashVal, time.Now(), id)
 	if err != nil {
@@ -644,7 +644,7 @@ func (db *DB) UpdateTriggerAuth(id int64, authType AuthType, apiKey, username, p
 }
 
 // DeleteTrigger deletes a trigger by ID
-func (db *DB) DeleteTrigger(id int64) error {
+func (db *db) DeleteTrigger(id int64) error {
 	if err := db.execAndVerifyAffected("DELETE FROM triggers WHERE id = ?", id); err != nil {
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("trigger not found")
@@ -655,9 +655,9 @@ func (db *DB) DeleteTrigger(id int64) error {
 }
 
 // CountTriggers returns the total number of triggers
-func (db *DB) CountTriggers() (int, error) {
+func (db *db) CountTriggers() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM triggers").Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM triggers").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count triggers: %w", err)
 	}
@@ -665,9 +665,9 @@ func (db *DB) CountTriggers() (int, error) {
 }
 
 // CountEnabledTriggers returns the number of enabled triggers
-func (db *DB) CountEnabledTriggers() (int, error) {
+func (db *db) CountEnabledTriggers() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM triggers WHERE enabled = 1").Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM triggers WHERE enabled = 1").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count enabled triggers: %w", err)
 	}
@@ -676,8 +676,8 @@ func (db *DB) CountEnabledTriggers() (int, error) {
 
 // ListLocalTriggers retrieves all local triggers (inotify and polling types)
 // These are triggers that watch local filesystem paths directly
-func (db *DB) ListLocalTriggers() ([]*Trigger, error) {
-	rows, err := db.Query(`
+func (db *db) ListLocalTriggers() ([]*Trigger, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, auth_type, api_key, username, password_hash, priority, enabled, config, created_at, updated_at
 		FROM triggers WHERE type IN (?, ?) ORDER BY name ASC
 	`, TriggerTypeInotify, TriggerTypePolling)

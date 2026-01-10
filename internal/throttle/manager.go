@@ -73,7 +73,7 @@ const (
 )
 
 // LoadConfigFromDB loads throttle configuration from the database
-func LoadConfigFromDB(db *database.DB) Config {
+func LoadConfigFromDB(db *database.Manager) Config {
 	defaults := DefaultConfig()
 	loader := config.NewLoader(db)
 
@@ -89,7 +89,7 @@ func LoadConfigFromDB(db *database.DB) Config {
 
 // Manager handles bandwidth throttling based on active media sessions
 type Manager struct {
-	db         *database.DB
+	db         *database.Manager
 	targetsMgr *targets.Manager
 	rcloneMgr  *rclone.Manager
 	config     Config
@@ -110,7 +110,7 @@ type Manager struct {
 }
 
 // New creates a new throttle manager
-func New(db *database.DB, targetsMgr *targets.Manager, rcloneMgr *rclone.Manager, config Config) *Manager {
+func New(db *database.Manager, targetsMgr *targets.Manager, rcloneMgr *rclone.Manager, config Config) *Manager {
 	m := &Manager{
 		db:         db,
 		targetsMgr: targetsMgr,

@@ -5,8 +5,8 @@ import (
 )
 
 // ListUploadRemotes returns distinct remote names present in upload history.
-func (db *DB) ListUploadRemotes() ([]string, error) {
-	rows, err := db.Query(`SELECT DISTINCT remote_name FROM upload_history ORDER BY remote_name`)
+func (db *db) ListUploadRemotes() ([]string, error) {
+	rows, err := db.query(`SELECT DISTINCT remote_name FROM upload_history ORDER BY remote_name`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list upload remotes: %w", err)
 	}

@@ -23,13 +23,13 @@ type PlexPathStatus struct {
 
 // PlexTracker tracks Plex scan completion for upload gating.
 type PlexTracker struct {
-	db      *database.DB
+	db      *database.Manager
 	mu      sync.RWMutex
 	records map[scanKey]*scanRecord
 }
 
 // NewPlexTracker creates a new Plex scan tracker.
-func NewPlexTracker(db *database.DB) *PlexTracker {
+func NewPlexTracker(db *database.Manager) *PlexTracker {
 	return &PlexTracker{
 		db:      db,
 		records: make(map[scanKey]*scanRecord),

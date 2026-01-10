@@ -50,7 +50,7 @@ func LoadOrCreateTriggerPasswordKey(dbPath string) error {
 
 // RegenerateTriggerPasswordKey replaces the per-install key, writes it to disk, and
 // re-encrypts all trigger passwords using the new key. Returns migrated and failed counts.
-func RegenerateTriggerPasswordKey(db *database.DB) (int, int, error) {
+func RegenerateTriggerPasswordKey(db *database.Manager) (int, int, error) {
 	dbPath := db.Path()
 	keyPath := dbPath + ".key"
 

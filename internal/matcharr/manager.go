@@ -24,7 +24,7 @@ type TargetGetter interface {
 
 // Manager manages matcharr comparison and fix operations
 type Manager struct {
-	db           *database.DB
+	db           *database.Manager
 	targetGetter TargetGetter
 	config       ManagerConfig
 	cron         *cron.Cron
@@ -39,7 +39,7 @@ type Manager struct {
 }
 
 // NewManager creates a new matcharr manager
-func NewManager(db *database.DB, targetGetter TargetGetter) *Manager {
+func NewManager(db *database.Manager, targetGetter TargetGetter) *Manager {
 	return &Manager{
 		db:           db,
 		targetGetter: targetGetter,

@@ -263,13 +263,13 @@ type UploadHistory struct {
 // ========== Remote CRUD ==========
 
 // CreateRemote creates a new remote
-func (db *DB) CreateRemote(remote *Remote) error {
+func (db *db) CreateRemote(remote *Remote) error {
 	optionsJSON, err := marshalToPtr(remote.TransferOptions)
 	if err != nil {
 		return fmt.Errorf("failed to marshal transfer options: %w", err)
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		INSERT INTO remotes (name, rclone_remote, enabled, transfer_options, created_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, remote.Name, remote.RcloneRemote, remote.Enabled, optionsJSON, time.Now())
@@ -288,11 +288,11 @@ func (db *DB) CreateRemote(remote *Remote) error {
 }
 
 // GetRemote retrieves a remote by ID
-func (db *DB) GetRemote(id int64) (*Remote, error) {
+func (db *db) GetRemote(id int64) (*Remote, error) {
 	remote := &Remote{}
 	var optionsJSON sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, name, rclone_remote, enabled, transfer_options, created_at
 		FROM remotes WHERE id = ?
 	`, id).Scan(&remote.ID, &remote.Name, &remote.RcloneRemote, &remote.Enabled, &optionsJSON, &remote.CreatedAt)
@@ -311,8 +311,8 @@ func (db *DB) GetRemote(id int64) (*Remote, error) {
 }
 
 // ListRemotes retrieves all remotes
-func (db *DB) ListRemotes() ([]*Remote, error) {
-	rows, err := db.Query(`
+func (db *db) ListRemotes() ([]*Remote, error) {
+	rows, err := db.query(`
 		SELECT id, name, rclone_remote, enabled, transfer_options, created_at
 		FROM remotes ORDER BY name ASC
 	`)
@@ -338,8 +338,8 @@ func (db *DB) ListRemotes() ([]*Remote, error) {
 }
 
 // ListEnabledRemotes retrieves all enabled remotes
-func (db *DB) ListEnabledRemotes() ([]*Remote, error) {
-	rows, err := db.Query(`
+func (db *db) ListEnabledRemotes() ([]*Remote, error) {
+	rows, err := db.query(`
 		SELECT id, name, rclone_remote, enabled, transfer_options, created_at
 		FROM remotes WHERE enabled = true ORDER BY name ASC
 	`)
@@ -365,7 +365,7 @@ func (db *DB) ListEnabledRemotes() ([]*Remote, error) {
 }
 
 // UpdateRemote updates an existing remote
-func (db *DB) UpdateRemote(remote *Remote) error {
+func (db *db) UpdateRemote(remote *Remote) error {
 	optionsJSON, err := marshalToPtr(remote.TransferOptions)
 	if err != nil {
 		return fmt.Errorf("failed to marshal transfer options: %w", err)
@@ -385,7 +385,7 @@ func (db *DB) UpdateRemote(remote *Remote) error {
 }
 
 // DeleteRemote deletes a remote by ID
-func (db *DB) DeleteRemote(id int64) error {
+func (db *db) DeleteRemote(id int64) error {
 	if err := db.execAndVerifyAffected("DELETE FROM remotes WHERE id = ?", id); err != nil {
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("remote not found")
@@ -396,9 +396,9 @@ func (db *DB) DeleteRemote(id int64) error {
 }
 
 // CountRemotes returns the total number of remotes
-func (db *DB) CountRemotes() (int, error) {
+func (db *db) CountRemotes() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM remotes").Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM remotes").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count remotes: %w", err)
 	}
@@ -408,7 +408,7 @@ func (db *DB) CountRemotes() (int, error) {
 // ========== Destination CRUD ==========
 
 // CreateDestination creates a new destination
-func (db *DB) CreateDestination(dest *Destination) error {
+func (db *db) CreateDestination(dest *Destination) error {
 	// Marshal exclude paths, extensions, and triggers to JSON
 	excludePathsJSON, err := marshalToString(dest.ExcludePaths)
 	if err != nil {
@@ -434,7 +434,7 @@ func (db *DB) CreateDestination(dest *Destination) error {
 		dest.TransferType = TransferTypeMove
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		INSERT INTO destinations (local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -455,11 +455,11 @@ func (db *DB) CreateDestination(dest *Destination) error {
 }
 
 // GetDestination retrieves a destination by ID
-func (db *DB) GetDestination(id int64) (*Destination, error) {
+func (db *db) GetDestination(id int64) (*Destination, error) {
 	dest := &Destination{}
 	var excludePathsJSON, excludeExtensionsJSON, includedTriggersJSON, advancedFiltersJSON sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations WHERE id = ?
@@ -517,9 +517,9 @@ func (db *DB) GetDestination(id int64) (*Destination, error) {
 }
 
 // GetDestinationByPath retrieves a destination by its local path (prefix match)
-func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
+func (db *db) GetDestinationByPath(localPath string) (*Destination, error) {
 	// Find the most specific matching destination
-	rows, err := db.Query(`
+	rows, err := db.query(`
 		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations WHERE enabled = true
@@ -528,8 +528,8 @@ func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query destinations: %w", err)
 	}
-	defer rows.Close()
 
+	var candidates []*Destination
 	for rows.Next() {
 		dest := &Destination{}
 		var excludePathsJSON, excludeExtensionsJSON, includedTriggersJSON, advancedFiltersJSON sql.NullString
@@ -561,33 +561,46 @@ func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
 			}
 		}
 
+		candidates = append(candidates, dest)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate destinations: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close destinations rows: %w", err)
+	}
+
+	for _, dest := range candidates {
 		// Check if localPath starts with this destination
-		if strings.HasPrefix(localPath, dest.LocalPath) {
-			// Compile advanced filters
-			if err := dest.CompileAdvancedFilters(); err != nil {
-				return nil, fmt.Errorf("failed to compile advanced filters: %w", err)
-			}
-			// Load associated remotes
-			remotes, err := db.GetDestinationRemotes(dest.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get destination remotes: %w", err)
-			}
-			dest.Remotes = remotes
-			// Load Plex target mappings
-			plexTargets, err := db.GetDestinationPlexTargets(dest.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
-			}
-			dest.PlexTargets = plexTargets
-			return dest, nil
+		if !strings.HasPrefix(localPath, dest.LocalPath) {
+			continue
 		}
+
+		// Compile advanced filters
+		if err := dest.CompileAdvancedFilters(); err != nil {
+			return nil, fmt.Errorf("failed to compile advanced filters: %w", err)
+		}
+		// Load associated remotes
+		remotes, err := db.GetDestinationRemotes(dest.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get destination remotes: %w", err)
+		}
+		dest.Remotes = remotes
+		// Load Plex target mappings
+		plexTargets, err := db.GetDestinationPlexTargets(dest.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
+		}
+		dest.PlexTargets = plexTargets
+		return dest, nil
 	}
 
 	return nil, nil
 }
 
 // scanDestination scans a row into a Destination struct
-func (db *DB) scanDestination(scanner interface {
+func (db *db) scanDestination(scanner interface {
 	Scan(dest ...any) error
 }) (*Destination, error) {
 	d := &Destination{}
@@ -629,8 +642,8 @@ func (db *DB) scanDestination(scanner interface {
 }
 
 // ListDestinations retrieves all destinations
-func (db *DB) ListDestinations() ([]*Destination, error) {
-	rows, err := db.Query(`
+func (db *db) ListDestinations() ([]*Destination, error) {
+	rows, err := db.query(`
 		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations ORDER BY local_path ASC
@@ -638,7 +651,6 @@ func (db *DB) ListDestinations() ([]*Destination, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list destinations: %w", err)
 	}
-	defer rows.Close()
 
 	var destinations []*Destination
 	for rows.Next() {
@@ -647,6 +659,12 @@ func (db *DB) ListDestinations() ([]*Destination, error) {
 			return nil, fmt.Errorf("failed to scan destination: %w", err)
 		}
 		destinations = append(destinations, dest)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate destinations: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close destinations rows: %w", err)
 	}
 
 	// Load remotes for each destination
@@ -667,8 +685,8 @@ func (db *DB) ListDestinations() ([]*Destination, error) {
 }
 
 // ListEnabledDestinations retrieves all enabled destinations
-func (db *DB) ListEnabledDestinations() ([]*Destination, error) {
-	rows, err := db.Query(`
+func (db *db) ListEnabledDestinations() ([]*Destination, error) {
+	rows, err := db.query(`
 		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations WHERE enabled = true ORDER BY local_path ASC
@@ -676,7 +694,6 @@ func (db *DB) ListEnabledDestinations() ([]*Destination, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list enabled destinations: %w", err)
 	}
-	defer rows.Close()
 
 	var dests []*Destination
 	for rows.Next() {
@@ -685,6 +702,12 @@ func (db *DB) ListEnabledDestinations() ([]*Destination, error) {
 			return nil, fmt.Errorf("failed to scan destination: %w", err)
 		}
 		dests = append(dests, dest)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate enabled destinations: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close enabled destinations rows: %w", err)
 	}
 
 	// Load remotes for each destination
@@ -705,7 +728,7 @@ func (db *DB) ListEnabledDestinations() ([]*Destination, error) {
 }
 
 // UpdateDestination updates an existing destination
-func (db *DB) UpdateDestination(dest *Destination) error {
+func (db *db) UpdateDestination(dest *Destination) error {
 	// Marshal exclude paths, extensions, and triggers to JSON
 	excludePathsJSON, err := marshalToString(dest.ExcludePaths)
 	if err != nil {
@@ -731,7 +754,7 @@ func (db *DB) UpdateDestination(dest *Destination) error {
 		dest.TransferType = TransferTypeMove
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		UPDATE destinations SET local_path = ?, min_file_age_minutes = ?, min_folder_size_gb = ?, use_plex_scan_tracking = ?, transfer_type = ?, enabled = ?,
 			exclude_paths = ?, exclude_extensions = ?, included_triggers = ?, advanced_filters = ?
 		WHERE id = ?
@@ -753,7 +776,7 @@ func (db *DB) UpdateDestination(dest *Destination) error {
 }
 
 // DeleteDestination deletes a destination by ID
-func (db *DB) DeleteDestination(id int64) error {
+func (db *db) DeleteDestination(id int64) error {
 	if err := db.execAndVerifyAffected("DELETE FROM destinations WHERE id = ?", id); err != nil {
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("destination not found")
@@ -764,9 +787,9 @@ func (db *DB) DeleteDestination(id int64) error {
 }
 
 // CountDestinations returns the total number of destinations
-func (db *DB) CountDestinations() (int, error) {
+func (db *db) CountDestinations() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM destinations").Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM destinations").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count destinations: %w", err)
 	}
@@ -775,7 +798,7 @@ func (db *DB) CountDestinations() (int, error) {
 
 // DestinationPathExists checks if a destination exists with the exact local path.
 // If excludeID is non-nil, that destination ID is ignored.
-func (db *DB) DestinationPathExists(localPath string, excludeID *int64) (bool, error) {
+func (db *db) DestinationPathExists(localPath string, excludeID *int64) (bool, error) {
 	query := "SELECT COUNT(*) FROM destinations WHERE local_path = ?"
 	args := []any{localPath}
 	if excludeID != nil {
@@ -783,15 +806,15 @@ func (db *DB) DestinationPathExists(localPath string, excludeID *int64) (bool, e
 		args = append(args, *excludeID)
 	}
 	var count int
-	if err := db.QueryRow(query, args...).Scan(&count); err != nil {
+	if err := db.queryRow(query, args...).Scan(&count); err != nil {
 		return false, fmt.Errorf("failed to check destination path: %w", err)
 	}
 	return count > 0, nil
 }
 
 // ListDestinationsWithPlexTracking retrieves all destinations with Plex scan tracking enabled.
-func (db *DB) ListDestinationsWithPlexTracking() ([]*Destination, error) {
-	rows, err := db.Query(`
+func (db *db) ListDestinationsWithPlexTracking() ([]*Destination, error) {
+	rows, err := db.query(`
 		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations
@@ -801,7 +824,6 @@ func (db *DB) ListDestinationsWithPlexTracking() ([]*Destination, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list plex tracking destinations: %w", err)
 	}
-	defer rows.Close()
 
 	var destinations []*Destination
 	for rows.Next() {
@@ -810,6 +832,12 @@ func (db *DB) ListDestinationsWithPlexTracking() ([]*Destination, error) {
 			return nil, fmt.Errorf("failed to scan destination: %w", err)
 		}
 		destinations = append(destinations, dest)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate plex tracking destinations: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close plex tracking destinations rows: %w", err)
 	}
 
 	for _, dest := range destinations {
@@ -826,8 +854,8 @@ func (db *DB) ListDestinationsWithPlexTracking() ([]*Destination, error) {
 // ========== DestinationRemote CRUD ==========
 
 // AddDestinationRemote adds a remote mapping to a destination
-func (db *DB) AddDestinationRemote(dr *DestinationRemote) error {
-	_, err := db.Exec(`
+func (db *db) AddDestinationRemote(dr *DestinationRemote) error {
+	_, err := db.exec(`
 		INSERT INTO destination_remotes (destination_id, remote_id, priority, remote_path)
 		VALUES (?, ?, ?, ?)
 	`, dr.DestinationID, dr.RemoteID, dr.Priority, dr.RemotePath)
@@ -839,8 +867,8 @@ func (db *DB) AddDestinationRemote(dr *DestinationRemote) error {
 }
 
 // GetDestinationRemotes retrieves all remote mappings for a destination
-func (db *DB) GetDestinationRemotes(destinationID int64) ([]*DestinationRemote, error) {
-	rows, err := db.Query(`
+func (db *db) GetDestinationRemotes(destinationID int64) ([]*DestinationRemote, error) {
+	rows, err := db.query(`
 		SELECT dr.destination_id, dr.remote_id, dr.priority, dr.remote_path, r.name, r.rclone_remote
 		FROM destination_remotes dr
 		JOIN remotes r ON dr.remote_id = r.id
@@ -865,8 +893,8 @@ func (db *DB) GetDestinationRemotes(destinationID int64) ([]*DestinationRemote, 
 }
 
 // UpdateDestinationRemote updates an existing remote mapping
-func (db *DB) UpdateDestinationRemote(dr *DestinationRemote) error {
-	result, err := db.Exec(`
+func (db *db) UpdateDestinationRemote(dr *DestinationRemote) error {
+	result, err := db.exec(`
 		UPDATE destination_remotes SET priority = ?, remote_path = ?
 		WHERE destination_id = ? AND remote_id = ?
 	`, dr.Priority, dr.RemotePath, dr.DestinationID, dr.RemoteID)
@@ -886,7 +914,7 @@ func (db *DB) UpdateDestinationRemote(dr *DestinationRemote) error {
 }
 
 // RemoveDestinationRemote removes a remote mapping from a destination
-func (db *DB) RemoveDestinationRemote(destinationID, remoteID int64) error {
+func (db *db) RemoveDestinationRemote(destinationID, remoteID int64) error {
 	if err := db.execAndVerifyAffected(`
 		DELETE FROM destination_remotes WHERE destination_id = ? AND remote_id = ?
 	`, destinationID, remoteID); err != nil {
@@ -899,8 +927,8 @@ func (db *DB) RemoveDestinationRemote(destinationID, remoteID int64) error {
 }
 
 // ClearDestinationRemotes removes all remote mappings for a destination
-func (db *DB) ClearDestinationRemotes(destinationID int64) error {
-	_, err := db.Exec(`DELETE FROM destination_remotes WHERE destination_id = ?`, destinationID)
+func (db *db) ClearDestinationRemotes(destinationID int64) error {
+	_, err := db.exec(`DELETE FROM destination_remotes WHERE destination_id = ?`, destinationID)
 	if err != nil {
 		return fmt.Errorf("failed to clear destination remotes: %w", err)
 	}
@@ -908,9 +936,9 @@ func (db *DB) ClearDestinationRemotes(destinationID int64) error {
 }
 
 // GetMaxDestinationRemotePriority returns the highest priority number for a given destination
-func (db *DB) GetMaxDestinationRemotePriority(destinationID int64) (int, error) {
+func (db *db) GetMaxDestinationRemotePriority(destinationID int64) (int, error) {
 	var max int
-	err := db.QueryRow(`SELECT COALESCE(MAX(priority), 0) FROM destination_remotes WHERE destination_id = ?`, destinationID).Scan(&max)
+	err := db.queryRow(`SELECT COALESCE(MAX(priority), 0) FROM destination_remotes WHERE destination_id = ?`, destinationID).Scan(&max)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get max priority: %w", err)
 	}
@@ -918,10 +946,10 @@ func (db *DB) GetMaxDestinationRemotePriority(destinationID int64) (int, error) 
 }
 
 // ReorderDestinationRemotes updates the priority of remotes based on their position in the slice
-func (db *DB) ReorderDestinationRemotes(destinationID int64, remoteIDs []int64) error {
+func (db *db) ReorderDestinationRemotes(destinationID int64, remoteIDs []int64) error {
 	for i, remoteID := range remoteIDs {
 		priority := i + 1
-		_, err := db.Exec(`UPDATE destination_remotes SET priority = ? WHERE destination_id = ? AND remote_id = ?`,
+		_, err := db.exec(`UPDATE destination_remotes SET priority = ? WHERE destination_id = ? AND remote_id = ?`,
 			priority, destinationID, remoteID)
 		if err != nil {
 			return fmt.Errorf("failed to update priority for remote %d: %w", remoteID, err)
@@ -933,8 +961,8 @@ func (db *DB) ReorderDestinationRemotes(destinationID int64, remoteIDs []int64) 
 // ========== Destination Plex Target CRUD ==========
 
 // GetDestinationPlexTargets retrieves Plex targets configured for a destination.
-func (db *DB) GetDestinationPlexTargets(destinationID int64) ([]*DestinationPlexTarget, error) {
-	rows, err := db.Query(`
+func (db *db) GetDestinationPlexTargets(destinationID int64) ([]*DestinationPlexTarget, error) {
+	rows, err := db.query(`
 		SELECT dpt.destination_id, dpt.target_id, dpt.idle_threshold_seconds, COALESCE(t.name, '')
 		FROM destination_plex_targets dpt
 		LEFT JOIN targets t ON t.id = dpt.target_id
@@ -959,8 +987,8 @@ func (db *DB) GetDestinationPlexTargets(destinationID int64) ([]*DestinationPlex
 }
 
 // SetDestinationPlexTargets replaces Plex target mappings for a destination.
-func (db *DB) SetDestinationPlexTargets(destinationID int64, targets []*DestinationPlexTarget) error {
-	tx, err := db.Begin()
+func (db *db) SetDestinationPlexTargets(destinationID int64, targets []*DestinationPlexTarget) error {
+	tx, err := db.begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -984,8 +1012,8 @@ func (db *DB) SetDestinationPlexTargets(destinationID int64, targets []*Destinat
 }
 
 // ClearDestinationPlexTargets removes all Plex target mappings for a destination.
-func (db *DB) ClearDestinationPlexTargets(destinationID int64) error {
-	if _, err := db.Exec(`DELETE FROM destination_plex_targets WHERE destination_id = ?`, destinationID); err != nil {
+func (db *db) ClearDestinationPlexTargets(destinationID int64) error {
+	if _, err := db.exec(`DELETE FROM destination_plex_targets WHERE destination_id = ?`, destinationID); err != nil {
 		return fmt.Errorf("failed to clear destination plex targets: %w", err)
 	}
 	return nil
@@ -994,8 +1022,8 @@ func (db *DB) ClearDestinationPlexTargets(destinationID int64) error {
 // ========== Upload CRUD ==========
 
 // CreateUpload creates a new upload record
-func (db *DB) CreateUpload(upload *Upload) error {
-	result, err := db.Exec(`
+func (db *db) CreateUpload(upload *Upload) error {
+	result, err := db.exec(`
 		INSERT INTO uploads (scan_id, local_path, remote_name, remote_path, status, size_bytes, wait_state, wait_checks, created_at, progress_bytes, retry_count, remote_priority)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, upload.ScanID, upload.LocalPath, upload.RemoteName, upload.RemotePath, upload.Status, upload.SizeBytes, upload.WaitState, upload.WaitChecks, time.Now(), 0, 0, upload.RemotePriority)
@@ -1014,13 +1042,13 @@ func (db *DB) CreateUpload(upload *Upload) error {
 }
 
 // GetUpload retrieves an upload by ID
-func (db *DB) GetUpload(id int64) (*Upload, error) {
+func (db *db) GetUpload(id int64) (*Upload, error) {
 	upload := &Upload{}
 	var scanID, sizeBytes, rcloneJobID sql.NullInt64
 	var startedAt, completedAt sql.NullTime
 	var lastError sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1046,7 +1074,7 @@ func (db *DB) GetUpload(id int64) (*Upload, error) {
 }
 
 // uploadRowsToUploads converts sql.Rows to a slice of Upload
-func (db *DB) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
+func (db *db) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
 	var uploads []*Upload
 	for rows.Next() {
 		upload := &Upload{}
@@ -1074,8 +1102,8 @@ func (db *DB) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
 }
 
 // ListPendingUploads returns uploads waiting for mode conditions
-func (db *DB) ListPendingUploads() ([]*Upload, error) {
-	rows, err := db.Query(`
+func (db *db) ListPendingUploads() ([]*Upload, error) {
+	rows, err := db.query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1092,8 +1120,8 @@ func (db *DB) ListPendingUploads() ([]*Upload, error) {
 }
 
 // ListQueuedUploads returns uploads ready to start
-func (db *DB) ListQueuedUploads() ([]*Upload, error) {
-	rows, err := db.Query(`
+func (db *db) ListQueuedUploads() ([]*Upload, error) {
+	rows, err := db.query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1110,8 +1138,8 @@ func (db *DB) ListQueuedUploads() ([]*Upload, error) {
 }
 
 // ListActiveUploads returns uploads currently in progress
-func (db *DB) ListActiveUploads() ([]*Upload, error) {
-	rows, err := db.Query(`
+func (db *db) ListActiveUploads() ([]*Upload, error) {
+	rows, err := db.query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1128,8 +1156,8 @@ func (db *DB) ListActiveUploads() ([]*Upload, error) {
 }
 
 // ListRecentUploads returns the most recent uploads
-func (db *DB) ListRecentUploads(limit int) ([]*Upload, error) {
-	rows, err := db.Query(`
+func (db *db) ListRecentUploads(limit int) ([]*Upload, error) {
+	rows, err := db.query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1147,11 +1175,11 @@ func (db *DB) ListRecentUploads(limit int) ([]*Upload, error) {
 
 // ListUploadsPaginated returns uploads with pagination, sorted by active status first
 // Excludes completed uploads (they go to history)
-func (db *DB) ListUploadsPaginated(limit, offset int) ([]*Upload, error) {
+func (db *db) ListUploadsPaginated(limit, offset int) ([]*Upload, error) {
 	// Sort: uploading first, then queued, then pending, then failed
 	// Completed uploads are excluded from the queue view
 	// Within each status group, sort by created_at DESC
-	rows, err := db.Query(`
+	rows, err := db.query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1177,8 +1205,8 @@ func (db *DB) ListUploadsPaginated(limit, offset int) ([]*Upload, error) {
 }
 
 // ListUploadsByStatus returns uploads with a specific status
-func (db *DB) ListUploadsByStatus(status UploadStatus, limit int) ([]*Upload, error) {
-	rows, err := db.Query(`
+func (db *db) ListUploadsByStatus(status UploadStatus, limit int) ([]*Upload, error) {
+	rows, err := db.query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1196,17 +1224,17 @@ func (db *DB) ListUploadsByStatus(status UploadStatus, limit int) ([]*Upload, er
 }
 
 // UpdateUploadStatus updates the status of an upload
-func (db *DB) UpdateUploadStatus(id int64, status UploadStatus) error {
+func (db *db) UpdateUploadStatus(id int64, status UploadStatus) error {
 	var err error
 	switch status {
 	case UploadStatusUploading:
-		_, err = db.Exec(`UPDATE uploads SET status = ?, started_at = ? WHERE id = ?`, status, time.Now(), id)
+		_, err = db.exec(`UPDATE uploads SET status = ?, started_at = ? WHERE id = ?`, status, time.Now(), id)
 	case UploadStatusCompleted:
-		_, err = db.Exec(`UPDATE uploads SET status = ?, completed_at = ? WHERE id = ?`, status, time.Now(), id)
+		_, err = db.exec(`UPDATE uploads SET status = ?, completed_at = ? WHERE id = ?`, status, time.Now(), id)
 	case UploadStatusFailed:
-		_, err = db.Exec(`UPDATE uploads SET status = ?, retry_count = retry_count + 1 WHERE id = ?`, status, id)
+		_, err = db.exec(`UPDATE uploads SET status = ?, retry_count = retry_count + 1 WHERE id = ?`, status, id)
 	default:
-		_, err = db.Exec(`UPDATE uploads SET status = ? WHERE id = ?`, status, id)
+		_, err = db.exec(`UPDATE uploads SET status = ? WHERE id = ?`, status, id)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to update upload status: %w", err)
@@ -1215,8 +1243,8 @@ func (db *DB) UpdateUploadStatus(id int64, status UploadStatus) error {
 }
 
 // UpdateUploadWaitState updates the wait state and check details for an upload.
-func (db *DB) UpdateUploadWaitState(id int64, waitState string, waitChecks string) error {
-	_, err := db.Exec(`UPDATE uploads SET wait_state = ?, wait_checks = ? WHERE id = ?`, waitState, waitChecks, id)
+func (db *db) UpdateUploadWaitState(id int64, waitState string, waitChecks string) error {
+	_, err := db.exec(`UPDATE uploads SET wait_state = ?, wait_checks = ? WHERE id = ?`, waitState, waitChecks, id)
 	if err != nil {
 		return fmt.Errorf("failed to update upload wait state: %w", err)
 	}
@@ -1224,8 +1252,8 @@ func (db *DB) UpdateUploadWaitState(id int64, waitState string, waitChecks strin
 }
 
 // UpdateUploadProgress updates the progress of an upload
-func (db *DB) UpdateUploadProgress(id int64, progressBytes int64, rcloneJobID *int64) error {
-	_, err := db.Exec(`UPDATE uploads SET progress_bytes = ?, rclone_job_id = ? WHERE id = ?`, progressBytes, rcloneJobID, id)
+func (db *db) UpdateUploadProgress(id int64, progressBytes int64, rcloneJobID *int64) error {
+	_, err := db.exec(`UPDATE uploads SET progress_bytes = ?, rclone_job_id = ? WHERE id = ?`, progressBytes, rcloneJobID, id)
 	if err != nil {
 		return fmt.Errorf("failed to update upload progress: %w", err)
 	}
@@ -1233,8 +1261,8 @@ func (db *DB) UpdateUploadProgress(id int64, progressBytes int64, rcloneJobID *i
 }
 
 // UpdateUploadError updates the error message for an upload
-func (db *DB) UpdateUploadError(id int64, errMsg string) error {
-	_, err := db.Exec(`UPDATE uploads SET last_error = ?, status = ?, retry_count = retry_count + 1 WHERE id = ?`, errMsg, UploadStatusFailed, id)
+func (db *db) UpdateUploadError(id int64, errMsg string) error {
+	_, err := db.exec(`UPDATE uploads SET last_error = ?, status = ?, retry_count = retry_count + 1 WHERE id = ?`, errMsg, UploadStatusFailed, id)
 	if err != nil {
 		return fmt.Errorf("failed to update upload error: %w", err)
 	}
@@ -1242,8 +1270,8 @@ func (db *DB) UpdateUploadError(id int64, errMsg string) error {
 }
 
 // UpdateUploadRemote updates the remote for failover
-func (db *DB) UpdateUploadRemote(id int64, remoteName, remotePath string, remotePriority int) error {
-	_, err := db.Exec(`UPDATE uploads SET remote_name = ?, remote_path = ?, remote_priority = ?, retry_count = 0, status = ? WHERE id = ?`,
+func (db *db) UpdateUploadRemote(id int64, remoteName, remotePath string, remotePriority int) error {
+	_, err := db.exec(`UPDATE uploads SET remote_name = ?, remote_path = ?, remote_priority = ?, retry_count = 0, status = ? WHERE id = ?`,
 		remoteName, remotePath, remotePriority, UploadStatusQueued, id)
 	if err != nil {
 		return fmt.Errorf("failed to update upload remote: %w", err)
@@ -1252,8 +1280,8 @@ func (db *DB) UpdateUploadRemote(id int64, remoteName, remotePath string, remote
 }
 
 // DeleteUpload deletes an upload by ID
-func (db *DB) DeleteUpload(id int64) error {
-	result, err := db.Exec("DELETE FROM uploads WHERE id = ?", id)
+func (db *db) DeleteUpload(id int64) error {
+	result, err := db.exec("DELETE FROM uploads WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("failed to delete upload: %w", err)
 	}
@@ -1270,13 +1298,13 @@ func (db *DB) DeleteUpload(id int64) error {
 }
 
 // FindDuplicateUpload checks if an upload for the same path/remote exists
-func (db *DB) FindDuplicateUpload(localPath, remoteName string) (*Upload, error) {
+func (db *db) FindDuplicateUpload(localPath, remoteName string) (*Upload, error) {
 	upload := &Upload{}
 	var scanID, sizeBytes, rcloneJobID sql.NullInt64
 	var startedAt, completedAt sql.NullTime
 	var lastError sql.NullString
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
@@ -1306,9 +1334,9 @@ func (db *DB) FindDuplicateUpload(localPath, remoteName string) (*Upload, error)
 }
 
 // CountUploads returns the count of uploads by status
-func (db *DB) CountUploads(status UploadStatus) (int, error) {
+func (db *db) CountUploads(status UploadStatus) (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status = ?", status).Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM uploads WHERE status = ?", status).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count uploads: %w", err)
 	}
@@ -1316,18 +1344,28 @@ func (db *DB) CountUploads(status UploadStatus) (int, error) {
 }
 
 // CountAllUploads returns the total number of uploads (excluding completed)
-func (db *DB) CountAllUploads() (int, error) {
+func (db *db) CountAllUploads() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM uploads WHERE status != ?", UploadStatusCompleted).Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM uploads WHERE status != ?", UploadStatusCompleted).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count all uploads: %w", err)
 	}
 	return count, nil
 }
 
+// CountUploadsTotal returns the total number of uploads (all statuses).
+func (db *db) CountUploadsTotal() (int, error) {
+	var count int
+	err := db.queryRow("SELECT COUNT(*) FROM uploads").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count total uploads: %w", err)
+	}
+	return count, nil
+}
+
 // DeleteCompletedUploads deletes all completed uploads
-func (db *DB) DeleteCompletedUploads() (int64, error) {
-	result, err := db.Exec("DELETE FROM uploads WHERE status = ?", UploadStatusCompleted)
+func (db *db) DeleteCompletedUploads() (int64, error) {
+	result, err := db.exec("DELETE FROM uploads WHERE status = ?", UploadStatusCompleted)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete completed uploads: %w", err)
 	}
@@ -1335,9 +1373,9 @@ func (db *DB) DeleteCompletedUploads() (int64, error) {
 }
 
 // DeleteOldUploads deletes uploads older than the given duration
-func (db *DB) DeleteOldUploads(age time.Duration) (int64, error) {
+func (db *db) DeleteOldUploads(age time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-age)
-	result, err := db.Exec(`DELETE FROM uploads WHERE created_at < ? AND status IN (?, ?)`, cutoff, UploadStatusCompleted, UploadStatusFailed)
+	result, err := db.exec(`DELETE FROM uploads WHERE created_at < ? AND status IN (?, ?)`, cutoff, UploadStatusCompleted, UploadStatusFailed)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete old uploads: %w", err)
 	}
@@ -1347,8 +1385,8 @@ func (db *DB) DeleteOldUploads(age time.Duration) (int64, error) {
 // ========== UploadHistory CRUD ==========
 
 // CreateUploadHistory creates a new upload history record
-func (db *DB) CreateUploadHistory(history *UploadHistory) error {
-	result, err := db.Exec(`
+func (db *db) CreateUploadHistory(history *UploadHistory) error {
+	result, err := db.exec(`
 		INSERT INTO upload_history (upload_id, local_path, remote_name, remote_path, size_bytes, completed_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, history.UploadID, history.LocalPath, history.RemoteName, history.RemotePath, history.SizeBytes, time.Now())
@@ -1367,13 +1405,13 @@ func (db *DB) CreateUploadHistory(history *UploadHistory) error {
 }
 
 // ListUploadHistory retrieves upload history with pagination
-func (db *DB) ListUploadHistory(limit, offset int) ([]*UploadHistory, error) {
+func (db *db) ListUploadHistory(limit, offset int) ([]*UploadHistory, error) {
 	return db.ListUploadHistoryFiltered("", limit, offset)
 }
 
 // ListUploadHistoryFiltered lists uploads with optional remote filter.
-func (db *DB) ListUploadHistoryFiltered(remote string, limit, offset int) ([]*UploadHistory, error) {
-	rows, err := db.Query(`
+func (db *db) ListUploadHistoryFiltered(remote string, limit, offset int) ([]*UploadHistory, error) {
+	rows, err := db.query(`
 		SELECT id, upload_id, local_path, remote_name, remote_path, size_bytes, completed_at
 		FROM upload_history
 		WHERE (? = '' OR remote_name = ?)
@@ -1404,8 +1442,8 @@ func (db *DB) ListUploadHistoryFiltered(remote string, limit, offset int) ([]*Up
 }
 
 // GetUploadStats returns aggregate upload statistics
-func (db *DB) GetUploadStats() (totalUploads int, totalBytes int64, err error) {
-	err = db.QueryRow(`
+func (db *db) GetUploadStats() (totalUploads int, totalBytes int64, err error) {
+	err = db.queryRow(`
 		SELECT COUNT(*), COALESCE(SUM(size_bytes), 0)
 		FROM upload_history
 	`).Scan(&totalUploads, &totalBytes)
@@ -1416,14 +1454,14 @@ func (db *DB) GetUploadStats() (totalUploads int, totalBytes int64, err error) {
 }
 
 // CountUploadHistory returns the total number of upload history records
-func (db *DB) CountUploadHistory() (int, error) {
+func (db *db) CountUploadHistory() (int, error) {
 	return db.CountUploadHistoryFiltered("")
 }
 
 // CountUploadHistoryFiltered returns the number of upload history records filtered by remote name (optional)
-func (db *DB) CountUploadHistoryFiltered(remote string) (int, error) {
+func (db *db) CountUploadHistoryFiltered(remote string) (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM upload_history WHERE (? = '' OR remote_name = ?)", remote, remote).Scan(&count)
+	err := db.queryRow("SELECT COUNT(*) FROM upload_history WHERE (? = '' OR remote_name = ?)", remote, remote).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count upload history: %w", err)
 	}
@@ -1431,8 +1469,8 @@ func (db *DB) CountUploadHistoryFiltered(remote string) (int, error) {
 }
 
 // ClearUploadHistory deletes all upload history records
-func (db *DB) ClearUploadHistory() (int64, error) {
-	result, err := db.Exec("DELETE FROM upload_history")
+func (db *db) ClearUploadHistory() (int64, error) {
+	result, err := db.exec("DELETE FROM upload_history")
 	if err != nil {
 		return 0, fmt.Errorf("failed to clear upload history: %w", err)
 	}

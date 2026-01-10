@@ -43,7 +43,7 @@ var staticFS embed.FS
 
 // Server represents the web server
 type Server struct {
-	db              *database.DB
+	db              *database.Manager
 	port            int
 	bind            string
 	allowedNet      *net.IPNet
@@ -68,7 +68,7 @@ type Server struct {
 }
 
 // NewServer creates a new web server
-func NewServer(db *database.DB, port int, bind string, allowedNet *net.IPNet, isDev bool) *Server {
+func NewServer(db *database.Manager, port int, bind string, allowedNet *net.IPNet, isDev bool) *Server {
 	targetsMgr := targets.NewManager(db)
 	plexTracker := scantracker.NewPlexTracker(db)
 	s := &Server{

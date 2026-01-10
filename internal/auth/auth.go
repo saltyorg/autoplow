@@ -5,7 +5,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -48,11 +47,11 @@ type Session struct {
 
 // AuthService handles authentication
 type AuthService struct {
-	db *database.DB
+	db *database.Manager
 }
 
 // NewAuthService creates a new auth service
-func NewAuthService(db *database.DB) *AuthService {
+func NewAuthService(db *database.Manager) *AuthService {
 	return &AuthService{db: db}
 }
 
@@ -177,60 +176,54 @@ func (s *AuthService) CreateUser(username, password string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	now := time.Now()
-	result, err := s.db.Exec(`
-		INSERT INTO users (username, password_hash, created_at, updated_at)
-		VALUES (?, ?, ?, ?)
-	`, username, hash, now, now)
+	record, err := s.db.CreateUser(username, hash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user id: %w", err)
+		return nil, err
 	}
 
 	return &User{
-		ID:           id,
-		Username:     username,
-		PasswordHash: hash,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:           record.ID,
+		Username:     record.Username,
+		PasswordHash: record.PasswordHash,
+		CreatedAt:    record.CreatedAt,
+		UpdatedAt:    record.UpdatedAt,
 	}, nil
 }
 
 // GetUserByUsername retrieves a user by username
 func (s *AuthService) GetUserByUsername(username string) (*User, error) {
-	user := &User{}
-	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, created_at, updated_at
-		FROM users WHERE username = ?
-	`, username).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
-	if err == sql.ErrNoRows {
+	record, err := s.db.GetUserByUsername(username)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-	return user, nil
+	return &User{
+		ID:           record.ID,
+		Username:     record.Username,
+		PasswordHash: record.PasswordHash,
+		CreatedAt:    record.CreatedAt,
+		UpdatedAt:    record.UpdatedAt,
+	}, nil
 }
 
 // GetUserByID retrieves a user by ID
 func (s *AuthService) GetUserByID(id int64) (*User, error) {
-	user := &User{}
-	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, created_at, updated_at
-		FROM users WHERE id = ?
-	`, id).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
-	if err == sql.ErrNoRows {
+	record, err := s.db.GetUserByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-	return user, nil
+	return &User{
+		ID:           record.ID,
+		Username:     record.Username,
+		PasswordHash: record.PasswordHash,
+		CreatedAt:    record.CreatedAt,
+		UpdatedAt:    record.UpdatedAt,
+	}, nil
 }
 
 // Authenticate verifies credentials and returns the user
@@ -254,25 +247,12 @@ func (s *AuthService) UpdatePassword(userID int64, newPassword string) error {
 	if err != nil {
 		return err
 	}
-
-	_, err = s.db.Exec(`
-		UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?
-	`, hash, time.Now(), userID)
-	if err != nil {
-		return fmt.Errorf("failed to update password: %w", err)
-	}
-	return nil
+	return s.db.UpdateUserPassword(userID, hash)
 }
 
 // UpdateUsername changes a user's username
 func (s *AuthService) UpdateUsername(userID int64, newUsername string) error {
-	_, err := s.db.Exec(`
-		UPDATE users SET username = ?, updated_at = ? WHERE id = ?
-	`, newUsername, time.Now(), userID)
-	if err != nil {
-		return fmt.Errorf("failed to update username: %w", err)
-	}
-	return nil
+	return s.db.UpdateUsername(userID, newUsername)
 }
 
 // CreateSession creates a new session for a user
@@ -282,37 +262,35 @@ func (s *AuthService) CreateSession(userID int64) (*Session, error) {
 		return nil, err
 	}
 
-	now := time.Now()
-	expiresAt := now.Add(SessionDuration)
-
-	_, err = s.db.Exec(`
-		INSERT INTO sessions (id, user_id, expires_at, created_at)
-		VALUES (?, ?, ?, ?)
-	`, sessionID, userID, expiresAt, now)
+	expiresAt := time.Now().Add(SessionDuration)
+	record, err := s.db.CreateSession(sessionID, userID, expiresAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, err
 	}
 
 	return &Session{
-		ID:        sessionID,
-		UserID:    userID,
-		ExpiresAt: expiresAt,
-		CreatedAt: now,
+		ID:        record.ID,
+		UserID:    record.UserID,
+		ExpiresAt: record.ExpiresAt,
+		CreatedAt: record.CreatedAt,
 	}, nil
 }
 
 // GetSession retrieves a session by ID
 func (s *AuthService) GetSession(sessionID string) (*Session, error) {
-	session := &Session{}
-	err := s.db.QueryRow(`
-		SELECT id, user_id, expires_at, created_at
-		FROM sessions WHERE id = ?
-	`, sessionID).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.CreatedAt)
-	if err == sql.ErrNoRows {
+	record, err := s.db.GetSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %w", err)
+
+	session := &Session{
+		ID:        record.ID,
+		UserID:    record.UserID,
+		ExpiresAt: record.ExpiresAt,
+		CreatedAt: record.CreatedAt,
 	}
 
 	// Check if expired
@@ -330,21 +308,13 @@ func (s *AuthService) GetSession(sessionID string) (*Session, error) {
 
 // DeleteSession removes a session
 func (s *AuthService) DeleteSession(sessionID string) error {
-	_, err := s.db.Exec("DELETE FROM sessions WHERE id = ?", sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to delete session: %w", err)
-	}
-	return nil
+	return s.db.DeleteSession(sessionID)
 }
 
 // ExtendSession extends a session's expiration
 func (s *AuthService) ExtendSession(sessionID string) error {
 	expiresAt := time.Now().Add(SessionDuration)
-	_, err := s.db.Exec("UPDATE sessions SET expires_at = ? WHERE id = ?", expiresAt, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to extend session: %w", err)
-	}
-	return nil
+	return s.db.ExtendSession(sessionID, expiresAt)
 }
 
 // generateSessionID creates a cryptographically secure session ID

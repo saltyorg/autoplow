@@ -77,7 +77,7 @@ type fileStabilityCheck struct {
 
 // Processor handles scan processing
 type Processor struct {
-	db            *database.DB
+	db            *database.Manager
 	config        Config
 	anchorChecker *AnchorChecker
 	targetsMgr    *targets.Manager
@@ -105,7 +105,7 @@ type Processor struct {
 }
 
 // New creates a new scan processor
-func New(db *database.DB, config Config) *Processor {
+func New(db *database.Manager, config Config) *Processor {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Processor{

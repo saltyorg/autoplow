@@ -94,7 +94,7 @@ func SessionAuth(authService *auth.AuthService) func(http.Handler) http.Handler 
 }
 
 // RequireSetup ensures the setup wizard has been completed
-func RequireSetup(db *database.DB) func(http.Handler) http.Handler {
+func RequireSetup(db *database.Manager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			firstRun, err := db.IsFirstRun()

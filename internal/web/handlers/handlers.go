@@ -46,7 +46,7 @@ type VersionInfo struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	db                     *database.DB
+	db                     *database.Manager
 	templates              map[string]*template.Template
 	authService            *auth.AuthService
 	apiKeyService          *auth.APIKeyService
@@ -68,7 +68,7 @@ type Handlers struct {
 }
 
 // New creates a new Handlers instance
-func New(db *database.DB, templates map[string]*template.Template, authService *auth.AuthService, apiKeyService *auth.APIKeyService, proc *processor.Processor, isDev bool) *Handlers {
+func New(db *database.Manager, templates map[string]*template.Template, authService *auth.AuthService, apiKeyService *auth.APIKeyService, proc *processor.Processor, isDev bool) *Handlers {
 	return &Handlers{
 		db:                 db,
 		templates:          templates,

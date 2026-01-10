@@ -10,9 +10,9 @@ import (
 )
 
 // GetSetting retrieves a setting value by key
-func (db *DB) GetSetting(key string) (string, error) {
+func (db *db) GetSetting(key string) (string, error) {
 	var value string
-	err := db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	err := db.queryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -23,7 +23,7 @@ func (db *DB) GetSetting(key string) (string, error) {
 }
 
 // GetSettingJSON retrieves a setting and unmarshal it from JSON
-func (db *DB) GetSettingJSON(key string, v any) error {
+func (db *db) GetSettingJSON(key string, v any) error {
 	value, err := db.GetSetting(key)
 	if err != nil {
 		return err
@@ -35,8 +35,8 @@ func (db *DB) GetSettingJSON(key string, v any) error {
 }
 
 // SetSetting stores a setting value
-func (db *DB) SetSetting(key, value string) error {
-	_, err := db.Exec(`
+func (db *db) SetSetting(key, value string) error {
+	_, err := db.exec(`
 		INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
 	`, key, value, time.Now())
@@ -47,7 +47,7 @@ func (db *DB) SetSetting(key, value string) error {
 }
 
 // SetSettingJSON stores a setting as JSON
-func (db *DB) SetSettingJSON(key string, v any) error {
+func (db *db) SetSettingJSON(key string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("failed to marshal setting %s: %w", key, err)
@@ -56,8 +56,8 @@ func (db *DB) SetSettingJSON(key string, v any) error {
 }
 
 // GetAllSettings retrieves all settings
-func (db *DB) GetAllSettings() (map[string]string, error) {
-	rows, err := db.Query("SELECT key, value FROM settings")
+func (db *db) GetAllSettings() (map[string]string, error) {
+	rows, err := db.query("SELECT key, value FROM settings")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get settings: %w", err)
 	}
@@ -77,7 +77,7 @@ func (db *DB) GetAllSettings() (map[string]string, error) {
 
 // GetSettingsBatch retrieves multiple settings at once and returns a map
 // Keys not found in the database will not be included in the result
-func (db *DB) GetSettingsBatch(keys ...string) (map[string]string, error) {
+func (db *db) GetSettingsBatch(keys ...string) (map[string]string, error) {
 	result := make(map[string]string, len(keys))
 	for _, key := range keys {
 		if val, err := db.GetSetting(key); err != nil {
@@ -90,8 +90,8 @@ func (db *DB) GetSettingsBatch(keys ...string) (map[string]string, error) {
 }
 
 // DeleteSetting removes a setting
-func (db *DB) DeleteSetting(key string) error {
-	_, err := db.Exec("DELETE FROM settings WHERE key = ?", key)
+func (db *db) DeleteSetting(key string) error {
+	_, err := db.exec("DELETE FROM settings WHERE key = ?", key)
 	if err != nil {
 		return fmt.Errorf("failed to delete setting %s: %w", key, err)
 	}
@@ -141,7 +141,7 @@ var DefaultSettings = map[string]any{
 }
 
 // InitializeDefaults sets default values for settings that don't exist
-func (db *DB) InitializeDefaults() error {
+func (db *db) InitializeDefaults() error {
 	for key, value := range DefaultSettings {
 		existing, err := db.GetSetting(key)
 		if err != nil {

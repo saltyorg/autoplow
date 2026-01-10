@@ -194,13 +194,13 @@ func (c *TargetConfig) ShouldExcludeTrigger(triggerName string) bool {
 }
 
 // CreateTarget creates a new media server target
-func (db *DB) CreateTarget(t *Target) error {
+func (db *db) CreateTarget(t *Target) error {
 	configJSON, err := marshalToString(t.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		INSERT INTO targets (name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, t.Name, t.Type, t.URL, t.Token, t.APIKey, t.Enabled, t.MatcharrEnabled, t.PlexAutoLanguagesEnabled, configJSON)
@@ -218,13 +218,13 @@ func (db *DB) CreateTarget(t *Target) error {
 }
 
 // GetTarget retrieves a target by ID
-func (db *DB) GetTarget(id int64) (*Target, error) {
+func (db *db) GetTarget(id int64) (*Target, error) {
 	t := &Target{}
 	var configJSON string
 	var matcharrEnabled sql.NullBool
 	var plexAutoLanguagesEnabled sql.NullBool
 
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets WHERE id = ?
 	`, id).Scan(
@@ -254,8 +254,8 @@ func (db *DB) GetTarget(id int64) (*Target, error) {
 }
 
 // ListTargets returns all targets
-func (db *DB) ListTargets() ([]*Target, error) {
-	rows, err := db.Query(`
+func (db *db) ListTargets() ([]*Target, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets ORDER BY name
 	`)
@@ -297,8 +297,8 @@ func (db *DB) ListTargets() ([]*Target, error) {
 }
 
 // ListEnabledTargets returns all enabled targets
-func (db *DB) ListEnabledTargets() ([]*Target, error) {
-	rows, err := db.Query(`
+func (db *db) ListEnabledTargets() ([]*Target, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets WHERE enabled = true ORDER BY name
 	`)
@@ -340,8 +340,8 @@ func (db *DB) ListEnabledTargets() ([]*Target, error) {
 }
 
 // ListMatcharrEnabledTargets returns all targets that are both enabled and have matcharr enabled
-func (db *DB) ListMatcharrEnabledTargets() ([]*Target, error) {
-	rows, err := db.Query(`
+func (db *db) ListMatcharrEnabledTargets() ([]*Target, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets WHERE enabled = true AND matcharr_enabled = true ORDER BY name
 	`)
@@ -383,8 +383,8 @@ func (db *DB) ListMatcharrEnabledTargets() ([]*Target, error) {
 }
 
 // ListPlexAutoLanguagesEnabledTargets returns all Plex targets with plex_auto_languages enabled
-func (db *DB) ListPlexAutoLanguagesEnabledTargets() ([]*Target, error) {
-	rows, err := db.Query(`
+func (db *db) ListPlexAutoLanguagesEnabledTargets() ([]*Target, error) {
+	rows, err := db.query(`
 		SELECT id, name, type, url, token, api_key, enabled, matcharr_enabled, plex_auto_languages_enabled, config, created_at, updated_at
 		FROM targets WHERE enabled = true AND plex_auto_languages_enabled = true AND type = ? ORDER BY name
 	`, TargetTypePlex)
@@ -425,13 +425,13 @@ func (db *DB) ListPlexAutoLanguagesEnabledTargets() ([]*Target, error) {
 }
 
 // UpdateTarget updates an existing target
-func (db *DB) UpdateTarget(t *Target) error {
+func (db *db) UpdateTarget(t *Target) error {
 	configJSON, err := marshalToString(t.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	result, err := db.Exec(`
+	result, err := db.exec(`
 		UPDATE targets SET
 			name = ?, type = ?, url = ?, token = ?, api_key = ?,
 			enabled = ?, matcharr_enabled = ?, plex_auto_languages_enabled = ?, config = ?, updated_at = CURRENT_TIMESTAMP
@@ -453,7 +453,7 @@ func (db *DB) UpdateTarget(t *Target) error {
 }
 
 // DeleteTarget deletes a target by ID
-func (db *DB) DeleteTarget(id int64) error {
+func (db *db) DeleteTarget(id int64) error {
 	if err := db.execAndVerifyAffected("DELETE FROM targets WHERE id = ?", id); err != nil {
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("target not found: %d", id)
@@ -476,10 +476,10 @@ type TargetLibrary struct {
 
 // GetCachedLibraries returns cached libraries for a target.
 // Returns nil if cache is older than maxAge or doesn't exist.
-func (db *DB) GetCachedLibraries(targetID int64, maxAge time.Duration) ([]TargetLibrary, error) {
+func (db *db) GetCachedLibraries(targetID int64, maxAge time.Duration) ([]TargetLibrary, error) {
 	cutoff := time.Now().Add(-maxAge)
 
-	rows, err := db.Query(`
+	rows, err := db.query(`
 		SELECT id, target_id, library_id, name, type, path, fetched_at
 		FROM target_libraries
 		WHERE target_id = ? AND fetched_at > ?
@@ -510,10 +510,10 @@ func (db *DB) GetCachedLibraries(targetID int64, maxAge time.Duration) ([]Target
 
 // GetCachedLibraryPaths returns just the paths from cached libraries for a target.
 // Returns nil if cache is older than maxAge or doesn't exist.
-func (db *DB) GetCachedLibraryPaths(targetID int64, maxAge time.Duration) ([]string, error) {
+func (db *db) GetCachedLibraryPaths(targetID int64, maxAge time.Duration) ([]string, error) {
 	cutoff := time.Now().Add(-maxAge)
 
-	rows, err := db.Query(`
+	rows, err := db.query(`
 		SELECT DISTINCT path
 		FROM target_libraries
 		WHERE target_id = ? AND fetched_at > ?
@@ -537,8 +537,8 @@ func (db *DB) GetCachedLibraryPaths(targetID int64, maxAge time.Duration) ([]str
 }
 
 // SetCachedLibraries replaces cached libraries for a target.
-func (db *DB) SetCachedLibraries(targetID int64, libraries []TargetLibrary) error {
-	return db.Transaction(func(tx *sql.Tx) error {
+func (db *db) SetCachedLibraries(targetID int64, libraries []TargetLibrary) error {
+	return db.transaction(func(tx *sql.Tx) error {
 		// Delete existing cached libraries for this target
 		if _, err := tx.Exec("DELETE FROM target_libraries WHERE target_id = ?", targetID); err != nil {
 			return fmt.Errorf("failed to delete old cached libraries: %w", err)
@@ -561,8 +561,8 @@ func (db *DB) SetCachedLibraries(targetID int64, libraries []TargetLibrary) erro
 }
 
 // DeleteCachedLibraries removes cached libraries for a target.
-func (db *DB) DeleteCachedLibraries(targetID int64) error {
-	_, err := db.Exec("DELETE FROM target_libraries WHERE target_id = ?", targetID)
+func (db *db) DeleteCachedLibraries(targetID int64) error {
+	_, err := db.exec("DELETE FROM target_libraries WHERE target_id = ?", targetID)
 	if err != nil {
 		return fmt.Errorf("failed to delete cached libraries: %w", err)
 	}
@@ -571,9 +571,9 @@ func (db *DB) DeleteCachedLibraries(targetID int64) error {
 
 // GetLibraryCacheAge returns the age of the oldest cached library for a target.
 // Returns 0 if no cached libraries exist.
-func (db *DB) GetLibraryCacheAge(targetID int64) (time.Duration, error) {
+func (db *db) GetLibraryCacheAge(targetID int64) (time.Duration, error) {
 	var fetchedAt sql.NullTime
-	err := db.QueryRow(`
+	err := db.queryRow(`
 		SELECT MIN(fetched_at)
 		FROM target_libraries
 		WHERE target_id = ?
