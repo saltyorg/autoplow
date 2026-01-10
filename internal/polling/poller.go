@@ -275,12 +275,6 @@ func (p *Poller) doScan(tp *triggerPoll) {
 		uploadsEnabled = false
 	}
 
-	if !uploadsEnabled {
-		// Still track files even if uploads disabled, so we don't queue them all when re-enabled
-		p.trackFilesOnly(tp)
-		return
-	}
-
 	isFirstScan := tp.firstScan
 	queueExisting := tp.trigger.Config.QueueExistingOnStart
 
@@ -359,13 +353,14 @@ func (p *Poller) doScan(tp *triggerPoll) {
 				Int64("trigger_id", triggerID).
 				Str("trigger", tp.trigger.Name).
 				Msg("Polling scan completed - scans queued")
-		} else if p.uploadManager != nil {
-			// Scanning disabled - queue uploads directly
+		}
+
+		if uploadsEnabled && p.uploadManager != nil {
 			for _, path := range newFiles {
 				log.Info().
 					Str("path", path).
 					Int64("trigger_id", triggerID).
-					Msg("Polling trigger queuing upload (scanning disabled)")
+					Msg("Polling trigger queuing upload")
 
 				p.uploadManager.QueueUpload(uploader.UploadRequest{
 					LocalPath: path,
@@ -382,31 +377,6 @@ func (p *Poller) doScan(tp *triggerPoll) {
 				Msg("Polling scan completed - uploads queued")
 		}
 	}
-}
-
-// trackFilesOnly updates the seen files map without queueing uploads
-func (p *Poller) trackFilesOnly(tp *triggerPoll) {
-	for _, watchPath := range tp.trigger.Config.WatchPaths {
-		absPath, err := filepath.Abs(watchPath)
-		if err != nil {
-			continue
-		}
-
-		if err := filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-
-			tp.seenMu.Lock()
-			tp.seenFiles[path] = struct{}{}
-			tp.seenMu.Unlock()
-
-			return nil
-		}); err != nil {
-			log.Error().Err(err).Str("path", absPath).Msg("Failed to walk directory for initial scan")
-		}
-	}
-	tp.firstScan = false
 }
 
 // Stats returns poller statistics

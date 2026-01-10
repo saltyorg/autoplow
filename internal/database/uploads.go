@@ -12,15 +12,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// UploadMode represents the upload triggering mode
-type UploadMode string
-
-const (
-	UploadModeImmediate UploadMode = "immediate"
-	UploadModeAge       UploadMode = "age"  // Upload when file older than X hours
-	UploadModeSize      UploadMode = "size" // Upload when accumulated size > X GB
-)
-
 // TransferType represents whether to copy or move files
 type TransferType string
 
@@ -54,9 +45,10 @@ type Remote struct {
 type Destination struct {
 	ID                int64                       `json:"id"`
 	LocalPath         string                      `json:"local_path"`
-	UploadMode        UploadMode                  `json:"upload_mode"`
-	ModeValue         *int                        `json:"mode_value,omitempty"` // Hours for age, GB for size
-	TransferType      TransferType                `json:"transfer_type"`        // copy or move
+	MinFileAgeMinutes int                         `json:"min_file_age_minutes"`
+	MinFolderSizeGB   int                         `json:"min_folder_size_gb"`
+	UsePlexTracking   bool                        `json:"use_plex_scan_tracking"`
+	TransferType      TransferType                `json:"transfer_type"` // copy or move
 	Enabled           bool                        `json:"enabled"`
 	ExcludePaths      []string                    `json:"exclude_paths,omitempty"`
 	ExcludeExtensions []string                    `json:"exclude_extensions,omitempty"`
@@ -64,6 +56,15 @@ type Destination struct {
 	IncludedTriggers  []int64                     `json:"included_triggers,omitempty"` // Inotify trigger IDs that can upload to this destination (empty = all allowed)
 	CreatedAt         time.Time                   `json:"created_at"`
 	Remotes           []*DestinationRemote        `json:"remotes,omitempty"`
+	PlexTargets       []*DestinationPlexTarget    `json:"plex_targets,omitempty"`
+}
+
+// DestinationPlexTarget configures Plex scan tracking for a destination.
+type DestinationPlexTarget struct {
+	DestinationID        int64  `json:"destination_id"`
+	TargetID             int64  `json:"target_id"`
+	IdleThresholdSeconds int    `json:"idle_threshold_seconds"`
+	TargetName           string `json:"target_name,omitempty"`
 }
 
 // DestinationAdvancedFilters provides regex-based include/exclude filtering for destinations
@@ -244,6 +245,8 @@ type Upload struct {
 	RetryCount     int          `json:"retry_count"`
 	LastError      string       `json:"last_error,omitempty"`
 	RemotePriority int          `json:"remote_priority"`
+	WaitState      string       `json:"wait_state,omitempty"`
+	WaitChecks     string       `json:"wait_checks,omitempty"`
 }
 
 // UploadHistory stores completed upload analytics
@@ -432,10 +435,10 @@ func (db *DB) CreateDestination(dest *Destination) error {
 	}
 
 	result, err := db.Exec(`
-		INSERT INTO destinations (local_path, upload_mode, mode_value, transfer_type, enabled,
+		INSERT INTO destinations (local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, dest.LocalPath, dest.UploadMode, dest.ModeValue, dest.TransferType, dest.Enabled,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, dest.LocalPath, dest.MinFileAgeMinutes, dest.MinFolderSizeGB, dest.UsePlexTracking, dest.TransferType, dest.Enabled,
 		string(excludePathsJSON), string(excludeExtensionsJSON), string(includedTriggersJSON), advancedFiltersJSON, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to create destination: %w", err)
@@ -454,25 +457,19 @@ func (db *DB) CreateDestination(dest *Destination) error {
 // GetDestination retrieves a destination by ID
 func (db *DB) GetDestination(id int64) (*Destination, error) {
 	dest := &Destination{}
-	var modeValue sql.NullInt64
 	var excludePathsJSON, excludeExtensionsJSON, includedTriggersJSON, advancedFiltersJSON sql.NullString
 
 	err := db.QueryRow(`
-		SELECT id, local_path, upload_mode, mode_value, transfer_type, enabled,
+		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations WHERE id = ?
-	`, id).Scan(&dest.ID, &dest.LocalPath, &dest.UploadMode, &modeValue, &dest.TransferType, &dest.Enabled,
+	`, id).Scan(&dest.ID, &dest.LocalPath, &dest.MinFileAgeMinutes, &dest.MinFolderSizeGB, &dest.UsePlexTracking, &dest.TransferType, &dest.Enabled,
 		&excludePathsJSON, &excludeExtensionsJSON, &includedTriggersJSON, &advancedFiltersJSON, &dest.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get destination: %w", err)
-	}
-
-	if modeValue.Valid {
-		v := int(modeValue.Int64)
-		dest.ModeValue = &v
 	}
 
 	// Default transfer type if empty (for backward compatibility)
@@ -509,6 +506,13 @@ func (db *DB) GetDestination(id int64) (*Destination, error) {
 	}
 	dest.Remotes = remotes
 
+	// Load Plex target mappings
+	plexTargets, err := db.GetDestinationPlexTargets(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
+	}
+	dest.PlexTargets = plexTargets
+
 	return dest, nil
 }
 
@@ -516,7 +520,7 @@ func (db *DB) GetDestination(id int64) (*Destination, error) {
 func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
 	// Find the most specific matching destination
 	rows, err := db.Query(`
-		SELECT id, local_path, upload_mode, mode_value, transfer_type, enabled,
+		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations WHERE enabled = true
 		ORDER BY length(local_path) DESC
@@ -528,17 +532,11 @@ func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
 
 	for rows.Next() {
 		dest := &Destination{}
-		var modeValue sql.NullInt64
 		var excludePathsJSON, excludeExtensionsJSON, includedTriggersJSON, advancedFiltersJSON sql.NullString
 
-		if err := rows.Scan(&dest.ID, &dest.LocalPath, &dest.UploadMode, &modeValue, &dest.TransferType, &dest.Enabled,
+		if err := rows.Scan(&dest.ID, &dest.LocalPath, &dest.MinFileAgeMinutes, &dest.MinFolderSizeGB, &dest.UsePlexTracking, &dest.TransferType, &dest.Enabled,
 			&excludePathsJSON, &excludeExtensionsJSON, &includedTriggersJSON, &advancedFiltersJSON, &dest.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan destination: %w", err)
-		}
-
-		if modeValue.Valid {
-			v := int(modeValue.Int64)
-			dest.ModeValue = &v
 		}
 
 		// Default transfer type if empty (for backward compatibility)
@@ -575,6 +573,12 @@ func (db *DB) GetDestinationByPath(localPath string) (*Destination, error) {
 				return nil, fmt.Errorf("failed to get destination remotes: %w", err)
 			}
 			dest.Remotes = remotes
+			// Load Plex target mappings
+			plexTargets, err := db.GetDestinationPlexTargets(dest.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
+			}
+			dest.PlexTargets = plexTargets
 			return dest, nil
 		}
 	}
@@ -587,17 +591,11 @@ func (db *DB) scanDestination(scanner interface {
 	Scan(dest ...any) error
 }) (*Destination, error) {
 	d := &Destination{}
-	var modeValue sql.NullInt64
 	var excludePathsJSON, excludeExtensionsJSON, includedTriggersJSON, advancedFiltersJSON sql.NullString
 
-	if err := scanner.Scan(&d.ID, &d.LocalPath, &d.UploadMode, &modeValue, &d.TransferType, &d.Enabled,
+	if err := scanner.Scan(&d.ID, &d.LocalPath, &d.MinFileAgeMinutes, &d.MinFolderSizeGB, &d.UsePlexTracking, &d.TransferType, &d.Enabled,
 		&excludePathsJSON, &excludeExtensionsJSON, &includedTriggersJSON, &advancedFiltersJSON, &d.CreatedAt); err != nil {
 		return nil, err
-	}
-
-	if modeValue.Valid {
-		v := int(modeValue.Int64)
-		d.ModeValue = &v
 	}
 
 	// Default transfer type if empty (for backward compatibility)
@@ -633,7 +631,7 @@ func (db *DB) scanDestination(scanner interface {
 // ListDestinations retrieves all destinations
 func (db *DB) ListDestinations() ([]*Destination, error) {
 	rows, err := db.Query(`
-		SELECT id, local_path, upload_mode, mode_value, transfer_type, enabled,
+		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations ORDER BY local_path ASC
 	`)
@@ -658,6 +656,11 @@ func (db *DB) ListDestinations() ([]*Destination, error) {
 			return nil, fmt.Errorf("failed to get destination remotes: %w", err)
 		}
 		dest.Remotes = remotes
+		plexTargets, err := db.GetDestinationPlexTargets(dest.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
+		}
+		dest.PlexTargets = plexTargets
 	}
 
 	return destinations, nil
@@ -666,7 +669,7 @@ func (db *DB) ListDestinations() ([]*Destination, error) {
 // ListEnabledDestinations retrieves all enabled destinations
 func (db *DB) ListEnabledDestinations() ([]*Destination, error) {
 	rows, err := db.Query(`
-		SELECT id, local_path, upload_mode, mode_value, transfer_type, enabled,
+		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations WHERE enabled = true ORDER BY local_path ASC
 	`)
@@ -691,6 +694,11 @@ func (db *DB) ListEnabledDestinations() ([]*Destination, error) {
 			return nil, fmt.Errorf("failed to get destination remotes: %w", err)
 		}
 		dest.Remotes = remotes
+		plexTargets, err := db.GetDestinationPlexTargets(dest.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
+		}
+		dest.PlexTargets = plexTargets
 	}
 
 	return dests, nil
@@ -724,10 +732,10 @@ func (db *DB) UpdateDestination(dest *Destination) error {
 	}
 
 	result, err := db.Exec(`
-		UPDATE destinations SET local_path = ?, upload_mode = ?, mode_value = ?, transfer_type = ?, enabled = ?,
+		UPDATE destinations SET local_path = ?, min_file_age_minutes = ?, min_folder_size_gb = ?, use_plex_scan_tracking = ?, transfer_type = ?, enabled = ?,
 			exclude_paths = ?, exclude_extensions = ?, included_triggers = ?, advanced_filters = ?
 		WHERE id = ?
-	`, dest.LocalPath, dest.UploadMode, dest.ModeValue, dest.TransferType, dest.Enabled,
+	`, dest.LocalPath, dest.MinFileAgeMinutes, dest.MinFolderSizeGB, dest.UsePlexTracking, dest.TransferType, dest.Enabled,
 		excludePathsJSON, excludeExtensionsJSON, includedTriggersJSON, advancedFiltersJSON, dest.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update destination: %w", err)
@@ -763,6 +771,56 @@ func (db *DB) CountDestinations() (int, error) {
 		return 0, fmt.Errorf("failed to count destinations: %w", err)
 	}
 	return count, nil
+}
+
+// DestinationPathExists checks if a destination exists with the exact local path.
+// If excludeID is non-nil, that destination ID is ignored.
+func (db *DB) DestinationPathExists(localPath string, excludeID *int64) (bool, error) {
+	query := "SELECT COUNT(*) FROM destinations WHERE local_path = ?"
+	args := []any{localPath}
+	if excludeID != nil {
+		query += " AND id != ?"
+		args = append(args, *excludeID)
+	}
+	var count int
+	if err := db.QueryRow(query, args...).Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to check destination path: %w", err)
+	}
+	return count > 0, nil
+}
+
+// ListDestinationsWithPlexTracking retrieves all destinations with Plex scan tracking enabled.
+func (db *DB) ListDestinationsWithPlexTracking() ([]*Destination, error) {
+	rows, err := db.Query(`
+		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
+			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
+		FROM destinations
+		WHERE enabled = true AND use_plex_scan_tracking = true
+		ORDER BY local_path ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list plex tracking destinations: %w", err)
+	}
+	defer rows.Close()
+
+	var destinations []*Destination
+	for rows.Next() {
+		dest, err := db.scanDestination(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan destination: %w", err)
+		}
+		destinations = append(destinations, dest)
+	}
+
+	for _, dest := range destinations {
+		plexTargets, err := db.GetDestinationPlexTargets(dest.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
+		}
+		dest.PlexTargets = plexTargets
+	}
+
+	return destinations, nil
 }
 
 // ========== DestinationRemote CRUD ==========
@@ -872,14 +930,75 @@ func (db *DB) ReorderDestinationRemotes(destinationID int64, remoteIDs []int64) 
 	return nil
 }
 
+// ========== Destination Plex Target CRUD ==========
+
+// GetDestinationPlexTargets retrieves Plex targets configured for a destination.
+func (db *DB) GetDestinationPlexTargets(destinationID int64) ([]*DestinationPlexTarget, error) {
+	rows, err := db.Query(`
+		SELECT dpt.destination_id, dpt.target_id, dpt.idle_threshold_seconds, COALESCE(t.name, '')
+		FROM destination_plex_targets dpt
+		LEFT JOIN targets t ON t.id = dpt.target_id
+		WHERE dpt.destination_id = ?
+		ORDER BY t.name ASC
+	`, destinationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list destination plex targets: %w", err)
+	}
+	defer rows.Close()
+
+	var targets []*DestinationPlexTarget
+	for rows.Next() {
+		item := &DestinationPlexTarget{}
+		if err := rows.Scan(&item.DestinationID, &item.TargetID, &item.IdleThresholdSeconds, &item.TargetName); err != nil {
+			return nil, fmt.Errorf("failed to scan destination plex target: %w", err)
+		}
+		targets = append(targets, item)
+	}
+
+	return targets, nil
+}
+
+// SetDestinationPlexTargets replaces Plex target mappings for a destination.
+func (db *DB) SetDestinationPlexTargets(destinationID int64, targets []*DestinationPlexTarget) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM destination_plex_targets WHERE destination_id = ?`, destinationID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to clear destination plex targets: %w", err)
+	}
+	for _, target := range targets {
+		if _, err := tx.Exec(`
+			INSERT INTO destination_plex_targets (destination_id, target_id, idle_threshold_seconds)
+			VALUES (?, ?, ?)
+		`, destinationID, target.TargetID, target.IdleThresholdSeconds); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("failed to add destination plex target: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit destination plex targets: %w", err)
+	}
+	return nil
+}
+
+// ClearDestinationPlexTargets removes all Plex target mappings for a destination.
+func (db *DB) ClearDestinationPlexTargets(destinationID int64) error {
+	if _, err := db.Exec(`DELETE FROM destination_plex_targets WHERE destination_id = ?`, destinationID); err != nil {
+		return fmt.Errorf("failed to clear destination plex targets: %w", err)
+	}
+	return nil
+}
+
 // ========== Upload CRUD ==========
 
 // CreateUpload creates a new upload record
 func (db *DB) CreateUpload(upload *Upload) error {
 	result, err := db.Exec(`
-		INSERT INTO uploads (scan_id, local_path, remote_name, remote_path, status, size_bytes, created_at, progress_bytes, retry_count, remote_priority)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, upload.ScanID, upload.LocalPath, upload.RemoteName, upload.RemotePath, upload.Status, upload.SizeBytes, time.Now(), 0, 0, upload.RemotePriority)
+		INSERT INTO uploads (scan_id, local_path, remote_name, remote_path, status, size_bytes, wait_state, wait_checks, created_at, progress_bytes, retry_count, remote_priority)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, upload.ScanID, upload.LocalPath, upload.RemoteName, upload.RemotePath, upload.Status, upload.SizeBytes, upload.WaitState, upload.WaitChecks, time.Now(), 0, 0, upload.RemotePriority)
 	if err != nil {
 		return fmt.Errorf("failed to create upload: %w", err)
 	}
@@ -903,11 +1022,11 @@ func (db *DB) GetUpload(id int64) (*Upload, error) {
 
 	err := db.QueryRow(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads WHERE id = ?
 	`, id).Scan(&upload.ID, &scanID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
-		&upload.Status, &sizeBytes, &upload.CreatedAt, &startedAt, &completedAt,
+		&upload.Status, &sizeBytes, &upload.WaitState, &upload.WaitChecks, &upload.CreatedAt, &startedAt, &completedAt,
 		&rcloneJobID, &upload.ProgressBytes, &upload.RetryCount, &lastError, &upload.RemotePriority)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -936,7 +1055,7 @@ func (db *DB) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
 		var lastError sql.NullString
 
 		if err := rows.Scan(&upload.ID, &scanID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
-			&upload.Status, &sizeBytes, &upload.CreatedAt, &startedAt, &completedAt,
+			&upload.Status, &sizeBytes, &upload.WaitState, &upload.WaitChecks, &upload.CreatedAt, &startedAt, &completedAt,
 			&rcloneJobID, &upload.ProgressBytes, &upload.RetryCount, &lastError, &upload.RemotePriority); err != nil {
 			return nil, fmt.Errorf("failed to scan upload: %w", err)
 		}
@@ -958,7 +1077,7 @@ func (db *DB) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
 func (db *DB) ListPendingUploads() ([]*Upload, error) {
 	rows, err := db.Query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
 		WHERE status = ?
@@ -976,7 +1095,7 @@ func (db *DB) ListPendingUploads() ([]*Upload, error) {
 func (db *DB) ListQueuedUploads() ([]*Upload, error) {
 	rows, err := db.Query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
 		WHERE status = ?
@@ -994,7 +1113,7 @@ func (db *DB) ListQueuedUploads() ([]*Upload, error) {
 func (db *DB) ListActiveUploads() ([]*Upload, error) {
 	rows, err := db.Query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
 		WHERE status = ?
@@ -1012,7 +1131,7 @@ func (db *DB) ListActiveUploads() ([]*Upload, error) {
 func (db *DB) ListRecentUploads(limit int) ([]*Upload, error) {
 	rows, err := db.Query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
 		ORDER BY created_at DESC
@@ -1034,7 +1153,7 @@ func (db *DB) ListUploadsPaginated(limit, offset int) ([]*Upload, error) {
 	// Within each status group, sort by created_at DESC
 	rows, err := db.Query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
 		WHERE status != ?
@@ -1061,7 +1180,7 @@ func (db *DB) ListUploadsPaginated(limit, offset int) ([]*Upload, error) {
 func (db *DB) ListUploadsByStatus(status UploadStatus, limit int) ([]*Upload, error) {
 	rows, err := db.Query(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
 		WHERE status = ?
@@ -1091,6 +1210,15 @@ func (db *DB) UpdateUploadStatus(id int64, status UploadStatus) error {
 	}
 	if err != nil {
 		return fmt.Errorf("failed to update upload status: %w", err)
+	}
+	return nil
+}
+
+// UpdateUploadWaitState updates the wait state and check details for an upload.
+func (db *DB) UpdateUploadWaitState(id int64, waitState string, waitChecks string) error {
+	_, err := db.Exec(`UPDATE uploads SET wait_state = ?, wait_checks = ? WHERE id = ?`, waitState, waitChecks, id)
+	if err != nil {
+		return fmt.Errorf("failed to update upload wait state: %w", err)
 	}
 	return nil
 }
@@ -1150,7 +1278,7 @@ func (db *DB) FindDuplicateUpload(localPath, remoteName string) (*Upload, error)
 
 	err := db.QueryRow(`
 		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
-		       created_at, started_at, completed_at, rclone_job_id, progress_bytes,
+		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
 		WHERE local_path = ? AND remote_name = ? AND status IN (?, ?, ?)
@@ -1158,7 +1286,7 @@ func (db *DB) FindDuplicateUpload(localPath, remoteName string) (*Upload, error)
 		LIMIT 1
 	`, localPath, remoteName, UploadStatusQueued, UploadStatusPending, UploadStatusUploading).Scan(
 		&upload.ID, &scanID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
-		&upload.Status, &sizeBytes, &upload.CreatedAt, &startedAt, &completedAt,
+		&upload.Status, &sizeBytes, &upload.WaitState, &upload.WaitChecks, &upload.CreatedAt, &startedAt, &completedAt,
 		&rcloneJobID, &upload.ProgressBytes, &upload.RetryCount, &lastError, &upload.RemotePriority)
 	if err == sql.ErrNoRows {
 		return nil, nil

@@ -88,7 +88,7 @@ type ScanResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// ScanCompletionInfo holds information needed to wait for scan completion on a target
+// ScanCompletionInfo holds information needed to track scan completion on a target
 type ScanCompletionInfo struct {
 	TargetID    int64
 	TargetName  string
@@ -97,7 +97,7 @@ type ScanCompletionInfo struct {
 	Target      Target // The actual target instance for smart wait support
 }
 
-// ScanAllResult holds the results from ScanAll including completion info for upload delay
+// ScanAllResult holds the results from ScanAll including completion info for scan tracking
 type ScanAllResult struct {
 	Results         []ScanResult
 	CompletionInfos []ScanCompletionInfo
@@ -208,7 +208,7 @@ func (m *Manager) InvalidateCache(targetID int64) {
 
 // ScanTarget triggers a scan on a single target for the given path.
 // triggerName is optional - if provided, targets with this trigger in their exclude list will be skipped.
-// Returns scan result and optional completion info for targets that need upload delay waiting.
+// Returns scan result and optional completion info for Plex scan tracking.
 func (m *Manager) ScanTarget(ctx context.Context, targetID int64, path string, triggerName string) (ScanResult, *ScanCompletionInfo) {
 	dbTarget, err := m.db.GetTarget(targetID)
 	if err != nil {
@@ -318,9 +318,7 @@ func (m *Manager) scanTarget(ctx context.Context, dbTarget *database.Target, pat
 		Message: dbTarget.Name,
 	}
 
-	// Collect completion info for scan tracking
-	// For targets with smart detection (Plex), always track - they use idle timer only
-	// For other targets, only track if ScanCompletionSeconds is configured
+	// Collect completion info for Plex scan tracking (upload-side)
 	if _, hasSmartDetection := target.(ScanCompletionWaiter); hasSmartDetection {
 		return result, &ScanCompletionInfo{
 			TargetID:    dbTarget.ID,
@@ -330,22 +328,13 @@ func (m *Manager) scanTarget(ctx context.Context, dbTarget *database.Target, pat
 			Target:      target,
 		}
 	}
-	if dbTarget.Config.ScanCompletionSeconds > 0 {
-		return result, &ScanCompletionInfo{
-			TargetID:    dbTarget.ID,
-			TargetName:  dbTarget.Name,
-			ScanPath:    scanPath,
-			TimeoutSecs: dbTarget.Config.ScanCompletionSeconds,
-			Target:      target,
-		}
-	}
 
 	return result, nil
 }
 
 // ScanAll triggers a scan on all enabled targets for the given path
 // triggerName is optional - if provided, targets with this trigger in their exclude list will be skipped
-// Returns scan results and completion info for targets that need upload delay waiting
+// Returns scan results and completion info for Plex scan tracking.
 func (m *Manager) ScanAll(ctx context.Context, path string, triggerName string) ScanAllResult {
 	dbTargets, err := m.db.ListEnabledTargets()
 	if err != nil {
@@ -372,96 +361,6 @@ func (m *Manager) ScanAll(ctx context.Context, path string, triggerName string) 
 		Results:         results,
 		CompletionInfos: completionInfos,
 	}
-}
-
-// WaitForAllCompletions waits for all scan completions in parallel.
-// For Plex targets, uses smart WebSocket-based detection with idle timer (no fixed timeout).
-// For other targets, uses fixed delay based on ScanCompletionSeconds.
-// This controls the upload delay - uploads are queued after all waits complete.
-func (m *Manager) WaitForAllCompletions(ctx context.Context, infos []ScanCompletionInfo) {
-	if len(infos) == 0 {
-		return
-	}
-
-	// Find max timeout for overall deadline (only from non-smart-detection targets)
-	maxTimeout := 0
-	for _, info := range infos {
-		if info.TimeoutSecs > maxTimeout {
-			maxTimeout = info.TimeoutSecs
-		}
-	}
-
-	// Create context with overall timeout only if we have fixed-delay targets
-	// Smart detection targets (TimeoutSecs=0) don't contribute to the timeout
-	var cancel context.CancelFunc
-	if maxTimeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(maxTimeout)*time.Second)
-		defer cancel()
-	}
-
-	log.Debug().
-		Int("target_count", len(infos)).
-		Int("max_timeout_secs", maxTimeout).
-		Msg("Waiting for scan completions")
-
-	var wg sync.WaitGroup
-	for _, info := range infos {
-		wg.Go(func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Error().Interface("panic", r).Str("target", info.TargetName).Msg("Scan completion wait panicked")
-				}
-			}()
-
-			// Use smart completion detection if target supports it (e.g., Plex)
-			// These rely purely on idle timer detection, no fixed timeout
-			if waiter, ok := info.Target.(ScanCompletionWaiter); ok {
-				log.Debug().
-					Str("target", info.TargetName).
-					Str("path", info.ScanPath).
-					Msg("Waiting for scan completion (smart detection with idle timer)")
-
-				if err := waiter.WaitForScanCompletion(ctx, info.ScanPath, 0); err != nil {
-					if ctx.Err() == nil {
-						log.Info().
-							Str("target", info.TargetName).
-							Str("path", info.ScanPath).
-							Msg("Upload delay ready (wait ended early)")
-					}
-					return
-				}
-				log.Info().
-					Str("target", info.TargetName).
-					Str("path", info.ScanPath).
-					Msg("Upload delay ready (scan detected)")
-				return
-			}
-
-			// Fixed delay for targets without smart completion
-			timeout := time.Duration(info.TimeoutSecs) * time.Second
-			log.Debug().
-				Str("target", info.TargetName).
-				Str("path", info.ScanPath).
-				Int("seconds", info.TimeoutSecs).
-				Msg("Waiting for scan completion (fixed delay)")
-
-			select {
-			case <-ctx.Done():
-				log.Info().
-					Str("target", info.TargetName).
-					Str("path", info.ScanPath).
-					Msg("Upload delay ready (wait ended early)")
-			case <-time.After(timeout):
-				log.Info().
-					Str("target", info.TargetName).
-					Str("path", info.ScanPath).
-					Msg("Upload delay ready")
-			}
-		})
-	}
-
-	wg.Wait()
-	log.Debug().Msg("All scan completion waits finished")
 }
 
 // ApplyPathMappings applies path mapping rules to convert a local path to a media server path

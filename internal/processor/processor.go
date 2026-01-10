@@ -11,16 +11,10 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/scantracker"
 	"github.com/saltyorg/autoplow/internal/targets"
-	"github.com/saltyorg/autoplow/internal/uploader"
 	"github.com/saltyorg/autoplow/internal/web/sse"
 )
-
-// UploadQueuer is an interface for queueing uploads
-type UploadQueuer interface {
-	QueueUploadPath(localPath string, scanID *int64, priority int)
-	QueueUpload(req uploader.UploadRequest)
-}
 
 // Config holds the processor configuration
 type Config struct {
@@ -29,6 +23,9 @@ type Config struct {
 
 	// BatchIntervalSeconds is how often to process pending scans
 	BatchIntervalSeconds int `json:"batch_interval_seconds"`
+
+	// MaxConcurrentScans limits the number of active scans (0 = unlimited)
+	MaxConcurrentScans int `json:"max_concurrent_scans"`
 
 	// MaxRetries is the maximum number of retry attempts for failed scans
 	// After this many retries, the scan is marked as permanently failed
@@ -54,6 +51,7 @@ func DefaultConfig() Config {
 	return Config{
 		MinimumAgeSeconds:        60,
 		BatchIntervalSeconds:     30,
+		MaxConcurrentScans:       0,
 		MaxRetries:               5,
 		CleanupDays:              7,
 		PathNotFoundRetries:      0,
@@ -68,7 +66,7 @@ type ScanRequest struct {
 	TriggerID *int64
 	Priority  int
 	EventType string
-	FilePaths []string // Original file paths that triggered this scan (for upload queuing)
+	FilePaths []string // Original file paths that triggered this scan (for tracking/context)
 }
 
 // fileStabilityCheck tracks file size for stability checking
@@ -83,8 +81,8 @@ type Processor struct {
 	config        Config
 	anchorChecker *AnchorChecker
 	targetsMgr    *targets.Manager
-	uploadQueuer  UploadQueuer
 	sseBroker     *sse.Broker
+	plexTracker   *scantracker.PlexTracker
 
 	// Channel for receiving new scan requests
 	requests chan ScanRequest
@@ -101,6 +99,9 @@ type Processor struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// Signals when a scan finishes to trigger a new batch pass.
+	scanSlotFreed chan struct{}
 }
 
 // New creates a new scan processor
@@ -117,17 +118,18 @@ func New(db *database.DB, config Config) *Processor {
 		fileStability: make(map[string]fileStabilityCheck),
 		ctx:           ctx,
 		cancel:        cancel,
+		scanSlotFreed: make(chan struct{}, 1),
 	}
-}
-
-// SetUploadQueuer sets the upload queuer for the processor
-func (p *Processor) SetUploadQueuer(queuer UploadQueuer) {
-	p.uploadQueuer = queuer
 }
 
 // SetSSEBroker sets the SSE broker for broadcasting events
 func (p *Processor) SetSSEBroker(broker *sse.Broker) {
 	p.sseBroker = broker
+}
+
+// SetPlexScanTracker sets the Plex scan tracker used for upload gating.
+func (p *Processor) SetPlexScanTracker(tracker *scantracker.PlexTracker) {
+	p.plexTracker = tracker
 }
 
 // Start starts the scan processor
@@ -269,6 +271,8 @@ func (p *Processor) batchProcessor() {
 			return
 		case <-ticker.C:
 			p.processBatch()
+		case <-p.scanSlotFreed:
+			p.processBatch()
 		case <-cleanupTicker.C:
 			p.cleanupFileStability(1 * time.Hour)
 			p.cleanupOldScans()
@@ -339,10 +343,26 @@ func (p *Processor) processBatch() {
 
 	log.Debug().Int("count", len(readyScans)).Msg("Processing batch of scans")
 
+	maxConcurrent := p.config.MaxConcurrentScans
+	availableSlots := 0
+	if maxConcurrent > 0 {
+		availableSlots = maxConcurrent - p.ActiveScanCount()
+		if availableSlots <= 0 {
+			log.Debug().
+				Int("active", p.ActiveScanCount()).
+				Int("max", maxConcurrent).
+				Msg("Scan concurrency limit reached, skipping batch")
+			return
+		}
+	}
+
 	// Group scans by parent directory for batching
 	batches := p.groupByParent(readyScans)
 
 	for parentPath, batchScans := range batches {
+		if maxConcurrent > 0 && availableSlots <= 0 {
+			return
+		}
 		// Check anchor/readiness for the parent path
 		ready, reason := p.anchorChecker.IsReady(parentPath)
 		if !ready {
@@ -352,11 +372,17 @@ func (p *Processor) processBatch() {
 
 		// Process each scan in the batch
 		for _, scan := range batchScans {
+			if maxConcurrent > 0 && availableSlots <= 0 {
+				return
+			}
 			// Skip path stability check for delete events since the file won't exist
 			if isDeleteEvent(scan.EventType) {
 				log.Debug().Int64("scan_id", scan.ID).Str("path", scan.Path).Str("event_type", scan.EventType).
 					Msg("Skipping path check for delete event")
 				p.processScan(scan)
+				if maxConcurrent > 0 {
+					availableSlots--
+				}
 				continue
 			}
 
@@ -406,6 +432,9 @@ func (p *Processor) processBatch() {
 			}
 
 			p.processScan(scan)
+			if maxConcurrent > 0 {
+				availableSlots--
+			}
 		}
 	}
 }
@@ -540,6 +569,10 @@ func (p *Processor) processScan(scan *database.Scan) {
 			p.activeScansMu.Lock()
 			delete(p.activeScans, scan.ID)
 			p.activeScansMu.Unlock()
+			select {
+			case p.scanSlotFreed <- struct{}{}:
+			default:
+			}
 		}()
 
 		// Check for cancellation before starting
@@ -644,12 +677,9 @@ func (p *Processor) processScan(scan *database.Scan) {
 				return
 			}
 
-			// Wait for scan completions before marking scan as complete
-			// This waits for all targets in parallel - Plex uses smart detection, others use fixed delay
-			// Always wait to ensure consistent logging of scan completion status
-			// Use p.ctx instead of the ScanOperation-scoped ctx, since completion wait has its own timeout
-			if len(scanResult.CompletionInfos) > 0 {
-				p.targetsMgr.WaitForAllCompletions(p.ctx, scanResult.CompletionInfos)
+			// Track Plex scan completion for upload-side gating.
+			if p.plexTracker != nil && len(scanResult.CompletionInfos) > 0 {
+				p.plexTracker.TrackScan(scan, scanResult.CompletionInfos)
 			}
 
 		} else {
@@ -691,49 +721,7 @@ func (p *Processor) processScan(scan *database.Scan) {
 
 		log.Info().Int64("scan_id", scan.ID).Str("path", scan.Path).Msg("Scan completed")
 
-		// Check for cancellation before queueing upload
-		select {
-		case <-p.ctx.Done():
-			log.Debug().Int64("scan_id", scan.ID).Msg("Scan cancelled before upload queue")
-			return
-		default:
-		}
-
-		// Queue upload if configured
-		p.queueUploadIfConfigured(scan)
 	}()
-}
-
-// queueUploadIfConfigured queues uploads for the scanned file paths if configured
-func (p *Processor) queueUploadIfConfigured(scan *database.Scan) {
-	if p.uploadQueuer == nil {
-		return
-	}
-
-	// If file paths are stored (from inotify/polling), queue uploads for each file
-	if len(scan.FilePaths) > 0 {
-		for _, filePath := range scan.FilePaths {
-			p.uploadQueuer.QueueUpload(uploader.UploadRequest{
-				LocalPath: filePath,
-				ScanID:    &scan.ID,
-				Priority:  scan.Priority,
-				TriggerID: scan.TriggerID,
-			})
-
-			log.Debug().
-				Int64("scan_id", scan.ID).
-				Str("path", filePath).
-				Msg("Upload request queued after scan completion")
-		}
-		return
-	}
-
-	// No file paths stored - this is a webhook trigger or legacy scan
-	// Don't queue uploads for these (they provide directory paths, not file paths)
-	log.Debug().
-		Int64("scan_id", scan.ID).
-		Str("path", scan.Path).
-		Msg("Scan has no file paths, skipping upload queue")
 }
 
 // Stats returns current processor statistics

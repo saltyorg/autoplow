@@ -87,13 +87,9 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{if .Duration}}{{.Duration}}{{else}}-{{end}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        {{if eq .Status "failed"}}
                         <form method="POST" action="/history/scans/{{.ID}}/retry" class="inline">
                             <button type="submit" class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 font-medium">Retry</button>
                         </form>
-                        {{else}}
-                        -
-                        {{end}}
                     </td>
                 </tr>
                 {{end}}

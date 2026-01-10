@@ -221,7 +221,6 @@ func run(cmd *cobra.Command, args []string) error {
 		uploadConfig := uploader.DefaultConfig()
 		uploadMgr = uploader.New(db, rcloneMgr, uploadConfig)
 		server.SetUploadManager(uploadMgr)
-		processor.SetUploadQueuer(uploadMgr)
 		uploadMgr.SetSSEBroker(sseBroker)
 		uploadMgr.Start()
 

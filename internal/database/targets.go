@@ -128,20 +128,6 @@ type TargetConfig struct {
 	// "polling" uses HTTP polling at the global poll interval
 	// Only applies to Plex, Emby, and Jellyfin targets
 	SessionMode SessionMode `json:"session_mode,omitempty"`
-
-	// ScanCompletionSeconds controls how long to wait before allowing uploads after a scan.
-	// This is the upload delay - uploads are queued after all target waits complete in parallel.
-	// For Plex targets, uses smart completion detection via WebSocket activity monitoring
-	// which can complete early when the scan finishes.
-	// For other targets, this is a fixed delay.
-	// Defaults to 0 (no wait) if not set.
-	ScanCompletionSeconds int `json:"scan_completion_seconds,omitempty"`
-
-	// ScanCompletionIdleSeconds is the idle time (no Plex activity) before considering scan complete.
-	// Only applies to Plex targets with smart completion detection.
-	// The idle timer resets on each activity event, so this waits for all analysis tasks to finish.
-	// Defaults to 30 if not set or 0.
-	ScanCompletionIdleSeconds int `json:"scan_completion_idle_seconds,omitempty"`
 }
 
 // ShouldExcludePath checks if a path should be excluded from scanning on this target

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
+	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 )
 
@@ -32,12 +34,14 @@ func (h *Handlers) DestinationsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list local triggers")
 	}
+	hasLocalTriggers := len(localTriggers) > 0
 
 	h.render(w, r, "uploads.html", map[string]any{
-		"Destinations":  dests,
-		"Remotes":       remotes,
-		"LocalTriggers": localTriggers,
-		"Tab":           "destinations",
+		"Destinations":     dests,
+		"Remotes":          remotes,
+		"LocalTriggers":    localTriggers,
+		"HasLocalTriggers": hasLocalTriggers,
+		"Tab":              "destinations",
 	})
 }
 
@@ -48,17 +52,41 @@ func (h *Handlers) DestinationNew(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Msg("Failed to list remotes")
 	}
 
+	destinations, err := h.db.ListDestinations()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list destinations")
+	}
+
 	// Get local triggers (inotify + polling) for the included triggers selector
 	localTriggers, err := h.db.ListLocalTriggers()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list local triggers")
 	}
+	hasLocalTriggers := len(localTriggers) > 0
+
+	targets, err := h.db.ListTargets()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list targets")
+	}
+	var plexTargets []*database.Target
+	for _, target := range targets {
+		if target.Type == database.TargetTypePlex {
+			plexTargets = append(plexTargets, target)
+		}
+	}
+
+	settingsLoader := config.NewLoader(h.db)
+	maxConcurrentScans := settingsLoader.Int("processor.max_concurrent_scans", 0)
 
 	h.render(w, r, "uploads.html", map[string]any{
-		"IsNew":         true,
-		"Tab":           "destinations",
-		"Remotes":       remotes,
-		"LocalTriggers": localTriggers,
+		"IsNew":                       true,
+		"Tab":                         "destinations",
+		"Remotes":                     remotes,
+		"LocalTriggers":               localTriggers,
+		"HasLocalTriggers":            hasLocalTriggers,
+		"Destinations":                destinations,
+		"PlexTargets":                 plexTargets,
+		"ProcessorMaxConcurrentScans": maxConcurrentScans,
 	})
 }
 
@@ -70,6 +98,16 @@ func (h *Handlers) DestinationCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	localTriggers, err := h.db.ListLocalTriggers()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list local triggers")
+	}
+	if len(localTriggers) == 0 {
+		h.flashErr(w, "At least one local trigger is required before configuring uploads")
+		h.redirect(w, r, "/uploads/destinations")
+		return
+	}
+
 	localPath := r.FormValue("local_path")
 	if err := ValidatePath(localPath, "local_path"); err != nil {
 		h.flashErr(w, err.Error())
@@ -78,17 +116,35 @@ func (h *Handlers) DestinationCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	localPath = NormalizePath(localPath)
 
-	uploadMode := database.UploadMode(r.FormValue("upload_mode"))
-	if uploadMode != database.UploadModeImmediate &&
-		uploadMode != database.UploadModeAge &&
-		uploadMode != database.UploadModeSize {
-		uploadMode = database.UploadModeImmediate
+	if exists, err := h.db.DestinationPathExists(localPath, nil); err != nil {
+		log.Error().Err(err).Msg("Failed to check destination path")
+		h.flashErr(w, "Failed to validate destination path")
+		h.redirect(w, r, "/uploads/destinations/new")
+		return
+	} else if exists {
+		h.flashErr(w, "A destination already exists for this local path")
+		h.redirect(w, r, "/uploads/destinations/new")
+		return
 	}
 
-	var modeValue *int
-	if uploadMode != database.UploadModeImmediate {
-		if v, err := strconv.Atoi(r.FormValue("mode_value")); err == nil && v > 0 {
-			modeValue = &v
+	minFileAgeMinutes, _ := strconv.Atoi(r.FormValue("min_file_age_minutes"))
+	if minFileAgeMinutes < 0 {
+		minFileAgeMinutes = 0
+	}
+	minFolderSizeGB, _ := strconv.Atoi(r.FormValue("min_folder_size_gb"))
+	if minFolderSizeGB < 0 {
+		minFolderSizeGB = 0
+	}
+	usePlexTracking := r.FormValue("use_plex_scan_tracking") == "on"
+
+	var plexTargets []*database.DestinationPlexTarget
+	if usePlexTracking {
+		var err error
+		plexTargets, err = h.parseDestinationPlexTargets(r)
+		if err != nil {
+			h.flashErr(w, err.Error())
+			h.redirect(w, r, "/uploads/destinations/new")
+			return
 		}
 	}
 
@@ -158,8 +214,9 @@ func (h *Handlers) DestinationCreate(w http.ResponseWriter, r *http.Request) {
 
 	dest := &database.Destination{
 		LocalPath:         localPath,
-		UploadMode:        uploadMode,
-		ModeValue:         modeValue,
+		MinFileAgeMinutes: minFileAgeMinutes,
+		MinFolderSizeGB:   minFolderSizeGB,
+		UsePlexTracking:   usePlexTracking,
 		TransferType:      transferType,
 		Enabled:           r.FormValue("enabled") == "on",
 		ExcludePaths:      excludePaths,
@@ -173,6 +230,19 @@ func (h *Handlers) DestinationCreate(w http.ResponseWriter, r *http.Request) {
 		h.flashErr(w, "Failed to create destination")
 		h.redirect(w, r, "/uploads/destinations/new")
 		return
+	}
+
+	if usePlexTracking {
+		if err := h.db.SetDestinationPlexTargets(dest.ID, plexTargets); err != nil {
+			log.Error().Err(err).Int64("destination_id", dest.ID).Msg("Failed to save destination Plex targets")
+			h.flashErr(w, "Failed to save Plex tracking settings")
+			h.redirect(w, r, "/uploads/destinations/new")
+			return
+		}
+	} else {
+		if err := h.db.ClearDestinationPlexTargets(dest.ID); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to clear destination Plex targets")
+		}
 	}
 
 	// Add remote mappings (priority is based on order in the form)
@@ -239,17 +309,41 @@ func (h *Handlers) DestinationEdit(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Msg("Failed to list remotes")
 	}
 
+	destinations, err := h.db.ListDestinations()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list destinations")
+	}
+
 	// Get local triggers (inotify + polling) for the included triggers selector
 	localTriggers, err := h.db.ListLocalTriggers()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list local triggers")
 	}
+	hasLocalTriggers := len(localTriggers) > 0
+
+	targets, err := h.db.ListTargets()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list targets")
+	}
+	var plexTargets []*database.Target
+	for _, target := range targets {
+		if target.Type == database.TargetTypePlex {
+			plexTargets = append(plexTargets, target)
+		}
+	}
+
+	settingsLoader := config.NewLoader(h.db)
+	maxConcurrentScans := settingsLoader.Int("processor.max_concurrent_scans", 0)
 
 	h.render(w, r, "uploads.html", map[string]any{
-		"Destination":   dest,
-		"Tab":           "destinations",
-		"Remotes":       remotes,
-		"LocalTriggers": localTriggers,
+		"Destination":                 dest,
+		"Tab":                         "destinations",
+		"Remotes":                     remotes,
+		"LocalTriggers":               localTriggers,
+		"HasLocalTriggers":            hasLocalTriggers,
+		"Destinations":                destinations,
+		"PlexTargets":                 plexTargets,
+		"ProcessorMaxConcurrentScans": maxConcurrentScans,
 	})
 }
 
@@ -269,6 +363,16 @@ func (h *Handlers) DestinationUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	localTriggers, err := h.db.ListLocalTriggers()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list local triggers")
+	}
+	if len(localTriggers) == 0 {
+		h.flashErr(w, "At least one local trigger is required before configuring uploads")
+		h.redirect(w, r, "/uploads/destinations")
+		return
+	}
+
 	dest, err := h.db.GetDestination(id)
 	if err != nil || dest == nil {
 		h.flashErr(w, "Destination not found")
@@ -284,8 +388,18 @@ func (h *Handlers) DestinationUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dest.LocalPath = NormalizePath(localPath)
-	dest.UploadMode = database.UploadMode(r.FormValue("upload_mode"))
 	dest.Enabled = r.FormValue("enabled") == "on"
+
+	if exists, err := h.db.DestinationPathExists(dest.LocalPath, &dest.ID); err != nil {
+		log.Error().Err(err).Msg("Failed to check destination path")
+		h.flashErr(w, "Failed to validate destination path")
+		h.redirect(w, r, "/uploads/destinations/"+idStr)
+		return
+	} else if exists {
+		h.flashErr(w, "A destination already exists for this local path")
+		h.redirect(w, r, "/uploads/destinations/"+idStr)
+		return
+	}
 
 	transferType := database.TransferType(r.FormValue("transfer_type"))
 	if transferType != database.TransferTypeCopy && transferType != database.TransferTypeMove {
@@ -293,12 +407,29 @@ func (h *Handlers) DestinationUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	dest.TransferType = transferType
 
-	if dest.UploadMode != database.UploadModeImmediate {
-		if v, err := strconv.Atoi(r.FormValue("mode_value")); err == nil && v > 0 {
-			dest.ModeValue = &v
+	minFileAgeMinutes, _ := strconv.Atoi(r.FormValue("min_file_age_minutes"))
+	if minFileAgeMinutes < 0 {
+		minFileAgeMinutes = 0
+	}
+	minFolderSizeGB, _ := strconv.Atoi(r.FormValue("min_folder_size_gb"))
+	if minFolderSizeGB < 0 {
+		minFolderSizeGB = 0
+	}
+	usePlexTracking := r.FormValue("use_plex_scan_tracking") == "on"
+
+	dest.MinFileAgeMinutes = minFileAgeMinutes
+	dest.MinFolderSizeGB = minFolderSizeGB
+	dest.UsePlexTracking = usePlexTracking
+
+	var plexTargets []*database.DestinationPlexTarget
+	if usePlexTracking {
+		var err error
+		plexTargets, err = h.parseDestinationPlexTargets(r)
+		if err != nil {
+			h.flashErr(w, err.Error())
+			h.redirect(w, r, "/uploads/destinations/"+idStr)
+			return
 		}
-	} else {
-		dest.ModeValue = nil
 	}
 
 	// Parse exclude paths (from form array)
@@ -366,6 +497,19 @@ func (h *Handlers) DestinationUpdate(w http.ResponseWriter, r *http.Request) {
 		h.flashErr(w, "Failed to update destination")
 		h.redirect(w, r, "/uploads/destinations/"+idStr)
 		return
+	}
+
+	if usePlexTracking {
+		if err := h.db.SetDestinationPlexTargets(dest.ID, plexTargets); err != nil {
+			log.Error().Err(err).Int64("destination_id", dest.ID).Msg("Failed to save destination Plex targets")
+			h.flashErr(w, "Failed to save Plex tracking settings")
+			h.redirect(w, r, "/uploads/destinations/"+idStr)
+			return
+		}
+	} else {
+		if err := h.db.ClearDestinationPlexTargets(dest.ID); err != nil {
+			log.Warn().Err(err).Int64("destination_id", dest.ID).Msg("Failed to clear destination Plex targets")
+		}
 	}
 
 	// Update remote mappings - clear existing and add from form
@@ -562,4 +706,62 @@ func parseDestAdvancedPatterns(r *http.Request, fieldName string) []string {
 		}
 	}
 	return patterns
+}
+
+func (h *Handlers) parseDestinationPlexTargets(r *http.Request) ([]*database.DestinationPlexTarget, error) {
+	ids := r.Form["plex_target_ids[]"]
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("Select at least one Plex target for scan tracking")
+	}
+
+	targets, err := h.db.ListTargets()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to load targets")
+	}
+
+	plexTargets := make(map[int64]*database.Target)
+	for _, target := range targets {
+		if target.Type == database.TargetTypePlex {
+			plexTargets[target.ID] = target
+		}
+	}
+	if len(plexTargets) == 0 {
+		return nil, fmt.Errorf("No Plex targets are configured")
+	}
+
+	var results []*database.DestinationPlexTarget
+	seen := make(map[int64]struct{})
+
+	for _, idStr := range ids {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		target, ok := plexTargets[id]
+		if !ok {
+			return nil, fmt.Errorf("Selected Plex target not found")
+		}
+
+		idleStr := r.FormValue(fmt.Sprintf("plex_idle_threshold_%d", id))
+		idleSeconds, err := strconv.Atoi(idleStr)
+		if err != nil || idleSeconds <= 0 {
+			return nil, fmt.Errorf("Idle threshold must be greater than 0 for Plex target: %s", target.Name)
+		}
+
+		results = append(results, &database.DestinationPlexTarget{
+			TargetID:             id,
+			IdleThresholdSeconds: idleSeconds,
+			TargetName:           target.Name,
+		})
+		seen[id] = struct{}{}
+	}
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("Select at least one Plex target for scan tracking")
+	}
+
+	return results, nil
 }

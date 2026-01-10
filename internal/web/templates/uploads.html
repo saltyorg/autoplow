@@ -15,6 +15,11 @@
     </div>
 
     {{if eq .Content.Tab "queue"}}
+    {{if not .Content.HasLocalTriggers}}
+    <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-4 text-sm text-yellow-800 dark:text-yellow-200">
+        Uploads require at least one local trigger (inotify or polling). <a href="/triggers" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create a trigger</a> to enable uploads.
+    </div>
+    {{end}}
     <!-- Active Transfers Section -->
     <div id="active-transfers" hx-get="/uploads/active" hx-trigger="load, sse-refresh" hx-swap="innerHTML">
         {{template "active_transfers" .Content.ActiveTransfers}}
@@ -80,6 +85,11 @@
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">New Remote</h3>
         </div>
         <form method="POST" action="/uploads/remotes" class="p-6 space-y-4">
+            {{if not .Content.HasLocalTriggers}}
+            <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-4 text-sm text-yellow-800 dark:text-yellow-200">
+                A local trigger (inotify or polling) is required before configuring uploads. <a href="/triggers" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create a trigger</a>.
+            </div>
+            {{end}}
             <div>
                 <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
                 <input type="text" name="name" id="name" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
@@ -156,7 +166,7 @@
 
             <div class="flex justify-end space-x-3">
                 <a href="/uploads/remotes" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</a>
-                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Create Remote</button>
+                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 {{if not .Content.HasLocalTriggers}}opacity-50 cursor-not-allowed{{end}}" {{if not .Content.HasLocalTriggers}}disabled{{end}}>Create Remote</button>
             </div>
         </form>
     </div>
@@ -265,7 +275,11 @@
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Rclone Remotes</h3>
+            {{if .Content.HasLocalTriggers}}
             <a href="/uploads/remotes/new" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Remote</a>
+            {{else}}
+            <span class="text-sm text-gray-500 dark:text-gray-400">Add a local trigger to enable remotes</span>
+            {{end}}
         </div>
         <div class="overflow-hidden">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -304,7 +318,11 @@
                     {{else}}
                     <tr>
                         <td colspan="4" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-                            No remotes configured. <a href="/uploads/remotes/new" class="text-indigo-600 hover:text-indigo-900">Add one</a>
+                            {{if .Content.HasLocalTriggers}}
+                                No remotes configured. <a href="/uploads/remotes/new" class="text-indigo-600 hover:text-indigo-900">Add one</a>
+                            {{else}}
+                                No remotes configured. Create a local trigger first.
+                            {{end}}
                         </td>
                     </tr>
                     {{end}}
@@ -341,24 +359,54 @@
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">New Destination</h3>
         </div>
         <form method="POST" action="/uploads/destinations" id="new-destination-form" class="p-6 space-y-4">
+            {{if not .Content.HasLocalTriggers}}
+            <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-4 text-sm text-yellow-800 dark:text-yellow-200">
+                A local trigger (inotify or polling) is required before configuring uploads. <a href="/triggers" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create a trigger</a>.
+            </div>
+            {{end}}
             <div>
                 <label for="local_path" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Local Path</label>
                 <input type="text" name="local_path" id="local_path" placeholder="/mnt/local/Media" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Each destination must have a unique local path.</p>
+                <p id="local_path_error_new" class="mt-1 text-xs text-red-600 dark:text-red-400 hidden">This local path is already used by another destination.</p>
             </div>
             <div>
-                <label for="upload_mode_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Mode</label>
-                <select name="upload_mode" id="upload_mode_new" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                    <option value="immediate">Immediate</option>
-                    <option value="age">Age-based</option>
-                    <option value="size">Size-based</option>
-                </select>
+                <label for="min_file_age_minutes_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum File Age (minutes)</label>
+                <input type="number" name="min_file_age_minutes" id="min_file_age_minutes_new" min="0" value="0" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">0 disables. Uses filesystem mtime.</p>
             </div>
-            <div id="mode_value_field_new" class="hidden">
-                <label for="mode_value_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    <span id="mode_value_label_new">Value</span>
-                </label>
-                <input type="number" name="mode_value" id="mode_value_new" min="1" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                <p id="mode_value_help_new" class="mt-1 text-sm text-gray-500 dark:text-gray-400"></p>
+            <div>
+                <label for="min_folder_size_gb_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Folder Total Size (GB)</label>
+                <input type="number" name="min_folder_size_gb" id="min_folder_size_gb_new" min="0" value="0" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">0 disables. If both age and size are set, size is the primary wait reason but both must pass.</p>
+            </div>
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center">
+                    <input type="checkbox" name="use_plex_scan_tracking" id="use_plex_scan_tracking_new" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                    <label for="use_plex_scan_tracking_new" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Use Plex scan tracking (overrides delay checks)</label>
+                </div>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Wait for Plex scans to finish before uploads start. Configure per Plex target idle thresholds below.</p>
+                <div id="plex-tracking-panel-new" class="hidden mt-4 space-y-3">
+                    {{if .Content.PlexTargets}}
+                    {{range .Content.PlexTargets}}
+                    <div class="plex-target-row flex flex-col gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3" data-plex-target-row>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="plex_target_ids[]" value="{{.ID}}" data-plex-name="{{.Name}}" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                            <span class="ml-2 text-sm text-gray-900 dark:text-gray-300">{{.Name}}</span>
+                        </label>
+                        <div>
+                            <label for="plex_idle_threshold_{{.ID}}_new" class="block text-xs font-medium text-gray-600 dark:text-gray-400">Idle Threshold (seconds)</label>
+                            <input type="number" name="plex_idle_threshold_{{.ID}}" id="plex_idle_threshold_{{.ID}}_new" min="1" value="30" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
+                        </div>
+                    </div>
+                    {{end}}
+                    {{else}}
+                    <p class="text-sm text-gray-500 dark:text-gray-400">No Plex targets configured. <a href="/targets/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Add a Plex target</a> first.</p>
+                    {{end}}
+                    <div id="plex-concurrency-warning-new" class="hidden rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-3 text-sm text-yellow-800 dark:text-yellow-200">
+                        <strong>Scan concurrency warning:</strong> processor.max_concurrent_scans is set to {{.Content.ProcessorMaxConcurrentScans}}. Consider setting it between 1 and 3 when Plex tracking is enabled.
+                    </div>
+                </div>
             </div>
             <div>
                 <label for="transfer_type_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Transfer Type</label>
@@ -468,38 +516,86 @@
 
             <div class="flex justify-end space-x-3 pt-4">
                 <a href="/uploads/destinations" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</a>
-                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Create Destination</button>
+                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 {{if not .Content.HasLocalTriggers}}opacity-50 cursor-not-allowed{{end}}" {{if not .Content.HasLocalTriggers}}disabled{{end}}>Create Destination</button>
             </div>
         </form>
     </div>
     <script>
     (function() {
-        function toggleModeValue(mode, suffix) {
-            const field = document.getElementById('mode_value_field_' + suffix);
-            const label = document.getElementById('mode_value_label_' + suffix);
-            const help = document.getElementById('mode_value_help_' + suffix);
-            if (mode === 'immediate') {
-                field.classList.add('hidden');
-            } else {
-                field.classList.remove('hidden');
-                if (mode === 'age') {
-                    label.textContent = 'Minimum Age (hours)';
-                    help.textContent = 'Upload files older than this many hours';
-                } else {
-                    label.textContent = 'Minimum Size (GB)';
-                    help.textContent = 'Upload when accumulated size exceeds this many GB';
-                }
+        const existingDestinationPaths = [
+            {{range .Content.Destinations}}"{{jsEscape .LocalPath}}",{{end}}
+        ];
+        const currentDestinationPath = '';
+        const localPathInput = document.getElementById('local_path');
+        const localPathError = document.getElementById('local_path_error_new');
+
+        function normalizePath(value) {
+            if (!value) return '';
+            let normalized = value.trim().replace(/\\/g, '/');
+            if (normalized.length > 1) {
+                normalized = normalized.replace(/\/+$/, '');
             }
+            return normalized;
         }
 
-        // Setup mode toggle for new form
-        const modeSelect = document.getElementById('upload_mode_new');
-        if (modeSelect) {
-            modeSelect.addEventListener('change', function() {
-                toggleModeValue(this.value, 'new');
+        const normalizedExistingPaths = existingDestinationPaths.map(normalizePath);
+        const normalizedCurrentPath = normalizePath(currentDestinationPath);
+
+        function isDuplicatePath(value) {
+            const normalized = normalizePath(value);
+            if (!normalized) return false;
+            if (normalizedCurrentPath && normalized === normalizedCurrentPath) {
+                return false;
+            }
+            return normalizedExistingPaths.includes(normalized);
+        }
+
+        function updateLocalPathWarning() {
+            if (!localPathInput || !localPathError) return true;
+            const duplicate = isDuplicatePath(localPathInput.value);
+            localPathError.classList.toggle('hidden', !duplicate);
+            return !duplicate;
+        }
+
+        if (localPathInput) {
+            localPathInput.addEventListener('input', updateLocalPathWarning);
+            localPathInput.addEventListener('blur', updateLocalPathWarning);
+        }
+
+        const plexToggle = document.getElementById('use_plex_scan_tracking_new');
+        const plexPanel = document.getElementById('plex-tracking-panel-new');
+        const plexWarning = document.getElementById('plex-concurrency-warning-new');
+        const maxConcurrentScans = parseInt('{{.Content.ProcessorMaxConcurrentScans}}', 10) || 0;
+
+        function updatePlexRows() {
+            const rows = document.querySelectorAll('[data-plex-target-row]');
+            rows.forEach((row) => {
+                const checkbox = row.querySelector('input[name="plex_target_ids[]"]');
+                const idleInput = row.querySelector('[data-plex-idle]');
+                if (!checkbox || !idleInput) return;
+                const enabled = plexToggle && plexToggle.checked && checkbox.checked;
+                idleInput.disabled = !enabled;
+                idleInput.classList.toggle('opacity-50', !enabled);
             });
-            // Initialize on page load
-            toggleModeValue(modeSelect.value, 'new');
+        }
+
+        function updatePlexPanel() {
+            if (!plexToggle || !plexPanel) return;
+            const enabled = plexToggle.checked;
+            plexPanel.classList.toggle('hidden', !enabled);
+            if (plexWarning) {
+                const showWarning = enabled && (maxConcurrentScans === 0 || maxConcurrentScans >= 4);
+                plexWarning.classList.toggle('hidden', !showWarning);
+            }
+            updatePlexRows();
+        }
+
+        if (plexToggle) {
+            plexToggle.addEventListener('change', updatePlexPanel);
+            document.querySelectorAll('input[name="plex_target_ids[]"]').forEach((checkbox) => {
+                checkbox.addEventListener('change', updatePlexRows);
+            });
+            updatePlexPanel();
         }
 
         // Exclude paths management
@@ -673,19 +769,41 @@
             });
         }
 
+        const hasLocalTriggers = {{if .Content.HasLocalTriggers}}true{{else}}false{{end}};
+
         // Form validation with modal popup
         const form = document.getElementById('new-destination-form');
         if (form) {
             form.addEventListener('submit', function(e) {
                 const remoteSelects = form.querySelectorAll('select[name="remote_ids[]"]');
                 const triggerCheckboxes = form.querySelectorAll('input[name="included_triggers[]"]:checked');
+                const plexSelected = form.querySelectorAll('input[name="plex_target_ids[]"]:checked');
 
                 const errors = [];
+                if (!hasLocalTriggers) {
+                    errors.push('At least one local trigger is required before configuring uploads');
+                }
+                if (!updateLocalPathWarning()) {
+                    errors.push('Local path must be unique');
+                }
                 if (remoteSelects.length === 0) {
                     errors.push('At least one remote must be configured');
                 }
                 if (triggerCheckboxes.length === 0) {
                     errors.push('At least one trigger must be selected');
+                }
+                if (plexToggle && plexToggle.checked) {
+                    if (plexSelected.length === 0) {
+                        errors.push('Select at least one Plex target for scan tracking');
+                    }
+                    plexSelected.forEach((checkbox) => {
+                        const idleInput = form.querySelector('input[name="plex_idle_threshold_' + checkbox.value + '"]');
+                        const idleValue = idleInput ? parseInt(idleInput.value, 10) : 0;
+                        if (!idleValue || idleValue <= 0) {
+                            const targetName = checkbox.dataset.plexName || checkbox.value;
+                            errors.push('Idle threshold must be greater than 0 for Plex target: ' + targetName);
+                        }
+                    });
                 }
 
                 if (errors.length > 0) {
@@ -703,25 +821,65 @@
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Edit Destination</h3>
         </div>
         <form method="POST" action="/uploads/destinations/{{.Content.Destination.ID}}" id="edit-destination-form" class="p-6 space-y-4">
+            {{if not .Content.HasLocalTriggers}}
+            <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-4 text-sm text-yellow-800 dark:text-yellow-200">
+                A local trigger (inotify or polling) is required before configuring uploads. <a href="/triggers" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Create a trigger</a>.
+            </div>
+            {{end}}
             <input type="hidden" name="_method" value="PUT">
             <div>
                 <label for="local_path" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Local Path</label>
                 <input type="text" name="local_path" id="local_path" value="{{.Content.Destination.LocalPath}}" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Each destination must have a unique local path.</p>
+                <p id="local_path_error_edit" class="mt-1 text-xs text-red-600 dark:text-red-400 hidden">This local path is already used by another destination.</p>
             </div>
             <div>
-                <label for="upload_mode_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Mode</label>
-                <select name="upload_mode" id="upload_mode_edit" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                    <option value="immediate" {{if eq .Content.Destination.UploadMode "immediate"}}selected{{end}}>Immediate</option>
-                    <option value="age" {{if eq .Content.Destination.UploadMode "age"}}selected{{end}}>Age-based</option>
-                    <option value="size" {{if eq .Content.Destination.UploadMode "size"}}selected{{end}}>Size-based</option>
-                </select>
+                <label for="min_file_age_minutes_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum File Age (minutes)</label>
+                <input type="number" name="min_file_age_minutes" id="min_file_age_minutes_edit" min="0" value="{{.Content.Destination.MinFileAgeMinutes}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">0 disables. Uses filesystem mtime.</p>
             </div>
-            <div id="mode_value_field_edit" class="{{if eq .Content.Destination.UploadMode "immediate"}}hidden{{end}}">
-                <label for="mode_value_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    <span id="mode_value_label_edit">{{if eq .Content.Destination.UploadMode "age"}}Minimum Age (hours){{else}}Minimum Size (GB){{end}}</span>
-                </label>
-                <input type="number" name="mode_value" id="mode_value_edit" min="1" value="{{if .Content.Destination.ModeValue}}{{.Content.Destination.ModeValue}}{{end}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                <p id="mode_value_help_edit" class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{if eq .Content.Destination.UploadMode "age"}}Upload files older than this many hours{{else}}Upload when accumulated size exceeds this many GB{{end}}</p>
+            <div>
+                <label for="min_folder_size_gb_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Folder Total Size (GB)</label>
+                <input type="number" name="min_folder_size_gb" id="min_folder_size_gb_edit" min="0" value="{{.Content.Destination.MinFolderSizeGB}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">0 disables. If both age and size are set, size is the primary wait reason but both must pass.</p>
+            </div>
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div class="flex items-center">
+                    <input type="checkbox" name="use_plex_scan_tracking" id="use_plex_scan_tracking_edit" {{if .Content.Destination.UsePlexTracking}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                    <label for="use_plex_scan_tracking_edit" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Use Plex scan tracking (overrides delay checks)</label>
+                </div>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Wait for Plex scans to finish before uploads start. Configure per Plex target idle thresholds below.</p>
+                <div id="plex-tracking-panel-edit" class="{{if not .Content.Destination.UsePlexTracking}}hidden{{end}} mt-4 space-y-3">
+                    {{if .Content.PlexTargets}}
+                    {{range $plex := .Content.PlexTargets}}
+                    {{- $selected := false -}}
+                    {{- $idle := 30 -}}
+                    {{- if $.Content.Destination.PlexTargets -}}
+                        {{- range $.Content.Destination.PlexTargets -}}
+                            {{- if eq .TargetID $plex.ID -}}
+                                {{- $selected = true -}}
+                                {{- $idle = .IdleThresholdSeconds -}}
+                            {{- end -}}
+                        {{- end -}}
+                    {{- end -}}
+                    <div class="plex-target-row flex flex-col gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3" data-plex-target-row>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="plex_target_ids[]" value="{{$plex.ID}}" data-plex-name="{{$plex.Name}}" {{if $selected}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                            <span class="ml-2 text-sm text-gray-900 dark:text-gray-300">{{$plex.Name}}</span>
+                        </label>
+                        <div>
+                            <label for="plex_idle_threshold_{{$plex.ID}}_edit" class="block text-xs font-medium text-gray-600 dark:text-gray-400">Idle Threshold (seconds)</label>
+                            <input type="number" name="plex_idle_threshold_{{$plex.ID}}" id="plex_idle_threshold_{{$plex.ID}}_edit" min="1" value="{{$idle}}" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
+                        </div>
+                    </div>
+                    {{end}}
+                    {{else}}
+                    <p class="text-sm text-gray-500 dark:text-gray-400">No Plex targets configured. <a href="/targets/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Add a Plex target</a> first.</p>
+                    {{end}}
+                    <div id="plex-concurrency-warning-edit" class="hidden rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-3 text-sm text-yellow-800 dark:text-yellow-200">
+                        <strong>Scan concurrency warning:</strong> processor.max_concurrent_scans is set to {{.Content.ProcessorMaxConcurrentScans}}. Consider setting it between 1 and 3 when Plex tracking is enabled.
+                    </div>
+                </div>
             </div>
             <div>
                 <label for="transfer_type_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Transfer Type</label>
@@ -906,36 +1064,86 @@
 
             <div class="flex justify-end space-x-3 pt-4">
                 <a href="/uploads/destinations" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</a>
-                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Update Destination</button>
+                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 {{if not .Content.HasLocalTriggers}}opacity-50 cursor-not-allowed{{end}}" {{if not .Content.HasLocalTriggers}}disabled{{end}}>Update Destination</button>
             </div>
         </form>
     </div>
     <script>
     (function() {
-        // Mode value toggle for edit form
-        function toggleModeValue(mode) {
-            const field = document.getElementById('mode_value_field_edit');
-            const label = document.getElementById('mode_value_label_edit');
-            const help = document.getElementById('mode_value_help_edit');
-            if (mode === 'immediate') {
-                field.classList.add('hidden');
-            } else {
-                field.classList.remove('hidden');
-                if (mode === 'age') {
-                    label.textContent = 'Minimum Age (hours)';
-                    help.textContent = 'Upload files older than this many hours';
-                } else {
-                    label.textContent = 'Minimum Size (GB)';
-                    help.textContent = 'Upload when accumulated size exceeds this many GB';
-                }
+        const existingDestinationPaths = [
+            {{range .Content.Destinations}}"{{jsEscape .LocalPath}}",{{end}}
+        ];
+        const currentDestinationPath = "{{jsEscape .Content.Destination.LocalPath}}";
+        const localPathInput = document.getElementById('local_path');
+        const localPathError = document.getElementById('local_path_error_edit');
+
+        function normalizePath(value) {
+            if (!value) return '';
+            let normalized = value.trim().replace(/\\/g, '/');
+            if (normalized.length > 1) {
+                normalized = normalized.replace(/\/+$/, '');
             }
+            return normalized;
         }
 
-        const modeSelect = document.getElementById('upload_mode_edit');
-        if (modeSelect) {
-            modeSelect.addEventListener('change', function() {
-                toggleModeValue(this.value);
+        const normalizedExistingPaths = existingDestinationPaths.map(normalizePath);
+        const normalizedCurrentPath = normalizePath(currentDestinationPath);
+
+        function isDuplicatePath(value) {
+            const normalized = normalizePath(value);
+            if (!normalized) return false;
+            if (normalizedCurrentPath && normalized === normalizedCurrentPath) {
+                return false;
+            }
+            return normalizedExistingPaths.includes(normalized);
+        }
+
+        function updateLocalPathWarning() {
+            if (!localPathInput || !localPathError) return true;
+            const duplicate = isDuplicatePath(localPathInput.value);
+            localPathError.classList.toggle('hidden', !duplicate);
+            return !duplicate;
+        }
+
+        if (localPathInput) {
+            localPathInput.addEventListener('input', updateLocalPathWarning);
+            localPathInput.addEventListener('blur', updateLocalPathWarning);
+        }
+
+        const plexToggle = document.getElementById('use_plex_scan_tracking_edit');
+        const plexPanel = document.getElementById('plex-tracking-panel-edit');
+        const plexWarning = document.getElementById('plex-concurrency-warning-edit');
+        const maxConcurrentScans = parseInt('{{.Content.ProcessorMaxConcurrentScans}}', 10) || 0;
+
+        function updatePlexRows() {
+            const rows = document.querySelectorAll('[data-plex-target-row]');
+            rows.forEach((row) => {
+                const checkbox = row.querySelector('input[name="plex_target_ids[]"]');
+                const idleInput = row.querySelector('[data-plex-idle]');
+                if (!checkbox || !idleInput) return;
+                const enabled = plexToggle && plexToggle.checked && checkbox.checked;
+                idleInput.disabled = !enabled;
+                idleInput.classList.toggle('opacity-50', !enabled);
             });
+        }
+
+        function updatePlexPanel() {
+            if (!plexToggle || !plexPanel) return;
+            const enabled = plexToggle.checked;
+            plexPanel.classList.toggle('hidden', !enabled);
+            if (plexWarning) {
+                const showWarning = enabled && (maxConcurrentScans === 0 || maxConcurrentScans >= 4);
+                plexWarning.classList.toggle('hidden', !showWarning);
+            }
+            updatePlexRows();
+        }
+
+        if (plexToggle) {
+            plexToggle.addEventListener('change', updatePlexPanel);
+            document.querySelectorAll('input[name="plex_target_ids[]"]').forEach((checkbox) => {
+                checkbox.addEventListener('change', updatePlexRows);
+            });
+            updatePlexPanel();
         }
 
         // Exclude paths management
@@ -1109,19 +1317,41 @@
             });
         }
 
+        const hasLocalTriggers = {{if .Content.HasLocalTriggers}}true{{else}}false{{end}};
+
         // Form validation
         const form = document.getElementById('edit-destination-form');
         if (form) {
             form.addEventListener('submit', function(e) {
                 const remoteSelects = form.querySelectorAll('select[name="remote_ids[]"]');
                 const triggerCheckboxes = form.querySelectorAll('input[name="included_triggers[]"]:checked');
+                const plexSelected = form.querySelectorAll('input[name="plex_target_ids[]"]:checked');
 
                 const errors = [];
+                if (!hasLocalTriggers) {
+                    errors.push('At least one local trigger is required before configuring uploads');
+                }
+                if (!updateLocalPathWarning()) {
+                    errors.push('Local path must be unique');
+                }
                 if (remoteSelects.length === 0) {
                     errors.push('At least one remote must be configured');
                 }
                 if (triggerCheckboxes.length === 0) {
                     errors.push('At least one trigger must be selected');
+                }
+                if (plexToggle && plexToggle.checked) {
+                    if (plexSelected.length === 0) {
+                        errors.push('Select at least one Plex target for scan tracking');
+                    }
+                    plexSelected.forEach((checkbox) => {
+                        const idleInput = form.querySelector('input[name="plex_idle_threshold_' + checkbox.value + '"]');
+                        const idleValue = idleInput ? parseInt(idleInput.value, 10) : 0;
+                        if (!idleValue || idleValue <= 0) {
+                            const targetName = checkbox.dataset.plexName || checkbox.value;
+                            errors.push('Idle threshold must be greater than 0 for Plex target: ' + targetName);
+                        }
+                    });
                 }
 
                 if (errors.length > 0) {
@@ -1137,14 +1367,18 @@
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Destinations</h3>
+            {{if .Content.HasLocalTriggers}}
             <a href="/uploads/destinations/new" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Destination</a>
+            {{else}}
+            <span class="text-sm text-gray-500 dark:text-gray-400">Add a local trigger to enable destinations</span>
+            {{end}}
         </div>
         <div class="overflow-hidden">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead class="bg-gray-50 dark:bg-gray-700">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Local Path</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Mode</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Delay</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Remotes</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th class="relative px-6 py-3">
@@ -1160,7 +1394,17 @@
                             <div class="truncate max-w-xs" title="{{.LocalPath}}">{{.LocalPath}}</div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                            {{if eq .UploadMode "immediate"}}Immediate{{else if eq .UploadMode "age"}}Age ({{.ModeValue}}h){{else}}Size ({{.ModeValue}}GB){{end}}
+                            {{if .UsePlexTracking}}
+                                Plex tracking ({{len .PlexTargets}} targets)
+                            {{else if and (gt .MinFileAgeMinutes 0) (gt .MinFolderSizeGB 0)}}
+                                Age {{.MinFileAgeMinutes}}m + Size {{.MinFolderSizeGB}}GB
+                            {{else if gt .MinFileAgeMinutes 0}}
+                                Age {{.MinFileAgeMinutes}}m
+                            {{else if gt .MinFolderSizeGB 0}}
+                                Size {{.MinFolderSizeGB}}GB
+                            {{else}}
+                                Immediate
+                            {{end}}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                             {{len .Remotes}} configured
@@ -1183,7 +1427,11 @@
                     {{else}}
                     <tr>
                         <td colspan="5" class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-                            No destinations configured. <a href="/uploads/destinations/new" class="text-indigo-600 hover:text-indigo-900">Add one</a>
+                            {{if .Content.HasLocalTriggers}}
+                                No destinations configured. <a href="/uploads/destinations/new" class="text-indigo-600 hover:text-indigo-900">Add one</a>
+                            {{else}}
+                                No destinations configured. Create a local trigger first.
+                            {{end}}
                         </td>
                     </tr>
                     {{end}}
@@ -1378,7 +1626,7 @@ function updateEncodingCheckboxes(optName) {
 {{define "upload_queue"}}
 {{if .}}
 {{range .}}
-<tr id="upload-{{.ID}}">
+<tr id="upload-{{.ID}}" {{if .WaitState}}data-wait-state="{{.WaitState}}"{{end}} {{if .WaitChecks}}data-wait-checks="{{.WaitChecks}}"{{end}}>
     <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">
         <div class="truncate max-w-xs" title="{{.LocalPath}}">{{.LocalPath}}</div>
     </td>
@@ -1390,6 +1638,16 @@ function updateEncodingCheckboxes(optName) {
         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">Queued</span>
         {{else if eq .Status "pending"}}
         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">Pending</span>
+        {{if .WaitState}}
+        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{if eq .WaitState "waiting_age"}}Waiting for file age
+            {{else if eq .WaitState "waiting_size"}}Waiting for folder size
+            {{else if eq .WaitState "waiting_plex"}}Waiting for Plex scan
+            {{else if eq .WaitState "waiting_config"}}Waiting for configuration
+            {{else if eq .WaitState "ready"}}Ready
+            {{else}}{{.WaitState}}{{end}}
+        </div>
+        {{end}}
         {{else if eq .Status "completed"}}
         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Completed</span>
         {{else if eq .Status "failed"}}

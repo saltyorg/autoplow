@@ -774,6 +774,86 @@ var migrations = []migration{
 			ALTER TABLE matcharr_arrs ADD COLUMN file_concurrency INTEGER NOT NULL DEFAULT 4;
 		`,
 	},
+	{
+		Version: 26,
+		Name:    "destination_upload_delays",
+		SQL: `
+			-- Add destination-level upload delay fields
+			ALTER TABLE destinations ADD COLUMN min_file_age_minutes INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE destinations ADD COLUMN min_folder_size_gb INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE destinations ADD COLUMN use_plex_scan_tracking BOOLEAN NOT NULL DEFAULT false;
+
+			-- Destination -> Plex targets mapping with per-target idle threshold
+			CREATE TABLE destination_plex_targets (
+				destination_id INTEGER REFERENCES destinations(id) ON DELETE CASCADE,
+				target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
+				idle_threshold_seconds INTEGER NOT NULL DEFAULT 30,
+				PRIMARY KEY (destination_id, target_id)
+			);
+			CREATE INDEX idx_destination_plex_targets_target ON destination_plex_targets(target_id);
+
+			-- Upload wait state for queue display
+			ALTER TABLE uploads ADD COLUMN wait_state TEXT DEFAULT '';
+			ALTER TABLE uploads ADD COLUMN wait_checks TEXT DEFAULT '';
+		`,
+	},
+	{
+		Version: 27,
+		Name:    "drop_destination_upload_mode",
+		SQL: `
+			-- Remove upload_mode and mode_value from destinations (rebuild table)
+			CREATE TABLE destinations_new (
+				id INTEGER PRIMARY KEY,
+				local_path TEXT NOT NULL,
+				min_file_age_minutes INTEGER NOT NULL DEFAULT 0,
+				min_folder_size_gb INTEGER NOT NULL DEFAULT 0,
+				use_plex_scan_tracking BOOLEAN NOT NULL DEFAULT false,
+				transfer_type TEXT NOT NULL DEFAULT 'move',
+				enabled BOOLEAN DEFAULT true,
+				exclude_paths TEXT,
+				exclude_extensions TEXT,
+				included_triggers TEXT,
+				advanced_filters TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+			INSERT INTO destinations_new (
+				id,
+				local_path,
+				min_file_age_minutes,
+				min_folder_size_gb,
+				use_plex_scan_tracking,
+				transfer_type,
+				enabled,
+				exclude_paths,
+				exclude_extensions,
+				included_triggers,
+				advanced_filters,
+				created_at
+			)
+			SELECT
+				id,
+				local_path,
+				CASE
+					WHEN upload_mode = 'age' AND mode_value IS NOT NULL THEN mode_value * 60
+					ELSE 0
+				END,
+				CASE
+					WHEN upload_mode = 'size' AND mode_value IS NOT NULL THEN mode_value
+					ELSE 0
+				END,
+				COALESCE(use_plex_scan_tracking, 0),
+				transfer_type,
+				enabled,
+				exclude_paths,
+				exclude_extensions,
+				included_triggers,
+				advanced_filters,
+				created_at
+			FROM destinations;
+			DROP TABLE destinations;
+			ALTER TABLE destinations_new RENAME TO destinations;
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

@@ -26,9 +26,16 @@ func (h *Handlers) RemotesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	localTriggers, err := h.db.ListLocalTriggers()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list local triggers")
+	}
+	hasLocalTriggers := len(localTriggers) > 0
+
 	h.render(w, r, "uploads.html", map[string]any{
-		"Remotes": remotes,
-		"Tab":     "remotes",
+		"Remotes":          remotes,
+		"Tab":              "remotes",
+		"HasLocalTriggers": hasLocalTriggers,
 	})
 }
 
@@ -46,11 +53,18 @@ func (h *Handlers) RemoteNew(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	localTriggers, err := h.db.ListLocalTriggers()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list local triggers")
+	}
+	hasLocalTriggers := len(localTriggers) > 0
+
 	h.render(w, r, "uploads.html", map[string]any{
 		"IsNew":            true,
 		"Tab":              "remotes",
 		"AvailableRemotes": availableRemotes,
 		"Providers":        providers,
+		"HasLocalTriggers": hasLocalTriggers,
 	})
 }
 
@@ -59,6 +73,16 @@ func (h *Handlers) RemoteCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.flashErr(w, "Invalid form data")
 		h.redirect(w, r, "/uploads/remotes/new")
+		return
+	}
+
+	localTriggers, err := h.db.ListLocalTriggers()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list local triggers")
+	}
+	if len(localTriggers) == 0 {
+		h.flashErr(w, "At least one local trigger is required before configuring uploads")
+		h.redirect(w, r, "/uploads/remotes")
 		return
 	}
 

@@ -1174,6 +1174,12 @@ func (s *PlexTarget) notifyWaitingSubscribers(itemName, uuid, actType, event str
 // there's been no activity for the configured idle threshold (default 30 seconds).
 // Returns nil if scan completed, or the context error if timeout/cancelled.
 func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, timeout time.Duration) error {
+	// Default idle threshold (30s) for legacy interface.
+	return s.WaitForScanCompletionWithIdle(ctx, path, 30*time.Second)
+}
+
+// WaitForScanCompletionWithIdle waits for a Plex library scan to complete using a caller-provided idle threshold.
+func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path string, idleThreshold time.Duration) error {
 	// Build match info from path
 	// For path like "/mnt/local/Media/TV/TV/Absentia (2017) (tvdb-330500)/Season 02":
 	// - showName: "Absentia"
@@ -1187,9 +1193,8 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 		return nil
 	}
 
-	// Get idle threshold from config, default to 30 seconds
-	idleThreshold := time.Duration(s.dbTarget.Config.ScanCompletionIdleSeconds) * time.Second
-	if idleThreshold == 0 {
+	// Default idle threshold to 30 seconds if unset or invalid.
+	if idleThreshold <= 0 {
 		idleThreshold = 30 * time.Second
 	}
 

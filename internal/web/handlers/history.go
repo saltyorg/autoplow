@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/processor"
 )
 
 // ScanHistoryItem represents a scan for the history page
@@ -99,7 +100,7 @@ func (h *Handlers) HistoryScans(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RetryScan retries a failed scan
+// RetryScan queues a new scan using the same parameters as a historical scan.
 func (h *Handlers) RetryScan(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -117,27 +118,25 @@ func (h *Handlers) RetryScan(w http.ResponseWriter, r *http.Request) {
 		h.redirect(w, r, "/history/scans")
 		return
 	}
-
-	// Only allow retry of failed scans
-	if scan.Status != database.ScanStatusFailed {
-		h.flashErr(w, "Only failed scans can be retried")
+	if scan == nil {
+		h.flashErr(w, "Scan not found")
 		h.redirect(w, r, "/history/scans")
 		return
 	}
 
-	// Reset the scan status to pending
-	err = h.db.UpdateScanStatus(id, database.ScanStatusPending)
-	if err != nil {
-		log.Error().Err(err).Int64("id", id).Msg("Failed to reset scan status")
-		h.flashErr(w, "Failed to retry scan")
+	if h.processor == nil {
+		h.flashErr(w, "Scan processor unavailable")
 		h.redirect(w, r, "/history/scans")
 		return
 	}
 
-	// Clear the error
-	if err := h.db.UpdateScanError(id, ""); err != nil {
-		log.Warn().Err(err).Int64("id", id).Msg("Failed to clear scan error during retry")
-	}
+	h.processor.QueueScan(processor.ScanRequest{
+		Path:      scan.Path,
+		TriggerID: scan.TriggerID,
+		Priority:  scan.Priority,
+		EventType: scan.EventType,
+		FilePaths: scan.FilePaths,
+	})
 
 	h.flash(w, "Scan queued for retry")
 	h.redirect(w, r, "/history/scans")

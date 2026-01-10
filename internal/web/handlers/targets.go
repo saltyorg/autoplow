@@ -93,22 +93,6 @@ func (h *Handlers) TargetCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse scan completion seconds (common to all target types)
-	if completionStr := r.FormValue("scan_completion_seconds"); completionStr != "" {
-		if completion, err := strconv.Atoi(completionStr); err == nil && completion >= 0 {
-			target.Config.ScanCompletionSeconds = completion
-		}
-	}
-
-	// Parse scan completion idle seconds (Plex only - for smart activity detection)
-	if targetType == database.TargetTypePlex {
-		if idleStr := r.FormValue("scan_completion_idle_seconds"); idleStr != "" {
-			if idle, err := strconv.Atoi(idleStr); err == nil && idle >= 0 {
-				target.Config.ScanCompletionIdleSeconds = idle
-			}
-		}
-	}
-
 	// Parse Emby/Jellyfin specific options
 	if targetType == database.TargetTypeEmby || targetType == database.TargetTypeJellyfin {
 		target.Config.RefreshMetadata = r.FormValue("refresh_metadata") == "on"
@@ -239,26 +223,6 @@ func (h *Handlers) TargetUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		target.Config.ScanDelay = 0
-	}
-
-	// Parse scan completion seconds (common to all target types)
-	if completionStr := r.FormValue("scan_completion_seconds"); completionStr != "" {
-		if completion, err := strconv.Atoi(completionStr); err == nil && completion >= 0 {
-			target.Config.ScanCompletionSeconds = completion
-		}
-	} else {
-		target.Config.ScanCompletionSeconds = 0
-	}
-
-	// Parse scan completion idle seconds (Plex only - for smart activity detection)
-	if target.Type == database.TargetTypePlex {
-		if idleStr := r.FormValue("scan_completion_idle_seconds"); idleStr != "" {
-			if idle, err := strconv.Atoi(idleStr); err == nil && idle >= 0 {
-				target.Config.ScanCompletionIdleSeconds = idle
-			}
-		} else {
-			target.Config.ScanCompletionIdleSeconds = 0
-		}
 	}
 
 	// Parse Emby/Jellyfin specific options

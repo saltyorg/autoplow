@@ -61,7 +61,7 @@ type TriggerConfig struct {
 	PollIntervalSeconds int `json:"poll_interval_seconds,omitempty"`
 
 	// For polling triggers: whether to queue all existing files on first scan
-	// Default is false (only queue new files found after startup)
+	// Default is true (queue all files found on the initial poll)
 	QueueExistingOnStart bool `json:"queue_existing_on_start,omitempty"`
 
 	// Filesystem type: "local" for local storage with stability checking,

@@ -69,20 +69,27 @@ func (h *Handlers) UploadsPage(w http.ResponseWriter, r *http.Request) {
 		isPaused = h.uploadMgr.IsPaused()
 	}
 
+	localTriggers, err := h.db.ListLocalTriggers()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list local triggers")
+	}
+	hasLocalTriggers := len(localTriggers) > 0
+
 	h.render(w, r, "uploads.html", map[string]any{
-		"Uploads":         uploads,
-		"Tab":             "queue",
-		"ActiveCount":     activeCount,
-		"QueuedCount":     queuedCount,
-		"PendingCount":    pendingCount,
-		"FailedCount":     failedCount,
-		"UploadStats":     uploadStats,
-		"Page":            page,
-		"PageSize":        pageSize,
-		"TotalPages":      totalPages,
-		"TotalCount":      totalCount,
-		"ActiveTransfers": activeTransfers,
-		"IsPaused":        isPaused,
+		"Uploads":          uploads,
+		"Tab":              "queue",
+		"ActiveCount":      activeCount,
+		"QueuedCount":      queuedCount,
+		"PendingCount":     pendingCount,
+		"FailedCount":      failedCount,
+		"UploadStats":      uploadStats,
+		"Page":             page,
+		"PageSize":         pageSize,
+		"TotalPages":       totalPages,
+		"TotalCount":       totalCount,
+		"ActiveTransfers":  activeTransfers,
+		"IsPaused":         isPaused,
+		"HasLocalTriggers": hasLocalTriggers,
 	})
 }
 

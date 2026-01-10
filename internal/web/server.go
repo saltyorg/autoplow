@@ -26,6 +26,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/processor"
 	"github.com/saltyorg/autoplow/internal/rclone"
+	"github.com/saltyorg/autoplow/internal/scantracker"
 	"github.com/saltyorg/autoplow/internal/targets"
 	"github.com/saltyorg/autoplow/internal/throttle"
 	"github.com/saltyorg/autoplow/internal/uploader"
@@ -57,6 +58,7 @@ type Server struct {
 	rcloneMgr       *rclone.Manager
 	uploadMgr       *uploader.Manager
 	throttleMgr     *throttle.Manager
+	plexTracker     *scantracker.PlexTracker
 	notificationMgr *notification.Manager
 	inotifyMgr      *inotify.Watcher
 	pollingMgr      *polling.Poller
@@ -68,6 +70,7 @@ type Server struct {
 // NewServer creates a new web server
 func NewServer(db *database.DB, port int, bind string, allowedNet *net.IPNet, isDev bool) *Server {
 	targetsMgr := targets.NewManager(db)
+	plexTracker := scantracker.NewPlexTracker(db)
 	s := &Server{
 		db:            db,
 		port:          port,
@@ -80,7 +83,9 @@ func NewServer(db *database.DB, port int, bind string, allowedNet *net.IPNet, is
 		sseBroker:     sse.NewBroker(),
 		processor:     processor.New(db, processor.DefaultConfig()),
 		targetsMgr:    targetsMgr,
+		plexTracker:   plexTracker,
 	}
+	s.processor.SetPlexScanTracker(plexTracker)
 
 	s.loadTemplates()
 	s.setupRoutes()
@@ -127,6 +132,9 @@ func (s *Server) SetUploadManager(mgr *uploader.Manager) {
 	s.uploadMgr = mgr
 	if s.handlers != nil {
 		s.handlers.SetUploadManager(mgr)
+	}
+	if mgr != nil && s.plexTracker != nil {
+		mgr.SetPlexScanTracker(s.plexTracker)
 	}
 }
 
@@ -256,8 +264,10 @@ func (s *Server) StartUploadSubsystem() error {
 		if s.handlers != nil {
 			s.handlers.SetUploadManager(s.uploadMgr)
 		}
-		s.processor.SetUploadQueuer(s.uploadMgr)
 		s.uploadMgr.SetSSEBroker(s.sseBroker)
+		if s.plexTracker != nil {
+			s.uploadMgr.SetPlexScanTracker(s.plexTracker)
+		}
 	}
 	s.uploadMgr.Start()
 
@@ -313,9 +323,6 @@ func (s *Server) StopUploadSubsystem() error {
 	if s.pollingMgr != nil {
 		s.pollingMgr.SetUploadManager(nil)
 	}
-
-	// Clear upload queuer from processor
-	s.processor.SetUploadQueuer(nil)
 
 	log.Info().Msg("Upload subsystem stopped")
 	return nil

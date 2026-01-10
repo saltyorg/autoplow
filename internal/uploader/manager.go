@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/rclone"
+	"github.com/saltyorg/autoplow/internal/scantracker"
 	"github.com/saltyorg/autoplow/internal/web/sse"
 )
 
@@ -79,6 +81,13 @@ type Manager struct {
 	dbError   error
 	dbErrorMu sync.RWMutex
 
+	// Destination size check coordination
+	sizeCheckMu         sync.Mutex
+	sizeCheckInProgress map[int64]bool
+
+	// Plex scan tracking for upload gating
+	plexTracker *scantracker.PlexTracker
+
 	// Shutdown handling
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -108,12 +117,13 @@ type Stats struct {
 // New creates a new upload manager
 func New(db *database.DB, rcloneMgr *rclone.Manager, config Config) *Manager {
 	return &Manager{
-		db:          db,
-		rcloneMgr:   rcloneMgr,
-		config:      config,
-		requests:    make(chan UploadRequest, 100),
-		batchActive: make(chan struct{}, 1),
-		batchReady:  make(chan struct{}, 1),
+		db:                  db,
+		rcloneMgr:           rcloneMgr,
+		config:              config,
+		requests:            make(chan UploadRequest, 100),
+		batchActive:         make(chan struct{}, 1),
+		batchReady:          make(chan struct{}, 1),
+		sizeCheckInProgress: make(map[int64]bool),
 	}
 }
 
@@ -293,6 +303,11 @@ func (m *Manager) SetSkipChecker(checker UploadSkipChecker) {
 	m.skipChecker = checker
 }
 
+// SetPlexScanTracker sets the Plex scan tracker for upload gating.
+func (m *Manager) SetPlexScanTracker(tracker *scantracker.PlexTracker) {
+	m.plexTracker = tracker
+}
+
 // SetSSEBroker sets the SSE broker for broadcasting events
 func (m *Manager) SetSSEBroker(broker *sse.Broker) {
 	m.sseBroker = broker
@@ -403,15 +418,6 @@ func (m *Manager) QueueUpload(req UploadRequest) {
 			Str("path", req.LocalPath).
 			Msg("Upload request queue full, dropping request")
 	}
-}
-
-// QueueUploadPath queues a path for upload (implements processor.UploadQueuer interface)
-func (m *Manager) QueueUploadPath(localPath string, scanID *int64, priority int) {
-	m.QueueUpload(UploadRequest{
-		LocalPath: localPath,
-		ScanID:    scanID,
-		Priority:  priority,
-	})
 }
 
 // Stats returns current statistics
@@ -572,14 +578,12 @@ func (m *Manager) handleRequest(req UploadRequest) {
 		return
 	}
 
-	// Determine initial status based on upload mode
-	var status database.UploadStatus
-	switch dest.UploadMode {
-	case database.UploadModeImmediate:
-		status = database.UploadStatusQueued
-	case database.UploadModeAge, database.UploadModeSize:
-		status = database.UploadStatusPending
-	default:
+	// Determine initial status based on readiness checks
+	ready, waitState, waitChecks := m.evaluateUploadReadiness(dest, &database.Upload{
+		LocalPath: req.LocalPath,
+	})
+	status := database.UploadStatusPending
+	if ready {
 		status = database.UploadStatusQueued
 	}
 
@@ -591,6 +595,8 @@ func (m *Manager) handleRequest(req UploadRequest) {
 		Status:         status,
 		SizeBytes:      sizeBytes,
 		RemotePriority: firstRemote.Priority,
+		WaitState:      waitState,
+		WaitChecks:     waitChecks,
 	}
 
 	if err := m.db.CreateUpload(upload); err != nil {
@@ -699,7 +705,12 @@ func (m *Manager) checkPendingUploads() {
 	}
 
 	for _, upload := range uploads {
-		if m.checkUploadReadiness(upload) {
+		ready, waitState, waitChecks := m.checkUploadReadiness(upload)
+		if err := m.db.UpdateUploadWaitState(upload.ID, waitState, waitChecks); err != nil {
+			m.handleDatabaseError(err, "UpdateUploadWaitState")
+			return
+		}
+		if ready {
 			if err := m.db.UpdateUploadStatus(upload.ID, database.UploadStatusQueued); err != nil {
 				m.handleDatabaseError(err, "UpdateUploadStatus (pending to queued)")
 				return
@@ -711,48 +722,163 @@ func (m *Manager) checkPendingUploads() {
 }
 
 // checkUploadReadiness checks if upload meets mode conditions
-func (m *Manager) checkUploadReadiness(upload *database.Upload) bool {
+func (m *Manager) checkUploadReadiness(upload *database.Upload) (bool, string, string) {
 	// Find the destination configuration
 	dest, err := m.db.GetDestinationByPath(upload.LocalPath)
 	if err != nil || dest == nil {
-		return true // If we can't find config, assume ready
+		waitChecks := m.marshalWaitChecks(map[string]any{
+			"destination_found": false,
+		})
+		return false, "waiting_config", waitChecks
 	}
 
-	switch dest.UploadMode {
-	case database.UploadModeImmediate:
-		return true
+	return m.evaluateUploadReadiness(dest, upload)
+}
 
-	case database.UploadModeAge:
-		if dest.ModeValue == nil {
-			return true
+func (m *Manager) evaluateUploadReadiness(dest *database.Destination, upload *database.Upload) (bool, string, string) {
+	checks := map[string]any{
+		"destination_id": dest.ID,
+	}
+
+	if dest.UsePlexTracking {
+		checks["plex_tracking_enabled"] = true
+		if len(dest.PlexTargets) == 0 || m.plexTracker == nil {
+			checks["plex_configured"] = len(dest.PlexTargets) > 0
+			checks["plex_tracker_available"] = m.plexTracker != nil
+			return false, "waiting_config", m.marshalWaitChecks(checks)
 		}
-		minAge := time.Duration(*dest.ModeValue) * time.Hour
-		return time.Since(upload.CreatedAt) >= minAge
 
-	case database.UploadModeSize:
-		// Size mode: check accumulated size of pending uploads
-		// This is a simplified check - could be made more sophisticated
-		if dest.ModeValue == nil {
-			return true
+		targetChecks := make([]map[string]any, 0, len(dest.PlexTargets))
+		allReady := true
+		for _, target := range dest.PlexTargets {
+			status := m.plexTracker.CheckPath(dest.ID, target.TargetID, upload.LocalPath)
+			entry := map[string]any{
+				"target_id":              target.TargetID,
+				"idle_threshold_seconds": target.IdleThresholdSeconds,
+				"ready":                  status.Ready,
+				"matched_scan":           status.Matched,
+			}
+			if status.Pending {
+				entry["pending"] = true
+				allReady = false
+			}
+			if !status.Matched {
+				entry["waiting_on_scan"] = true
+				allReady = false
+			}
+			targetChecks = append(targetChecks, entry)
 		}
-		thresholdBytes := int64(*dest.ModeValue) * 1024 * 1024 * 1024 // GB to bytes
+		checks["plex_targets"] = targetChecks
 
-		uploads, err := m.db.ListPendingUploads()
+		if allReady {
+			return true, "ready", m.marshalWaitChecks(checks)
+		}
+		return false, "waiting_plex", m.marshalWaitChecks(checks)
+	}
+
+	ageReady := true
+	sizeReady := true
+
+	if dest.MinFileAgeMinutes > 0 {
+		checks["age_required_minutes"] = dest.MinFileAgeMinutes
+		info, err := os.Stat(upload.LocalPath)
 		if err != nil {
-			return true
+			ageReady = false
+			checks["age_error"] = err.Error()
+		} else {
+			ageMinutes := time.Since(info.ModTime()).Minutes()
+			checks["age_minutes"] = ageMinutes
+			ageReady = ageMinutes >= float64(dest.MinFileAgeMinutes)
 		}
+	}
+	checks["age_ready"] = ageReady
 
-		var totalSize int64
-		for _, u := range uploads {
-			if strings.HasPrefix(u.LocalPath, dest.LocalPath) && u.SizeBytes != nil {
-				totalSize += *u.SizeBytes
+	if dest.MinFolderSizeGB > 0 {
+		checks["size_required_gb"] = dest.MinFolderSizeGB
+		if !m.startSizeCheck(dest.ID) {
+			sizeReady = false
+			checks["size_check_in_progress"] = true
+		} else {
+			sizeBytes, err := m.calculateFolderSize(dest.LocalPath)
+			m.finishSizeCheck(dest.ID)
+			if err != nil {
+				sizeReady = false
+				checks["size_error"] = err.Error()
+			} else {
+				checks["size_bytes"] = sizeBytes
+				requiredBytes := int64(dest.MinFolderSizeGB) * 1024 * 1024 * 1024
+				checks["size_required_bytes"] = requiredBytes
+				sizeReady = sizeBytes >= requiredBytes
 			}
 		}
+	}
+	checks["size_ready"] = sizeReady
 
-		return totalSize >= thresholdBytes
+	ready := ageReady && sizeReady
+	waitState := "ready"
+	if dest.MinFolderSizeGB > 0 || dest.MinFileAgeMinutes > 0 {
+		if !ready {
+			if dest.MinFolderSizeGB > 0 && !sizeReady {
+				waitState = "waiting_size"
+			} else if dest.MinFileAgeMinutes > 0 && !ageReady {
+				waitState = "waiting_age"
+			} else {
+				waitState = "pending"
+			}
+		}
 	}
 
+	return ready, waitState, m.marshalWaitChecks(checks)
+}
+
+func (m *Manager) marshalWaitChecks(checks map[string]any) string {
+	if len(checks) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(checks)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to marshal upload wait checks")
+		return ""
+	}
+	return string(data)
+}
+
+func (m *Manager) startSizeCheck(destinationID int64) bool {
+	m.sizeCheckMu.Lock()
+	defer m.sizeCheckMu.Unlock()
+	if m.sizeCheckInProgress[destinationID] {
+		return false
+	}
+	m.sizeCheckInProgress[destinationID] = true
 	return true
+}
+
+func (m *Manager) finishSizeCheck(destinationID int64) {
+	m.sizeCheckMu.Lock()
+	defer m.sizeCheckMu.Unlock()
+	delete(m.sizeCheckInProgress, destinationID)
+}
+
+func (m *Manager) calculateFolderSize(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 // startBatch starts a new batch of uploads
