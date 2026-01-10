@@ -1014,7 +1014,7 @@ function toggleFileMismatchDetails(id) {
 {{end}}
 
 {{define "arr_gaps_section"}}
-<div id="matcharr-arr-gaps" class="space-y-6" hx-get="/matcharr/gaps/arr" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".arr-gaps-filters select" data-sse-polling-fallback="5s">
+<div id="matcharr-arr-gaps" class="space-y-6" hx-get="/matcharr/gaps/arr" hx-trigger="sse-refresh" hx-swap="innerHTML" hx-select="#matcharr-arr-gaps > *" hx-include=".arr-gaps-filters select" data-sse-polling-fallback="5s">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1080,7 +1080,7 @@ function toggleFileMismatchDetails(id) {
 {{end}}
 
 {{define "target_gaps_section"}}
-<div id="matcharr-target-gaps" class="space-y-6" hx-get="/matcharr/gaps/target" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".target-gaps-filters select" data-sse-polling-fallback="5s">
+<div id="matcharr-target-gaps" class="space-y-6" hx-get="/matcharr/gaps/target" hx-trigger="sse-refresh" hx-swap="innerHTML" hx-select="#matcharr-target-gaps > *" hx-include=".target-gaps-filters select" data-sse-polling-fallback="5s">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1131,7 +1131,7 @@ function toggleFileMismatchDetails(id) {
 {{end}}
 
 {{define "file_mismatches_section"}}
-<div id="matcharr-file-mismatches" class="space-y-6" hx-get="/matcharr/file-mismatches" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".file-mismatch-filters select" data-sse-polling-fallback="5s">
+<div id="matcharr-file-mismatches" class="space-y-6" hx-get="/matcharr/file-mismatches" hx-trigger="sse-refresh" hx-swap="innerHTML" hx-select="#matcharr-file-mismatches > *" hx-include=".file-mismatch-filters select" data-sse-polling-fallback="5s">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1340,7 +1340,7 @@ function toggleFileMismatchDetails(id) {
 {{end}}
 
 {{define "file_ignores_section"}}
-<div id="matcharr-file-ignores" class="space-y-6" hx-get="/matcharr/file-ignores" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-include=".file-ignore-filters select" data-sse-polling-fallback="5s">
+<div id="matcharr-file-ignores" class="space-y-6" hx-get="/matcharr/file-ignores" hx-trigger="sse-refresh" hx-swap="innerHTML" hx-select="#matcharr-file-ignores > *" hx-include=".file-ignore-filters select" data-sse-polling-fallback="5s">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1616,7 +1616,7 @@ function toggleFileMismatchDetails(id) {
 {{end}}
 
 {{define "status_section"}}
-<div id="matcharr-status" hx-get="/matcharr/status" hx-trigger="sse-refresh{{if .Status.IsComparing}}, every 2s{{end}}" hx-swap="outerHTML">
+<div id="matcharr-status" hx-get="/matcharr/status" hx-trigger="sse-refresh{{if .Status.IsComparing}}, every 2s{{end}}" hx-swap="innerHTML" hx-select="#matcharr-status > *">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Status</h3>
@@ -1664,7 +1664,7 @@ function toggleFileMismatchDetails(id) {
 {{end}}
 
 {{define "quick_actions"}}
-<div id="quick-actions" class="flex flex-wrap gap-4" hx-get="/matcharr/quick-actions" hx-trigger="sse-refresh" hx-swap="outerHTML">
+<div id="quick-actions" class="flex flex-wrap gap-4" hx-get="/matcharr/quick-actions" hx-trigger="sse-refresh" hx-swap="innerHTML" hx-select="#quick-actions > *">
     <button hx-post="/matcharr/run" hx-swap="none" class="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 {{if .Status.IsComparing}}bg-gray-400 cursor-not-allowed{{else}}bg-indigo-600 hover:bg-indigo-500 focus-visible:outline-indigo-600{{end}}" {{if .Status.IsComparing}}disabled{{end}}>
         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
@@ -1686,7 +1686,7 @@ function toggleFileMismatchDetails(id) {
 {{end}}
 
 {{define "last_run_section"}}
-<div id="matcharr-last-run" hx-get="/matcharr/last-run" hx-trigger="sse-refresh{{if and .LatestRun (eq .LatestRun.Status "running")}}, every 2s{{end}}" hx-swap="outerHTML">
+<div id="matcharr-last-run" hx-get="/matcharr/last-run" hx-trigger="sse-refresh{{if and .LatestRun (eq .LatestRun.Status "running")}}, every 2s{{end}}" hx-swap="innerHTML" hx-select="#matcharr-last-run > *">
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Last Run</h3>

@@ -1,5 +1,5 @@
 {{define "notification_stats"}}
-<div id="notification-stats" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/notifications/stats" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+<div id="notification-stats" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/notifications/stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#notification-stats > *" data-sse-polling-fallback="10s">
     <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
         <div class="flex items-center justify-between">
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Notification Stats (24h)</h3>
@@ -29,7 +29,7 @@
 {{end}}
 
 {{define "notification_logs"}}
-<div id="notification-logs" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/notifications/logs" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+<div id="notification-logs" class="bg-white dark:bg-gray-800 shadow rounded-lg" hx-get="/settings/notifications/logs" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#notification-logs > *" data-sse-polling-fallback="10s">
     <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
         <div class="flex items-center justify-between">
             <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Recent Notification Log</h3>

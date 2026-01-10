@@ -1,5 +1,5 @@
 {{define "upload_history_stats"}}
-<div id="upload-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-4" hx-get="/history/uploads/stats{{if .Remote}}?remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+<div id="upload-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-4" hx-get="/history/uploads/stats{{if .Remote}}?remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#upload-history-stats > *" data-sse-polling-fallback="10s">
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active</dt>
         <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">{{.ActiveCount}}</dd>
@@ -20,7 +20,7 @@
 {{end}}
 
 {{define "upload_history_table"}}
-<div id="upload-history-table" hx-get="/history/uploads/table?page={{.Page}}{{if .Remote}}&remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+<div id="upload-history-table" hx-get="/history/uploads/table?page={{.Page}}{{if .Remote}}&remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#upload-history-table > *" data-sse-polling-fallback="5s">
     <!-- Uploads Table -->
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">

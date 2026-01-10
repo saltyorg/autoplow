@@ -1,5 +1,5 @@
 {{define "scan_history_stats"}}
-<div id="scan-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-3" hx-get="/history/scans/stats" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="10s">
+<div id="scan-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-3" hx-get="/history/scans/stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#scan-history-stats > *" data-sse-polling-fallback="10s">
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Pending</dt>
         <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{if .Stats}}{{add (index .Stats "pending") (index .Stats "retry")}}{{else}}0{{end}}</dd>
@@ -16,7 +16,7 @@
 {{end}}
 
 {{define "scan_history_table"}}
-<div id="scan-history-table" hx-get="/history/scans/table?page={{.Page}}{{if .Status}}&status={{.Status}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="outerHTML" data-sse-polling-fallback="5s">
+<div id="scan-history-table" hx-get="/history/scans/table?page={{.Page}}{{if .Status}}&status={{.Status}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#scan-history-table > *" data-sse-polling-fallback="5s">
     <!-- Scans Table -->
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
