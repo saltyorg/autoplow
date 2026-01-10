@@ -275,6 +275,12 @@ func (p *Poller) doScan(tp *triggerPoll) {
 		uploadsEnabled = false
 	}
 
+	triggerScanEnabled := scanningEnabled && tp.trigger.Config.ScanEnabledValue()
+	triggerUploadEnabled := uploadsEnabled && tp.trigger.Config.UploadEnabledValue()
+	if p.uploadManager == nil {
+		triggerUploadEnabled = false
+	}
+
 	isFirstScan := tp.firstScan
 	queueExisting := tp.trigger.Config.QueueExistingOnStart
 
@@ -324,7 +330,7 @@ func (p *Poller) doScan(tp *triggerPoll) {
 	if len(newFiles) > 0 {
 		triggerID := tp.trigger.ID
 
-		if scanningEnabled {
+		if triggerScanEnabled {
 			// Group files by parent directory for efficient scanning
 			filesByDir := make(map[string][]string)
 			for _, path := range newFiles {
@@ -355,7 +361,7 @@ func (p *Poller) doScan(tp *triggerPoll) {
 				Msg("Polling scan completed - scans queued")
 		}
 
-		if uploadsEnabled && p.uploadManager != nil {
+		if triggerUploadEnabled {
 			uploadRequests := make([]uploader.UploadRequest, 0, len(newFiles))
 			for _, path := range newFiles {
 				log.Info().

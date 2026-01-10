@@ -142,6 +142,9 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 
 		trigger.Config.WatchPaths = watchPaths
 		trigger.Config.DebounceSeconds = debounce
+		trigger.Config.ScanEnabled = boolPtr(r.FormValue("scan_enabled") == "on")
+		trigger.Config.UploadEnabled = boolPtr(r.FormValue("upload_enabled") == "on")
+		trigger.Config.ScanExistingOnStart = r.FormValue("scan_existing_on_start") == "on"
 	}
 
 	// For polling triggers, parse watch paths, poll interval, and queue existing setting
@@ -172,6 +175,8 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 		trigger.Config.WatchPaths = watchPaths
 		trigger.Config.PollIntervalSeconds = pollInterval
 		trigger.Config.QueueExistingOnStart = r.FormValue("queue_existing_on_start") == "on"
+		trigger.Config.ScanEnabled = boolPtr(r.FormValue("scan_enabled") == "on")
+		trigger.Config.UploadEnabled = boolPtr(r.FormValue("upload_enabled") == "on")
 	}
 
 	// Parse path rewrites (for webhook trigger types only, not local triggers)
@@ -405,6 +410,9 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 
 		trigger.Config.WatchPaths = watchPaths
 		trigger.Config.DebounceSeconds = debounce
+		trigger.Config.ScanEnabled = boolPtr(r.FormValue("scan_enabled") == "on")
+		trigger.Config.UploadEnabled = boolPtr(r.FormValue("upload_enabled") == "on")
+		trigger.Config.ScanExistingOnStart = r.FormValue("scan_existing_on_start") == "on"
 	}
 
 	// For polling triggers, update watch paths, poll interval, and queue existing setting
@@ -435,6 +443,8 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 		trigger.Config.WatchPaths = watchPaths
 		trigger.Config.PollIntervalSeconds = pollInterval
 		trigger.Config.QueueExistingOnStart = r.FormValue("queue_existing_on_start") == "on"
+		trigger.Config.ScanEnabled = boolPtr(r.FormValue("scan_enabled") == "on")
+		trigger.Config.UploadEnabled = boolPtr(r.FormValue("upload_enabled") == "on")
 	}
 
 	// Parse path rewrites (for webhook trigger types only, not local triggers)
@@ -675,6 +685,10 @@ func parsePathList(r *http.Request, fieldName string) []string {
 		}
 	}
 	return paths
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 // parsePathRewrites extracts path rewrite rules from form data

@@ -232,6 +232,7 @@ type DestinationRemote struct {
 type Upload struct {
 	ID             int64        `json:"id"`
 	ScanID         *int64       `json:"scan_id,omitempty"`
+	TriggerID      *int64       `json:"trigger_id,omitempty"`
 	LocalPath      string       `json:"local_path"`
 	RemoteName     string       `json:"remote_name"`
 	RemotePath     string       `json:"remote_path"`
@@ -1024,9 +1025,9 @@ func (db *db) ClearDestinationPlexTargets(destinationID int64) error {
 // CreateUpload creates a new upload record
 func (db *db) CreateUpload(upload *Upload) error {
 	result, err := db.exec(`
-		INSERT INTO uploads (scan_id, local_path, remote_name, remote_path, status, size_bytes, wait_state, wait_checks, created_at, progress_bytes, retry_count, remote_priority)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, upload.ScanID, upload.LocalPath, upload.RemoteName, upload.RemotePath, upload.Status, upload.SizeBytes, upload.WaitState, upload.WaitChecks, time.Now(), 0, 0, upload.RemotePriority)
+		INSERT INTO uploads (scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes, wait_state, wait_checks, created_at, progress_bytes, retry_count, remote_priority)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, upload.ScanID, upload.TriggerID, upload.LocalPath, upload.RemoteName, upload.RemotePath, upload.Status, upload.SizeBytes, upload.WaitState, upload.WaitChecks, time.Now(), 0, 0, upload.RemotePriority)
 	if err != nil {
 		return fmt.Errorf("failed to create upload: %w", err)
 	}
@@ -1044,16 +1045,16 @@ func (db *db) CreateUpload(upload *Upload) error {
 // GetUpload retrieves an upload by ID
 func (db *db) GetUpload(id int64) (*Upload, error) {
 	upload := &Upload{}
-	var scanID, sizeBytes, rcloneJobID sql.NullInt64
+	var scanID, triggerID, sizeBytes, rcloneJobID sql.NullInt64
 	var startedAt, completedAt sql.NullTime
 	var lastError sql.NullString
 
 	err := db.queryRow(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads WHERE id = ?
-	`, id).Scan(&upload.ID, &scanID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
+	`, id).Scan(&upload.ID, &scanID, &triggerID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
 		&upload.Status, &sizeBytes, &upload.WaitState, &upload.WaitChecks, &upload.CreatedAt, &startedAt, &completedAt,
 		&rcloneJobID, &upload.ProgressBytes, &upload.RetryCount, &lastError, &upload.RemotePriority)
 	if err == sql.ErrNoRows {
@@ -1064,6 +1065,7 @@ func (db *db) GetUpload(id int64) (*Upload, error) {
 	}
 
 	upload.ScanID = nullInt64ToPtr(scanID)
+	upload.TriggerID = nullInt64ToPtr(triggerID)
 	upload.SizeBytes = nullInt64ToPtr(sizeBytes)
 	upload.StartedAt = nullTimeToPtr(startedAt)
 	upload.CompletedAt = nullTimeToPtr(completedAt)
@@ -1078,17 +1080,18 @@ func (db *db) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
 	var uploads []*Upload
 	for rows.Next() {
 		upload := &Upload{}
-		var scanID, sizeBytes, rcloneJobID sql.NullInt64
+		var scanID, triggerID, sizeBytes, rcloneJobID sql.NullInt64
 		var startedAt, completedAt sql.NullTime
 		var lastError sql.NullString
 
-		if err := rows.Scan(&upload.ID, &scanID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
+		if err := rows.Scan(&upload.ID, &scanID, &triggerID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
 			&upload.Status, &sizeBytes, &upload.WaitState, &upload.WaitChecks, &upload.CreatedAt, &startedAt, &completedAt,
 			&rcloneJobID, &upload.ProgressBytes, &upload.RetryCount, &lastError, &upload.RemotePriority); err != nil {
 			return nil, fmt.Errorf("failed to scan upload: %w", err)
 		}
 
 		upload.ScanID = nullInt64ToPtr(scanID)
+		upload.TriggerID = nullInt64ToPtr(triggerID)
 		upload.SizeBytes = nullInt64ToPtr(sizeBytes)
 		upload.StartedAt = nullTimeToPtr(startedAt)
 		upload.CompletedAt = nullTimeToPtr(completedAt)
@@ -1104,7 +1107,7 @@ func (db *db) uploadRowsToUploads(rows *sql.Rows) ([]*Upload, error) {
 // ListPendingUploads returns uploads waiting for mode conditions
 func (db *db) ListPendingUploads() ([]*Upload, error) {
 	rows, err := db.query(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
@@ -1122,7 +1125,7 @@ func (db *db) ListPendingUploads() ([]*Upload, error) {
 // ListQueuedUploads returns uploads ready to start
 func (db *db) ListQueuedUploads() ([]*Upload, error) {
 	rows, err := db.query(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
@@ -1140,7 +1143,7 @@ func (db *db) ListQueuedUploads() ([]*Upload, error) {
 // ListActiveUploads returns uploads currently in progress
 func (db *db) ListActiveUploads() ([]*Upload, error) {
 	rows, err := db.query(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
@@ -1158,7 +1161,7 @@ func (db *db) ListActiveUploads() ([]*Upload, error) {
 // ListRecentUploads returns the most recent uploads
 func (db *db) ListRecentUploads(limit int) ([]*Upload, error) {
 	rows, err := db.query(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
@@ -1180,7 +1183,7 @@ func (db *db) ListUploadsPaginated(limit, offset int) ([]*Upload, error) {
 	// Completed uploads are excluded from the queue view
 	// Within each status group, sort by created_at DESC
 	rows, err := db.query(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
@@ -1207,7 +1210,7 @@ func (db *db) ListUploadsPaginated(limit, offset int) ([]*Upload, error) {
 // ListUploadsByStatus returns uploads with a specific status
 func (db *db) ListUploadsByStatus(status UploadStatus, limit int) ([]*Upload, error) {
 	rows, err := db.query(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
@@ -1300,12 +1303,12 @@ func (db *db) DeleteUpload(id int64) error {
 // FindDuplicateUpload checks if an upload for the same path/remote exists
 func (db *db) FindDuplicateUpload(localPath, remoteName string) (*Upload, error) {
 	upload := &Upload{}
-	var scanID, sizeBytes, rcloneJobID sql.NullInt64
+	var scanID, triggerID, sizeBytes, rcloneJobID sql.NullInt64
 	var startedAt, completedAt sql.NullTime
 	var lastError sql.NullString
 
 	err := db.queryRow(`
-		SELECT id, scan_id, local_path, remote_name, remote_path, status, size_bytes,
+		SELECT id, scan_id, trigger_id, local_path, remote_name, remote_path, status, size_bytes,
 		       wait_state, wait_checks, created_at, started_at, completed_at, rclone_job_id, progress_bytes,
 		       retry_count, last_error, remote_priority
 		FROM uploads
@@ -1313,7 +1316,7 @@ func (db *db) FindDuplicateUpload(localPath, remoteName string) (*Upload, error)
 		ORDER BY created_at DESC
 		LIMIT 1
 	`, localPath, remoteName, UploadStatusQueued, UploadStatusPending, UploadStatusUploading).Scan(
-		&upload.ID, &scanID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
+		&upload.ID, &scanID, &triggerID, &upload.LocalPath, &upload.RemoteName, &upload.RemotePath,
 		&upload.Status, &sizeBytes, &upload.WaitState, &upload.WaitChecks, &upload.CreatedAt, &startedAt, &completedAt,
 		&rcloneJobID, &upload.ProgressBytes, &upload.RetryCount, &lastError, &upload.RemotePriority)
 	if err == sql.ErrNoRows {
@@ -1324,6 +1327,7 @@ func (db *db) FindDuplicateUpload(localPath, remoteName string) (*Upload, error)
 	}
 
 	upload.ScanID = nullInt64ToPtr(scanID)
+	upload.TriggerID = nullInt64ToPtr(triggerID)
 	upload.SizeBytes = nullInt64ToPtr(sizeBytes)
 	upload.StartedAt = nullTimeToPtr(startedAt)
 	upload.CompletedAt = nullTimeToPtr(completedAt)

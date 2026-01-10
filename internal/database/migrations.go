@@ -212,6 +212,7 @@ var migrations = []migration{
 			CREATE TABLE uploads (
 				id INTEGER PRIMARY KEY,
 				scan_id INTEGER REFERENCES scans(id),
+				trigger_id INTEGER REFERENCES triggers(id),
 				local_path TEXT NOT NULL,
 				remote_name TEXT NOT NULL,
 				remote_path TEXT NOT NULL,
@@ -868,6 +869,13 @@ var migrations = []migration{
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			);
 			CREATE INDEX idx_upload_requests_created ON upload_requests(created_at);
+		`,
+	},
+	{
+		Version: 29,
+		Name:    "uploads_trigger_id",
+		SQL: `
+			ALTER TABLE uploads ADD COLUMN trigger_id INTEGER;
 		`,
 	},
 }

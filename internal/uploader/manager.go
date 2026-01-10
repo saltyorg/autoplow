@@ -611,6 +611,19 @@ func (m *Manager) handleRequest(req UploadRequest) {
 		return
 	}
 
+	if req.TriggerID != nil {
+		trigger, err := m.db.GetTrigger(*req.TriggerID)
+		if err != nil {
+			log.Error().Err(err).Int64("trigger_id", *req.TriggerID).Msg("Failed to load trigger for upload request")
+		} else if trigger != nil && !trigger.Config.UploadEnabledValue() {
+			log.Debug().
+				Str("path", req.LocalPath).
+				Int64("trigger_id", *req.TriggerID).
+				Msg("Skipping upload request (trigger uploads disabled)")
+			return
+		}
+	}
+
 	// Find matching destination configuration
 	dest, err := m.db.GetDestinationByPath(req.LocalPath)
 	if err != nil {
@@ -675,6 +688,7 @@ func (m *Manager) handleRequest(req UploadRequest) {
 
 	upload := &database.Upload{
 		ScanID:         req.ScanID,
+		TriggerID:      req.TriggerID,
 		LocalPath:      req.LocalPath,
 		RemoteName:     firstRemote.RemoteName,
 		RemotePath:     remotePath,
@@ -774,6 +788,7 @@ func (m *Manager) processBatch() {
 		return
 	}
 
+	uploads = m.filterUploadsByTrigger(uploads)
 	if len(uploads) == 0 {
 		return
 	}
@@ -790,6 +805,7 @@ func (m *Manager) checkPendingUploads() {
 		return
 	}
 
+	uploads = m.filterUploadsByTrigger(uploads)
 	for _, upload := range uploads {
 		ready, waitState, waitChecks := m.checkUploadReadiness(upload)
 		if err := m.db.UpdateUploadWaitState(upload.ID, waitState, waitChecks); err != nil {
@@ -805,6 +821,51 @@ func (m *Manager) checkPendingUploads() {
 			log.Info().Int64("id", upload.ID).Str("path", upload.LocalPath).Msg("Upload ready for processing")
 		}
 	}
+}
+
+func (m *Manager) filterUploadsByTrigger(uploads []*database.Upload) []*database.Upload {
+	if len(uploads) == 0 {
+		return uploads
+	}
+
+	triggerCache := make(map[int64]*database.Trigger)
+	filtered := uploads[:0]
+
+	for _, upload := range uploads {
+		if upload.TriggerID == nil {
+			filtered = append(filtered, upload)
+			continue
+		}
+
+		triggerID := *upload.TriggerID
+		trigger, ok := triggerCache[triggerID]
+		if !ok {
+			loaded, err := m.db.GetTrigger(triggerID)
+			if err != nil {
+				log.Error().Err(err).Int64("trigger_id", triggerID).Msg("Failed to load trigger for upload")
+				filtered = append(filtered, upload)
+				continue
+			}
+			triggerCache[triggerID] = loaded
+			trigger = loaded
+		}
+
+		if trigger != nil && !trigger.Config.UploadEnabledValue() {
+			if err := m.db.DeleteUpload(upload.ID); err != nil {
+				log.Error().Err(err).Int64("upload_id", upload.ID).Msg("Failed to delete upload for disabled trigger")
+			} else {
+				log.Debug().
+					Int64("upload_id", upload.ID).
+					Int64("trigger_id", triggerID).
+					Msg("Removed upload (trigger uploads disabled)")
+			}
+			continue
+		}
+
+		filtered = append(filtered, upload)
+	}
+
+	return filtered
 }
 
 // checkUploadReadiness checks if upload meets mode conditions

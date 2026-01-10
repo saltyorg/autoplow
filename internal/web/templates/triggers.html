@@ -69,6 +69,27 @@
                     class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Wait time after file activity before triggering a scan (prevents duplicate scans)</p>
             </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Actions</label>
+                <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="scan_enabled" id="scan_enabled_inotify" checked
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="scan_enabled_inotify" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger scans</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" name="upload_enabled" id="upload_enabled_inotify" checked
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="upload_enabled_inotify" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger uploads</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" name="scan_existing_on_start" id="scan_existing_on_start"
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="scan_existing_on_start" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Scan existing files on start</label>
+                    </div>
+                </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Startup scans respect the scan/upload toggles above.</p>
+            </div>
         </div>
 
         <!-- Polling-specific fields -->
@@ -101,6 +122,21 @@
                         class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
                     <label for="queue_existing_on_start" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Queue existing files on start</label>
                     <p class="ml-2 text-xs text-gray-500 dark:text-gray-400">(Default: queue all files on first poll)</p>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Actions</label>
+                <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="scan_enabled" id="scan_enabled_polling" checked
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="scan_enabled_polling" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger scans</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" name="upload_enabled" id="upload_enabled_polling" checked
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="upload_enabled_polling" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger uploads</label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -327,6 +363,14 @@
         const minAgeInput = document.getElementById('minimum_age_seconds');
         const filterTimingToggle = document.getElementById('filter-timing-toggle');
 
+        function setSectionEnabled(section, enabled) {
+            if (!section) return;
+            const inputs = section.querySelectorAll('input, select, textarea');
+            inputs.forEach((input) => {
+                input.disabled = !enabled;
+            });
+        }
+
         function updateFields() {
             const isInotify = typeSelect.value === 'inotify';
             const isPolling = typeSelect.value === 'polling';
@@ -335,6 +379,8 @@
             // Show/hide type-specific fields
             inotifyFields.classList.toggle('hidden', !isInotify);
             pollingFields.classList.toggle('hidden', !isPolling);
+            setSectionEnabled(inotifyFields, isInotify);
+            setSectionEnabled(pollingFields, isPolling);
             authFields.classList.toggle('hidden', isLocalTrigger);
 
             // Hide path rewrites for local triggers
@@ -605,6 +651,27 @@
                     class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Wait time after file activity before triggering a scan (prevents duplicate scans)</p>
             </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Actions</label>
+                <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="scan_enabled" id="scan_enabled" {{if .Content.Trigger.Config.ScanEnabledValue}}checked{{end}}
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="scan_enabled" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger scans</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" name="upload_enabled" id="upload_enabled" {{if .Content.Trigger.Config.UploadEnabledValue}}checked{{end}}
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="upload_enabled" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger uploads</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" name="scan_existing_on_start" id="scan_existing_on_start" {{if .Content.Trigger.Config.ScanExistingOnStart}}checked{{end}}
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="scan_existing_on_start" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Scan existing files on start</label>
+                    </div>
+                </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Startup scans respect the scan/upload toggles above.</p>
+            </div>
         </div>
 
         <script>
@@ -660,6 +727,21 @@
                     <input type="checkbox" name="queue_existing_on_start" id="queue_existing_on_start" {{if .Content.Trigger.Config.QueueExistingOnStart}}checked{{end}}
                         class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
                     <label for="queue_existing_on_start" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Queue existing files on start</label>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Actions</label>
+                <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="scan_enabled" id="scan_enabled" {{if .Content.Trigger.Config.ScanEnabledValue}}checked{{end}}
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="scan_enabled" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger scans</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" name="upload_enabled" id="upload_enabled" {{if .Content.Trigger.Config.UploadEnabledValue}}checked{{end}}
+                            class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                        <label for="upload_enabled" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">Trigger uploads</label>
+                    </div>
                 </div>
             </div>
         </div>

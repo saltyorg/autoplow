@@ -386,6 +386,25 @@ func (w *Watcher) fireScan(path string, triggerID int64, priority int) {
 		uploadsEnabled = false
 	}
 
+	w.mu.RLock()
+	tw := w.triggers[triggerID]
+	w.mu.RUnlock()
+
+	if tw != nil {
+		scanningEnabled = scanningEnabled && tw.trigger.Config.ScanEnabledValue()
+		uploadsEnabled = uploadsEnabled && tw.trigger.Config.UploadEnabledValue()
+	}
+	if w.uploadManager == nil {
+		uploadsEnabled = false
+	}
+	if !scanningEnabled && !uploadsEnabled {
+		log.Debug().
+			Str("path", path).
+			Int64("trigger_id", triggerID).
+			Msg("Inotify trigger ignored (scan and upload disabled)")
+		return
+	}
+
 	// Get parent directory for the scan (more efficient for media servers)
 	scanPath := filepath.Dir(path)
 
@@ -460,15 +479,20 @@ func (w *Watcher) addWatchRecursive(rootPath string) []string {
 	return watched
 }
 
-// ScanExistingFiles walks all watched paths and queues existing files for upload.
+// ScanExistingFiles walks watched paths and queues existing files for scan/upload.
 // Called on startup to catch files created while the app was stopped.
-// Only queues uploads - does not trigger media server scans.
+// Respects per-trigger scan/upload settings.
 func (w *Watcher) ScanExistingFiles() {
+	scanningEnabled := true
+	if val, _ := w.db.GetSetting("scanning.enabled"); val == "false" {
+		scanningEnabled = false
+	}
 	uploadsEnabled := true
 	if val, _ := w.db.GetSetting("uploads.enabled"); val == "false" {
 		uploadsEnabled = false
 	}
-	if !uploadsEnabled || w.uploadManager == nil {
+
+	if !scanningEnabled && (!uploadsEnabled || w.uploadManager == nil) {
 		return
 	}
 
@@ -479,30 +503,69 @@ func (w *Watcher) ScanExistingFiles() {
 	}
 	w.mu.RUnlock()
 
-	var fileCount int
+	var uploadCount int
+	var scanCount int
 	for _, tw := range triggers {
+		if !tw.trigger.Config.ScanExistingOnStart {
+			continue
+		}
+		triggerScanEnabled := scanningEnabled && tw.trigger.Config.ScanEnabledValue()
+		triggerUploadEnabled := uploadsEnabled && tw.trigger.Config.UploadEnabledValue()
+		if w.uploadManager == nil {
+			triggerUploadEnabled = false
+		}
+		if !triggerScanEnabled && !triggerUploadEnabled {
+			continue
+		}
+
 		triggerID := tw.trigger.ID
+		filesByDir := make(map[string][]string)
+		uploadRequests := make([]uploader.UploadRequest, 0)
 		for _, watchPath := range tw.paths {
 			if err := filepath.WalkDir(watchPath, func(path string, d fs.DirEntry, err error) error {
 				if err != nil || d.IsDir() {
 					return nil
 				}
-				w.uploadManager.QueueUpload(uploader.UploadRequest{
-					LocalPath: path,
-					ScanID:    nil,
-					Priority:  1000, // Lower priority than real-time events
-					TriggerID: &triggerID,
-				})
-				fileCount++
+				if triggerScanEnabled {
+					dir := filepath.Dir(path)
+					filesByDir[dir] = append(filesByDir[dir], path)
+					scanCount++
+				}
+				if triggerUploadEnabled {
+					uploadRequests = append(uploadRequests, uploader.UploadRequest{
+						LocalPath: path,
+						ScanID:    nil,
+						Priority:  1000, // Lower priority than real-time events
+						TriggerID: &triggerID,
+					})
+					uploadCount++
+				}
 				return nil
 			}); err != nil {
 				log.Warn().Err(err).Str("path", watchPath).Msg("Failed to walk directory for existing files")
 			}
 		}
+
+		if triggerScanEnabled {
+			for dir, files := range filesByDir {
+				w.processor.QueueScan(processor.ScanRequest{
+					Path:      dir,
+					TriggerID: &triggerID,
+					Priority:  1000, // Lower priority than real-time events
+					FilePaths: files,
+				})
+			}
+		}
+		if triggerUploadEnabled && len(uploadRequests) > 0 {
+			w.uploadManager.QueueUploads(uploadRequests)
+		}
 	}
 
-	if fileCount > 0 {
-		log.Info().Int("files", fileCount).Msg("Queued existing files for upload from startup scan")
+	if scanCount > 0 || uploadCount > 0 {
+		log.Info().
+			Int("scan_files", scanCount).
+			Int("upload_files", uploadCount).
+			Msg("Queued existing files from startup scan")
 	}
 }
 

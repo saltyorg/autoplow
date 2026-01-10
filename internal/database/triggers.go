@@ -64,6 +64,16 @@ type TriggerConfig struct {
 	// Default is true (queue all files found on the initial poll)
 	QueueExistingOnStart bool `json:"queue_existing_on_start,omitempty"`
 
+	// For inotify triggers: whether to scan existing files on startup
+	// Default is false
+	ScanExistingOnStart bool `json:"scan_existing_on_start,omitempty"`
+
+	// For inotify/polling triggers: whether to trigger scans (default true)
+	ScanEnabled *bool `json:"scan_enabled,omitempty"`
+
+	// For inotify/polling triggers: whether to trigger uploads (default true)
+	UploadEnabled *bool `json:"upload_enabled,omitempty"`
+
 	// Filesystem type: "local" for local storage with stability checking,
 	// "remote" for remote/network storage with dumb delay
 	FilesystemType FilesystemType `json:"filesystem_type,omitempty"`
@@ -297,6 +307,24 @@ func (c *TriggerConfig) CompileAll() error {
 		return err
 	}
 	return nil
+}
+
+// ScanEnabledValue returns true when scanning is enabled for this trigger.
+// Defaults to true when unset.
+func (c TriggerConfig) ScanEnabledValue() bool {
+	if c.ScanEnabled == nil {
+		return true
+	}
+	return *c.ScanEnabled
+}
+
+// UploadEnabledValue returns true when uploads are enabled for this trigger.
+// Defaults to true when unset.
+func (c TriggerConfig) UploadEnabledValue() bool {
+	if c.UploadEnabled == nil {
+		return true
+	}
+	return *c.UploadEnabled
 }
 
 // Trigger represents a webhook or inotify trigger

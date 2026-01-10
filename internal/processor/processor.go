@@ -318,16 +318,37 @@ func (p *Processor) processBatch() {
 	// Filter scans by their per-trigger minimum age
 	var readyScans []*database.Scan
 	globalMinAge := time.Duration(p.config.MinimumAgeSeconds) * time.Second
+	triggerCache := make(map[int64]*database.Trigger)
+	getTrigger := func(triggerID int64) *database.Trigger {
+		if trigger, ok := triggerCache[triggerID]; ok {
+			return trigger
+		}
+		trigger, err := p.db.GetTrigger(triggerID)
+		if err != nil {
+			log.Error().Err(err).Int64("trigger_id", triggerID).Msg("Failed to load trigger for scan")
+			triggerCache[triggerID] = nil
+			return nil
+		}
+		triggerCache[triggerID] = trigger
+		return trigger
+	}
 
 	for _, scan := range scans {
 		minAge := globalMinAge // default to global setting
 
 		// Check if trigger has a custom minimum age
 		if scan.TriggerID != nil {
-			if trigger, err := p.db.GetTrigger(*scan.TriggerID); err == nil && trigger != nil {
-				if trigger.Config.MinimumAgeSeconds > 0 {
-					minAge = time.Duration(trigger.Config.MinimumAgeSeconds) * time.Second
+			trigger := getTrigger(*scan.TriggerID)
+			if trigger != nil && !trigger.Config.ScanEnabledValue() {
+				if err := p.db.UpdateScanStatus(scan.ID, database.ScanStatusCompleted); err != nil {
+					log.Error().Err(err).Int64("scan_id", scan.ID).Msg("Failed to mark scan as completed")
+				} else {
+					log.Debug().Int64("scan_id", scan.ID).Msg("Skipped scan (trigger scanning disabled)")
 				}
+				continue
+			}
+			if trigger != nil && trigger.Config.MinimumAgeSeconds > 0 {
+				minAge = time.Duration(trigger.Config.MinimumAgeSeconds) * time.Second
 			}
 		}
 
@@ -389,7 +410,7 @@ func (p *Processor) processBatch() {
 			// Get trigger config for filesystem type and stability settings
 			var triggerConfig *database.TriggerConfig
 			if scan.TriggerID != nil {
-				if trigger, err := p.db.GetTrigger(*scan.TriggerID); err == nil && trigger != nil {
+				if trigger := getTrigger(*scan.TriggerID); trigger != nil {
 					triggerConfig = &trigger.Config
 				}
 			}
