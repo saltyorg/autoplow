@@ -265,17 +265,29 @@ func (m *Manager) Stop() {
 
 	// Cancel any active batch job and reset uploads to queued
 	m.activeBatchMu.Lock()
+	var batch *activeBatch
 	if m.activeBatch != nil {
-		batch := m.activeBatch
+		batch = m.activeBatch
 		log.Info().Int64("batch_job_id", batch.batchJobID).Msg("Cancelling active batch job")
+	}
 
-		// Stop the rclone batch job
+	rcloneRunning := m.rcloneMgr != nil && m.rcloneMgr.IsRunning()
+	if rcloneRunning {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if err := m.rcloneMgr.Client().StopJob(ctx, batch.batchJobID); err != nil {
-			log.Warn().Err(err).Int64("job_id", batch.batchJobID).Msg("Failed to stop batch job")
-		}
+		err := m.rcloneMgr.Client().StopGroup(ctx, "autoplow")
 		cancel()
+		if err != nil {
+			if batch != nil {
+				log.Warn().Err(err).Str("group", "autoplow").Msg("Failed to stop rclone job group")
+			} else {
+				log.Debug().Err(err).Str("group", "autoplow").Msg("Failed to stop rclone job group")
+			}
+		}
+	} else {
+		log.Debug().Msg("Rclone not running, skipping job stop")
+	}
 
+	if batch != nil {
 		// Reset in-flight uploads to queued so they'll be retried on restart
 		for _, upload := range batch.uploads {
 			if !batch.completedIDs[upload.ID] {

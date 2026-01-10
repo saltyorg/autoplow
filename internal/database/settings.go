@@ -124,7 +124,6 @@ var DefaultSettings = map[string]any{
 	"throttle.idle_speed":                    "0",
 	"throttle.rules":                         []map[string]string{},
 	"schedule.enabled":                       false,
-	"schedule.windows":                       []map[string]string{},
 	"rclone.managed":                         true, // true = managed (Autoplow runs rclone), false = unmanaged (external rclone)
 	"rclone.binary_path":                     "/usr/bin/rclone",
 	"rclone.config_path":                     "",

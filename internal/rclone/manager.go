@@ -264,6 +264,8 @@ func (m *Manager) Start() error {
 	}
 
 	m.cmd = exec.Command(m.config.BinaryPath, args...)
+	// Keep rclone in its own process group so SIGINT doesn't kill it before we stop jobs.
+	setProcessGroup(m.cmd)
 
 	// Redirect stdout/stderr to logs
 	m.cmd.Stdout = &rcloneLogWriter{level: "info"}
@@ -406,6 +408,13 @@ func (m *Manager) IsRunning() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.running
+}
+
+// Managed reports whether Autoplow owns the rclone process.
+func (m *Manager) Managed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.config.Managed
 }
 
 // Status returns the current status

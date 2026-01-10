@@ -423,6 +423,14 @@ func (c *Client) StopJob(ctx context.Context, jobID int64) error {
 	return c.call(ctx, "job/stop", params, nil)
 }
 
+// StopGroup stops all running jobs in a specific group.
+func (c *Client) StopGroup(ctx context.Context, group string) error {
+	params := map[string]any{
+		"group": group,
+	}
+	return c.call(ctx, "job/stopgroup", params, nil)
+}
+
 // Mkdir creates a directory on the remote.
 // fs should be the full remote path like "remote:path/to/directory"
 func (c *Client) Mkdir(ctx context.Context, fs string) error {
