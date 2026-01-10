@@ -39,7 +39,7 @@ func NewPlexTracker(db *database.Manager) *PlexTracker {
 type scanKey struct {
 	destinationID int64
 	targetID      int64
-	scanPath      string
+	scanPath      string // Mapped path used by the target for scan tracking
 }
 
 type scanRecord struct {
@@ -54,8 +54,8 @@ func (t *PlexTracker) TrackScan(scan *database.Scan, infos []targets.ScanComplet
 		return
 	}
 
-	scanPath := filepath.Clean(scan.Path)
-	if scanPath == "" || scanPath == "." {
+	localScanPath := filepath.Clean(scan.Path)
+	if localScanPath == "" || localScanPath == "." {
 		return
 	}
 
@@ -73,7 +73,7 @@ func (t *PlexTracker) TrackScan(scan *database.Scan, infos []targets.ScanComplet
 		return len(destinations[i].LocalPath) > len(destinations[j].LocalPath)
 	})
 
-	dest := matchDestination(destinations, scanPath)
+	dest := matchDestination(destinations, localScanPath)
 	if dest == nil || !dest.UsePlexTracking || len(dest.PlexTargets) == 0 {
 		return
 	}
@@ -88,11 +88,15 @@ func (t *PlexTracker) TrackScan(scan *database.Scan, infos []targets.ScanComplet
 		if !ok {
 			continue
 		}
-		t.trackScan(dest.ID, plexTarget, scanPath, info)
+		mappedScanPath := filepath.Clean(info.ScanPath)
+		if mappedScanPath == "" || mappedScanPath == "." {
+			mappedScanPath = localScanPath
+		}
+		t.trackScan(dest.ID, plexTarget, mappedScanPath, info)
 	}
 }
 
-func (t *PlexTracker) trackScan(destinationID int64, plexTarget *database.DestinationPlexTarget, localScanPath string, info targets.ScanCompletionInfo) {
+func (t *PlexTracker) trackScan(destinationID int64, plexTarget *database.DestinationPlexTarget, mappedScanPath string, info targets.ScanCompletionInfo) {
 	if plexTarget == nil || info.Target == nil {
 		return
 	}
@@ -105,7 +109,7 @@ func (t *PlexTracker) trackScan(destinationID int64, plexTarget *database.Destin
 	key := scanKey{
 		destinationID: destinationID,
 		targetID:      plexTarget.TargetID,
-		scanPath:      localScanPath,
+		scanPath:      mappedScanPath,
 	}
 
 	startWait := false
@@ -188,6 +192,11 @@ func (t *PlexTracker) CheckPath(destinationID int64, targetID int64, localPath s
 		return PlexPathStatus{}
 	}
 
+	mappedPath := t.mapPathForTarget(targetID, path)
+	if mappedPath == "" || mappedPath == "." {
+		mappedPath = path
+	}
+
 	status := PlexPathStatus{}
 
 	t.mu.RLock()
@@ -197,7 +206,7 @@ func (t *PlexTracker) CheckPath(destinationID int64, targetID int64, localPath s
 		if key.destinationID != destinationID || key.targetID != targetID {
 			continue
 		}
-		if !isUnderPath(path, key.scanPath) {
+		if !isUnderPath(mappedPath, key.scanPath) {
 			continue
 		}
 		status.Matched = true
@@ -210,6 +219,23 @@ func (t *PlexTracker) CheckPath(destinationID int64, targetID int64, localPath s
 	}
 
 	return status
+}
+
+func (t *PlexTracker) mapPathForTarget(targetID int64, localPath string) string {
+	if t == nil || targetID == 0 {
+		return localPath
+	}
+
+	target, err := t.db.GetTarget(targetID)
+	if err != nil {
+		log.Error().Err(err).Int64("target_id", targetID).Msg("Failed to load target for path mapping")
+		return localPath
+	}
+	if target == nil || len(target.Config.PathMappings) == 0 {
+		return localPath
+	}
+
+	return targets.ApplyPathMappings(localPath, target.Config.PathMappings)
 }
 
 func matchDestination(destinations []*database.Destination, path string) *database.Destination {
