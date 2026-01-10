@@ -81,7 +81,40 @@ func NewBroker() *Broker {
 // run handles client registration and event broadcasting
 func (b *Broker) run() {
 	heartbeatTicker := time.NewTicker(30 * time.Second)
+	flushTicker := time.NewTicker(250 * time.Millisecond)
 	defer heartbeatTicker.Stop()
+	defer flushTicker.Stop()
+
+	throttleIntervals := map[EventType]time.Duration{
+		EventUploadQueued:    time.Second,
+		EventUploadStarted:   time.Second,
+		EventUploadProgress:  time.Second,
+		EventUploadCompleted: time.Second,
+		EventUploadFailed:    time.Second,
+	}
+	lastSent := make(map[EventType]time.Time)
+	pending := make(map[EventType]Event)
+
+	sendEvent := func(event Event) {
+		data, err := json.Marshal(event)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to marshal SSE event")
+			return
+		}
+
+		message := formatSSEMessage(string(event.Type), data)
+
+		b.mu.RLock()
+		for _, client := range b.clients {
+			select {
+			case client.Messages <- message:
+			default:
+				// Client buffer full, skip this message
+				log.Warn().Str("client_id", client.ID).Msg("SSE client buffer full, dropping message")
+			}
+		}
+		b.mu.RUnlock()
+	}
 
 	for {
 		select {
@@ -112,24 +145,29 @@ func (b *Broker) run() {
 			log.Debug().Str("client_id", client.ID).Int("total_clients", len(b.clients)).Msg("SSE client disconnected")
 
 		case event := <-b.broadcast:
-			data, err := json.Marshal(event)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to marshal SSE event")
+			if interval, ok := throttleIntervals[event.Type]; ok {
+				now := time.Now()
+				if last, ok := lastSent[event.Type]; ok && now.Sub(last) < interval {
+					pending[event.Type] = event
+					continue
+				}
+				lastSent[event.Type] = now
+				sendEvent(event)
 				continue
 			}
+			sendEvent(event)
 
-			message := formatSSEMessage(string(event.Type), data)
-
-			b.mu.RLock()
-			for _, client := range b.clients {
-				select {
-				case client.Messages <- message:
-				default:
-					// Client buffer full, skip this message
-					log.Warn().Str("client_id", client.ID).Msg("SSE client buffer full, dropping message")
+		case <-flushTicker.C:
+			now := time.Now()
+			for eventType, event := range pending {
+				interval := throttleIntervals[eventType]
+				last := lastSent[eventType]
+				if last.IsZero() || now.Sub(last) >= interval {
+					lastSent[eventType] = now
+					delete(pending, eventType)
+					sendEvent(event)
 				}
 			}
-			b.mu.RUnlock()
 
 		case <-heartbeatTicker.C:
 			// Send heartbeat to all clients
