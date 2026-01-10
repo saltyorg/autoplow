@@ -296,18 +296,23 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 			w.mu.Lock()
+			var matchedTriggers []*database.Trigger
 			// Find which trigger this directory belongs to and add watches
 			for _, tw := range w.triggers {
 				for _, watchPath := range tw.paths {
 					if isUnderPath(event.Name, watchPath) {
 						watched := w.addWatchRecursive(event.Name)
 						tw.paths = append(tw.paths, watched...)
+						matchedTriggers = append(matchedTriggers, tw.trigger)
 						log.Debug().Str("path", event.Name).Int("directories", len(watched)).Str("trigger", tw.trigger.Name).Msg("Added watch for new directory")
 						break
 					}
 				}
 			}
 			w.mu.Unlock()
+			for _, trigger := range matchedTriggers {
+				w.queueExistingFilesForPath(trigger, event.Name)
+			}
 			return // Don't trigger scans for directory creation
 		}
 	}
@@ -566,6 +571,82 @@ func (w *Watcher) ScanExistingFiles() {
 			Int("scan_files", scanCount).
 			Int("upload_files", uploadCount).
 			Msg("Queued existing files from startup scan")
+	}
+}
+
+// queueExistingFilesForPath queues scans/uploads for existing files under a new directory.
+func (w *Watcher) queueExistingFilesForPath(trigger *database.Trigger, rootPath string) {
+	if trigger == nil {
+		return
+	}
+
+	scanningEnabled := true
+	if val, _ := w.db.GetSetting("scanning.enabled"); val == "false" {
+		scanningEnabled = false
+	}
+	uploadsEnabled := true
+	if val, _ := w.db.GetSetting("uploads.enabled"); val == "false" {
+		uploadsEnabled = false
+	}
+
+	scanningEnabled = scanningEnabled && trigger.Config.ScanEnabledValue()
+	uploadsEnabled = uploadsEnabled && trigger.Config.UploadEnabledValue()
+	if w.uploadManager == nil {
+		uploadsEnabled = false
+	}
+	if !scanningEnabled && !uploadsEnabled {
+		return
+	}
+
+	triggerID := trigger.ID
+	filesByDir := make(map[string][]string)
+	uploadRequests := make([]uploader.UploadRequest, 0)
+	var scanCount int
+	var uploadCount int
+
+	if err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if scanningEnabled {
+			dir := filepath.Dir(path)
+			filesByDir[dir] = append(filesByDir[dir], path)
+			scanCount++
+		}
+		if uploadsEnabled {
+			uploadRequests = append(uploadRequests, uploader.UploadRequest{
+				LocalPath: path,
+				ScanID:    nil,
+				Priority:  trigger.Priority,
+				TriggerID: &triggerID,
+			})
+			uploadCount++
+		}
+		return nil
+	}); err != nil {
+		log.Warn().Err(err).Str("path", rootPath).Msg("Failed to walk new directory for existing files")
+	}
+
+	if scanningEnabled {
+		for dir, files := range filesByDir {
+			w.processor.QueueScan(processor.ScanRequest{
+				Path:      dir,
+				TriggerID: &triggerID,
+				Priority:  trigger.Priority,
+				FilePaths: files,
+			})
+		}
+	}
+	if uploadsEnabled && len(uploadRequests) > 0 {
+		w.uploadManager.QueueUploads(uploadRequests)
+	}
+
+	if scanCount > 0 || uploadCount > 0 {
+		log.Info().
+			Str("path", rootPath).
+			Int("scan_files", scanCount).
+			Int("upload_files", uploadCount).
+			Msg("Queued existing files for new directory")
 	}
 }
 
