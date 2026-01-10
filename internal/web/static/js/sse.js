@@ -41,36 +41,22 @@
 
     // Debounce refresh requests to avoid hammering the server
     const pendingRefreshes = new Map();
-    const lastRefreshAt = new Map();
     const debounceMs = 100;
-    const selectorMinIntervalMs = {
-        '#upload-queue': 1000,
-        '#upload-queue-pagination': 1000,
-        '#upload-queue-stats': 1000,
-        '#recent-uploads': 1000,
-        '#dashboard-upload-stats': 1000,
-        '#active-transfers': 500
-    };
 
     function scheduleRefresh(selector) {
         if (pendingRefreshes.has(selector)) {
             return; // Already scheduled
         }
-        const minInterval = selectorMinIntervalMs[selector] || debounceMs;
-        const last = lastRefreshAt.get(selector) || 0;
-        const elapsed = Date.now() - last;
-        const delay = Math.max(debounceMs, minInterval - elapsed);
         pendingRefreshes.set(selector, setTimeout(function() {
             pendingRefreshes.delete(selector);
             const nodes = document.querySelectorAll(selector);
             if (!nodes.length) {
                 return;
             }
-            lastRefreshAt.set(selector, Date.now());
             nodes.forEach(function(el) {
                 htmx.trigger(el, 'sse-refresh');
             });
-        }, delay));
+        }, debounceMs));
     }
 
     function handleEvent(event) {
