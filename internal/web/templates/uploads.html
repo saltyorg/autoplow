@@ -1764,7 +1764,10 @@ document.addEventListener('DOMContentLoaded', () => {
     </td>
     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
         {{if eq .Status "failed"}}
-        <button hx-post="/uploads/{{.ID}}/retry" hx-target="#upload-{{.ID}}" hx-swap="outerHTML" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Retry</button>
+        <div class="flex justify-end gap-2">
+            <button type="button" hx-post="/uploads/{{.ID}}/retry" hx-swap="none" class="btn-primary text-sm">Retry</button>
+            <button type="button" hx-post="/uploads/{{.ID}}/cancel" hx-target="#upload-{{.ID}}" hx-swap="outerHTML" hx-confirm="Clear this failed upload entry?" class="btn-danger text-sm">Clear</button>
+        </div>
         {{end}}
     </td>
 </tr>
