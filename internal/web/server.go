@@ -270,6 +270,9 @@ func (s *Server) StartUploadSubsystem() error {
 		}
 	}
 	s.uploadMgr.Start()
+	s.uploadMgr.RequeuePlexWaitingScans(func(path string) {
+		s.processor.QueueScan(processor.ScanRequest{Path: path})
+	})
 
 	// Create throttle manager if not exists
 	if s.throttleMgr == nil {

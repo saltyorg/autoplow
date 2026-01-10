@@ -308,6 +308,60 @@ func (m *Manager) SetPlexScanTracker(tracker *scantracker.PlexTracker) {
 	m.plexTracker = tracker
 }
 
+// RequeuePlexWaitingScans queues scans for uploads waiting on Plex scan tracking.
+// This is intended to be called on startup to rebuild scan tracking state.
+func (m *Manager) RequeuePlexWaitingScans(queueScan func(path string)) {
+	if m == nil || queueScan == nil {
+		return
+	}
+	if m.plexTracker == nil {
+		log.Debug().Msg("Plex scan tracker not configured, skipping scan requeue")
+		return
+	}
+
+	scanningEnabled := true
+	if val, _ := m.db.GetSetting("scanning.enabled"); val == "false" {
+		scanningEnabled = false
+	}
+	if !scanningEnabled {
+		log.Debug().Msg("Scanning disabled, skipping scan requeue")
+		return
+	}
+
+	uploads, err := m.db.ListPendingUploads()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list pending uploads for Plex requeue")
+		return
+	}
+
+	seen := make(map[string]struct{})
+	for _, upload := range uploads {
+		if upload.WaitState != "waiting_plex" {
+			continue
+		}
+		path := filepath.Clean(upload.LocalPath)
+		if path == "" || path == "." {
+			continue
+		}
+		scanPath := path
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			scanPath = filepath.Dir(path)
+		}
+		if scanPath == "" || scanPath == "." {
+			continue
+		}
+		if _, ok := seen[scanPath]; ok {
+			continue
+		}
+		seen[scanPath] = struct{}{}
+		queueScan(scanPath)
+	}
+
+	if len(seen) > 0 {
+		log.Info().Int("paths", len(seen)).Msg("Requeued scans for Plex-tracked uploads")
+	}
+}
+
 // SetSSEBroker sets the SSE broker for broadcasting events
 func (m *Manager) SetSSEBroker(broker *sse.Broker) {
 	m.sseBroker = broker
@@ -807,6 +861,9 @@ func (m *Manager) checkPendingUploads() {
 
 	uploads = m.filterUploadsByTrigger(uploads)
 	for _, upload := range uploads {
+		if !m.validateUploadPath(upload) {
+			continue
+		}
 		ready, waitState, waitChecks := m.checkUploadReadiness(upload)
 		if err := m.db.UpdateUploadWaitState(upload.ID, waitState, waitChecks); err != nil {
 			m.handleDatabaseError(err, "UpdateUploadWaitState")
@@ -866,6 +923,42 @@ func (m *Manager) filterUploadsByTrigger(uploads []*database.Upload) []*database
 	}
 
 	return filtered
+}
+
+func (m *Manager) validateUploadPath(upload *database.Upload) bool {
+	info, err := os.Stat(upload.LocalPath)
+	if err != nil {
+		msg := "local path missing"
+		if !os.IsNotExist(err) {
+			msg = fmt.Sprintf("failed to stat local path: %v", err)
+		}
+		m.failUpload(upload, msg, err)
+		return false
+	}
+	if info.IsDir() {
+		m.failUpload(upload, "local path is a directory", nil)
+		return false
+	}
+	return true
+}
+
+func (m *Manager) failUpload(upload *database.Upload, msg string, err error) {
+	event := log.Warn()
+	if err != nil {
+		event = event.Err(err)
+	}
+	event.Int64("id", upload.ID).
+		Str("path", upload.LocalPath).
+		Msg(msg)
+
+	if dbErr := m.db.UpdateUploadError(upload.ID, msg); dbErr != nil {
+		m.handleDatabaseError(dbErr, "UpdateUploadError")
+	}
+	m.broadcastEvent(sse.EventUploadFailed, map[string]any{
+		"upload_id": upload.ID,
+		"path":      upload.LocalPath,
+		"error":     msg,
+	})
 }
 
 // checkUploadReadiness checks if upload meets mode conditions
@@ -1070,6 +1163,9 @@ func (m *Manager) startBatch(uploads []*database.Upload) {
 	destCache := make(map[string]*database.Destination)
 
 	for _, upload := range uploads {
+		if !m.validateUploadPath(upload) {
+			continue
+		}
 		remote, ok := remoteMap[upload.RemoteName]
 		if !ok {
 			log.Warn().

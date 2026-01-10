@@ -21,6 +21,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/notification"
 	"github.com/saltyorg/autoplow/internal/plexautolang"
 	"github.com/saltyorg/autoplow/internal/polling"
+	"github.com/saltyorg/autoplow/internal/processor"
 	"github.com/saltyorg/autoplow/internal/rclone"
 	"github.com/saltyorg/autoplow/internal/targets"
 	"github.com/saltyorg/autoplow/internal/throttle"
@@ -197,13 +198,13 @@ func run(cmd *cobra.Command, args []string) error {
 	server.SetRcloneManager(rcloneMgr)
 
 	// Get processor and SSE broker
-	processor := server.Processor()
+	scanProcessor := server.Processor()
 	sseBroker := server.SSEBroker()
-	processor.SetSSEBroker(sseBroker)
+	scanProcessor.SetSSEBroker(sseBroker)
 
 	// Start processor (always needed for scanning)
-	processor.Start()
-	defer processor.Stop()
+	scanProcessor.Start()
+	defer scanProcessor.Stop()
 
 	// Start WebSocket watchers for all targets (always enabled for scan completion monitoring, etc.)
 	targetsMgr := server.TargetsManager()
@@ -223,6 +224,10 @@ func run(cmd *cobra.Command, args []string) error {
 		server.SetUploadManager(uploadMgr)
 		uploadMgr.SetSSEBroker(sseBroker)
 		uploadMgr.Start()
+		// Requeue scans for Plex-tracked uploads waiting on scan completion.
+		uploadMgr.RequeuePlexWaitingScans(func(path string) {
+			scanProcessor.QueueScan(processor.ScanRequest{Path: path})
+		})
 
 		// Start rclone manager if auto-start is enabled
 		if rcloneConfig.AutoStart {
@@ -270,7 +275,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize inotify watcher
-	inotifyWatcher, err := inotify.New(db, processor)
+	inotifyWatcher, err := inotify.New(db, scanProcessor)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to initialize inotify watcher")
 	} else {
@@ -291,7 +296,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize polling watcher
-	pollingWatcher := polling.New(db, processor)
+	pollingWatcher := polling.New(db, scanProcessor)
 	defer pollingWatcher.Stop()
 	server.SetPollingManager(pollingWatcher)
 	// Wire upload manager to polling for direct upload queuing (if uploads enabled)
