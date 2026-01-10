@@ -61,7 +61,7 @@ func (t *traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			Str("client", t.name).
 			Str("method", req.Method).
 			Str("url", urlStr).
-			Dur("duration", duration).
+			Str("duration", duration.String()).
 			Err(err).
 			Msg("HTTP request failed")
 		return nil, err
@@ -73,7 +73,7 @@ func (t *traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		Str("method", req.Method).
 		Str("url", urlStr).
 		Int("status", resp.StatusCode).
-		Dur("duration", duration).
+		Str("duration", duration.String()).
 		Int("body_length", len(bodyBytes))
 
 	if readErr != nil {

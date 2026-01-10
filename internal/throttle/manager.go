@@ -139,7 +139,7 @@ func (m *Manager) Start() {
 	})
 
 	log.Info().
-		Dur("poll_interval", m.config.PollInterval).
+		Str("poll_interval", m.config.PollInterval.String()).
 		Bool("enabled", m.config.Enabled).
 		Msg("Throttle manager started")
 }

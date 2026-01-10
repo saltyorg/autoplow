@@ -519,7 +519,7 @@ func (m *Manager) monitorProcess() {
 
 			// Don't restart if process exited very quickly (likely a startup failure like port in use)
 			if uptime < 5*time.Second {
-				log.Error().Dur("uptime", uptime).Msg("Rclone RCD exited too quickly, not restarting (check if another instance is running)")
+				log.Error().Str("uptime", uptime.String()).Msg("Rclone RCD exited too quickly, not restarting (check if another instance is running)")
 				return
 			}
 
@@ -528,7 +528,7 @@ func (m *Manager) monitorProcess() {
 				m.restartCount++
 				log.Info().
 					Int("restart_count", m.restartCount).
-					Dur("delay", m.config.RestartDelay).
+					Str("delay", m.config.RestartDelay.String()).
 					Msg("Restarting rclone RCD")
 
 				time.Sleep(m.config.RestartDelay)

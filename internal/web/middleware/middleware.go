@@ -33,7 +33,7 @@ func Logger(next http.Handler) http.Handler {
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Int("status", ww.Status()).
-				Dur("duration", time.Since(start)).
+				Str("duration", time.Since(start).String()).
 				Str("remote", r.RemoteAddr).
 				Str("request_id", middleware.GetReqID(r.Context())).
 				Msg("Request")

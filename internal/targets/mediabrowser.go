@@ -591,7 +591,7 @@ func (s *MediaBrowserTarget) WatchSessions(ctx context.Context, callback func(se
 			log.Warn().
 				Err(err).
 				Str("target", s.Name()).
-				Dur("backoff", backoff).
+				Str("backoff", backoff.String()).
 				Msgf("%s WebSocket disconnected, reconnecting", s.config.ServerName)
 
 			// Wait before reconnecting with backoff

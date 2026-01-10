@@ -960,7 +960,7 @@ func (s *PlexTarget) WatchSessions(ctx context.Context, callback func(sessions [
 			log.Warn().
 				Err(err).
 				Str("target", s.Name()).
-				Dur("backoff", backoff).
+				Str("backoff", backoff.String()).
 				Msg("Plex WebSocket disconnected, reconnecting")
 
 			// Wait before reconnecting with backoff
@@ -1235,13 +1235,13 @@ func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path str
 					log.Debug().
 						Str("target", s.Name()).
 						Str("title", matchInfo.title).
-						Dur("idle", idle).
+						Str("idle", idle.String()).
 						Msg("Plex scan complete (all activities finished)")
 				} else {
 					log.Debug().
 						Str("target", s.Name()).
 						Str("title", matchInfo.title).
-						Dur("idle", idle).
+						Str("idle", idle.String()).
 						Msg("Plex scan complete (idle timeout, no activities detected)")
 				}
 				return nil
