@@ -91,7 +91,8 @@ type Manager struct {
 	sizeCheckInProgress map[int64]bool
 
 	// Plex scan tracking for upload gating
-	plexTracker *scantracker.PlexTracker
+	plexTracker    *scantracker.PlexTracker
+	pendingCheckMu sync.Mutex
 
 	// Shutdown handling
 	ctx     context.Context
@@ -322,7 +323,28 @@ func (m *Manager) SetSkipChecker(checker UploadSkipChecker) {
 
 // SetPlexScanTracker sets the Plex scan tracker for upload gating.
 func (m *Manager) SetPlexScanTracker(tracker *scantracker.PlexTracker) {
+	if m == nil {
+		return
+	}
 	m.plexTracker = tracker
+	if tracker == nil {
+		return
+	}
+	tracker.SetOnScanCompletion(func(info scantracker.PlexScanCompletion) {
+		m.handlePlexScanCompletion(info)
+	})
+}
+
+func (m *Manager) handlePlexScanCompletion(info scantracker.PlexScanCompletion) {
+	if m == nil {
+		return
+	}
+	log.Debug().
+		Int64("destination_id", info.DestinationID).
+		Int64("target_id", info.TargetID).
+		Str("path", info.ScanPath).
+		Msg("Plex scan completion recorded, checking pending uploads")
+	m.checkPendingUploads()
 }
 
 // RequeuePlexWaitingScans queues scans for uploads waiting on Plex scan tracking.
@@ -874,6 +896,12 @@ func (m *Manager) processBatch() {
 
 // checkPendingUploads checks pending uploads for readiness
 func (m *Manager) checkPendingUploads() {
+	if m == nil {
+		return
+	}
+	m.pendingCheckMu.Lock()
+	defer m.pendingCheckMu.Unlock()
+
 	uploads, err := m.db.ListPendingUploads()
 	if err != nil {
 		m.handleDatabaseError(err, "ListPendingUploads")

@@ -21,11 +21,23 @@ type PlexPathStatus struct {
 	Ready   bool
 }
 
+// PlexScanCompletion captures a scan completion signal for Plex tracking.
+type PlexScanCompletion struct {
+	DestinationID int64
+	TargetID      int64
+	ScanPath      string
+}
+
+// PlexScanCompletionHandler handles Plex scan completion events.
+type PlexScanCompletionHandler func(PlexScanCompletion)
+
 // PlexTracker tracks Plex scan completion for upload gating.
 type PlexTracker struct {
 	db      *database.Manager
 	mu      sync.RWMutex
 	records map[scanKey]*scanRecord
+
+	onScanCompletion PlexScanCompletionHandler
 }
 
 // NewPlexTracker creates a new Plex scan tracker.
@@ -34,6 +46,16 @@ func NewPlexTracker(db *database.Manager) *PlexTracker {
 		db:      db,
 		records: make(map[scanKey]*scanRecord),
 	}
+}
+
+// SetOnScanCompletion registers a callback for scan completion.
+func (t *PlexTracker) SetOnScanCompletion(handler PlexScanCompletionHandler) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.onScanCompletion = handler
+	t.mu.Unlock()
 }
 
 type scanKey struct {
@@ -172,15 +194,29 @@ func (t *PlexTracker) waitForCompletion(key scanKey, target targets.Target, scan
 }
 
 func (t *PlexTracker) finishRecord(key scanKey) {
+	var handler PlexScanCompletionHandler
+	var info PlexScanCompletion
+
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	record := t.records[key]
 	if record == nil {
+		t.mu.Unlock()
 		return
 	}
 	record.pending = false
 	record.waiting = false
 	record.completedAt = time.Now()
+	handler = t.onScanCompletion
+	info = PlexScanCompletion{
+		DestinationID: key.destinationID,
+		TargetID:      key.targetID,
+		ScanPath:      key.scanPath,
+	}
+	t.mu.Unlock()
+
+	if handler != nil {
+		handler(info)
+	}
 }
 
 // CheckPath returns the readiness status for a path on a destination/target pair.
