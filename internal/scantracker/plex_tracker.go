@@ -96,43 +96,34 @@ func (t *PlexTracker) TrackScan(scan *database.Scan, infos []targets.ScanComplet
 	})
 
 	dest := matchDestination(destinations, localScanPath)
-	if dest == nil || !dest.UsePlexTracking || len(dest.PlexTargets) == 0 {
+	if dest == nil {
 		return
 	}
 
-	infoByTarget := make(map[int64]targets.ScanCompletionInfo, len(infos))
 	for _, info := range infos {
-		infoByTarget[info.TargetID] = info
-	}
-
-	for _, plexTarget := range dest.PlexTargets {
-		info, ok := infoByTarget[plexTarget.TargetID]
-		if !ok {
-			continue
-		}
 		mappedScanPath := filepath.Clean(info.ScanPath)
 		if mappedScanPath == "" || mappedScanPath == "." {
 			mappedScanPath = localScanPath
 		}
-		t.trackScan(dest.ID, plexTarget, mappedScanPath, info)
+		t.trackScan(dest.ID, info.TargetID, mappedScanPath, info)
 	}
 }
 
-func (t *PlexTracker) trackScan(destinationID int64, plexTarget *database.DestinationPlexTarget, mappedScanPath string, info targets.ScanCompletionInfo) {
-	if plexTarget == nil || info.Target == nil {
+func (t *PlexTracker) trackScan(destinationID int64, targetID int64, mappedScanPath string, info targets.ScanCompletionInfo) {
+	if info.Target == nil {
 		return
 	}
 
 	const minIdleThreshold = 60 * time.Second
 
-	idleThreshold := time.Duration(plexTarget.IdleThresholdSeconds) * time.Second
+	idleThreshold := time.Duration(info.IdleThresholdSeconds) * time.Second
 	if idleThreshold < minIdleThreshold {
 		idleThreshold = minIdleThreshold
 	}
 
 	key := scanKey{
 		destinationID: destinationID,
-		targetID:      plexTarget.TargetID,
+		targetID:      targetID,
 		scanPath:      mappedScanPath,
 	}
 

@@ -72,8 +72,14 @@ type TargetConfig struct {
 	PlexSections []int `json:"plex_sections,omitempty"`
 	// AnalyzeMedia triggers Plex to analyze media files after scanning (Plex only)
 	AnalyzeMedia bool `json:"analyze_media,omitempty"`
-	// PlexMaxConcurrentScans limits concurrent scan requests for Plex (0 = unlimited)
+	// PlexScanTrackingEnabled enables Plex scan tracking for upload gating.
+	// Defaults to true when unset.
+	PlexScanTrackingEnabled *bool `json:"plex_scan_tracking_enabled,omitempty"`
+	// PlexMaxConcurrentScans limits concurrent scan requests for Plex (1-3 required)
 	PlexMaxConcurrentScans int `json:"plex_max_concurrent_scans,omitempty"`
+	// PlexIdleThresholdSeconds controls the idle wait before marking a Plex scan complete.
+	// Defaults to 60 seconds with a minimum of 60.
+	PlexIdleThresholdSeconds int `json:"plex_idle_threshold_seconds,omitempty"`
 
 	// Emby/Jellyfin specific
 	LibraryIDs []string `json:"library_ids,omitempty"`
@@ -187,6 +193,26 @@ func (c *TargetConfig) CompileAdvancedFilters() error {
 		return c.AdvancedFilters.Compile()
 	}
 	return nil
+}
+
+// PlexScanTrackingEnabledValue returns true when Plex scan tracking is enabled.
+// Defaults to true when unset.
+func (c TargetConfig) PlexScanTrackingEnabledValue() bool {
+	if c.PlexScanTrackingEnabled == nil {
+		return true
+	}
+	return *c.PlexScanTrackingEnabled
+}
+
+// PlexIdleThresholdSecondsValue returns the configured idle threshold with a minimum of 60 seconds.
+func (c TargetConfig) PlexIdleThresholdSecondsValue() int {
+	if c.PlexIdleThresholdSeconds <= 0 {
+		return 60
+	}
+	if c.PlexIdleThresholdSeconds < 60 {
+		return 60
+	}
+	return c.PlexIdleThresholdSeconds
 }
 
 // ShouldExcludeTrigger checks if a trigger should be excluded from scanning on this target

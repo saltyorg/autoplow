@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -239,7 +240,7 @@ func (m *Manager) resumeOrphanedUploads(uploads []*database.Upload) {
 
 		if m.rcloneMgr.IsRunning() {
 			log.Info().Int("count", len(uploads)).Msg("Rclone ready, resuming orphaned uploads")
-			m.startBatch(uploads)
+			m.startBatch(uploads, nil)
 			return
 		}
 	}
@@ -775,9 +776,23 @@ func (m *Manager) handleRequest(req UploadRequest) {
 	}
 
 	// Determine initial status based on readiness checks
+	trackingTargets, err := m.trackingEnabledPlexTargets()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load Plex tracking targets")
+		return
+	}
+	scanningEnabled := m.scanningEnabled()
+	var trigger *database.Trigger
+	if req.TriggerID != nil {
+		trigger, err = m.db.GetTrigger(*req.TriggerID)
+		if err != nil {
+			log.Error().Err(err).Int64("trigger_id", *req.TriggerID).Msg("Failed to load trigger for upload readiness")
+		}
+	}
 	ready, waitState, waitChecks := m.evaluateUploadReadiness(dest, &database.Upload{
 		LocalPath: req.LocalPath,
-	})
+		TriggerID: req.TriggerID,
+	}, trackingTargets, trigger, scanningEnabled)
 	status := database.UploadStatusPending
 	if ready {
 		status = database.UploadStatusQueued
@@ -885,13 +900,13 @@ func (m *Manager) processBatch() {
 		return
 	}
 
-	uploads = m.filterUploadsByTrigger(uploads)
+	uploads, triggerCache := m.filterUploadsByTrigger(uploads)
 	if len(uploads) == 0 {
 		return
 	}
 
 	// Start a new batch with all queued uploads
-	m.startBatch(uploads)
+	m.startBatch(uploads, triggerCache)
 }
 
 // checkPendingUploads checks pending uploads for readiness
@@ -902,18 +917,29 @@ func (m *Manager) checkPendingUploads() {
 	m.pendingCheckMu.Lock()
 	defer m.pendingCheckMu.Unlock()
 
+	trackingTargets, err := m.trackingEnabledPlexTargets()
+	if err != nil {
+		m.handleDatabaseError(err, "ListTargets (Plex tracking)")
+		return
+	}
+	scanningEnabled := m.scanningEnabled()
+
 	uploads, err := m.db.ListPendingUploads()
 	if err != nil {
 		m.handleDatabaseError(err, "ListPendingUploads")
 		return
 	}
 
-	uploads = m.filterUploadsByTrigger(uploads)
+	uploads, triggerCache := m.filterUploadsByTrigger(uploads)
 	for _, upload := range uploads {
 		if !m.validateUploadPath(upload) {
 			continue
 		}
-		ready, waitState, waitChecks := m.checkUploadReadiness(upload)
+		var trigger *database.Trigger
+		if upload.TriggerID != nil {
+			trigger = triggerCache[*upload.TriggerID]
+		}
+		ready, waitState, waitChecks := m.checkUploadReadiness(upload, trackingTargets, trigger, scanningEnabled)
 		if err := m.db.UpdateUploadWaitState(upload.ID, waitState, waitChecks); err != nil {
 			m.handleDatabaseError(err, "UpdateUploadWaitState")
 			return
@@ -929,9 +955,9 @@ func (m *Manager) checkPendingUploads() {
 	}
 }
 
-func (m *Manager) filterUploadsByTrigger(uploads []*database.Upload) []*database.Upload {
+func (m *Manager) filterUploadsByTrigger(uploads []*database.Upload) ([]*database.Upload, map[int64]*database.Trigger) {
 	if len(uploads) == 0 {
-		return uploads
+		return uploads, map[int64]*database.Trigger{}
 	}
 
 	triggerCache := make(map[int64]*database.Trigger)
@@ -949,6 +975,7 @@ func (m *Manager) filterUploadsByTrigger(uploads []*database.Upload) []*database
 			loaded, err := m.db.GetTrigger(triggerID)
 			if err != nil {
 				log.Error().Err(err).Int64("trigger_id", triggerID).Msg("Failed to load trigger for upload")
+				triggerCache[triggerID] = nil
 				filtered = append(filtered, upload)
 				continue
 			}
@@ -971,7 +998,7 @@ func (m *Manager) filterUploadsByTrigger(uploads []*database.Upload) []*database
 		filtered = append(filtered, upload)
 	}
 
-	return filtered
+	return filtered, triggerCache
 }
 
 func (m *Manager) validateUploadPath(upload *database.Upload) bool {
@@ -1203,7 +1230,7 @@ func (m *Manager) buildRemoteFs(remote *database.Remote, remotePath string) stri
 }
 
 // checkUploadReadiness checks if upload meets mode conditions
-func (m *Manager) checkUploadReadiness(upload *database.Upload) (bool, string, string) {
+func (m *Manager) checkUploadReadiness(upload *database.Upload, trackingTargets []*database.Target, trigger *database.Trigger, scanningEnabled bool) (bool, string, string) {
 	// Find the destination configuration
 	dest, err := m.db.GetDestinationByPath(upload.LocalPath)
 	if err != nil || dest == nil {
@@ -1213,29 +1240,40 @@ func (m *Manager) checkUploadReadiness(upload *database.Upload) (bool, string, s
 		return false, "waiting_config", waitChecks
 	}
 
-	return m.evaluateUploadReadiness(dest, upload)
+	return m.evaluateUploadReadiness(dest, upload, trackingTargets, trigger, scanningEnabled)
 }
 
-func (m *Manager) evaluateUploadReadiness(dest *database.Destination, upload *database.Upload) (bool, string, string) {
+func (m *Manager) evaluateUploadReadiness(dest *database.Destination, upload *database.Upload, trackingTargets []*database.Target, trigger *database.Trigger, scanningEnabled bool) (bool, string, string) {
 	checks := map[string]any{
 		"destination_id": dest.ID,
 	}
 
-	if dest.UsePlexTracking {
+	triggerName := ""
+	triggerScanEnabled := true
+	if trigger != nil {
+		triggerName = trigger.Name
+		triggerScanEnabled = trigger.Config.ScanEnabledValue()
+	}
+
+	plexTargets := []*database.Target(nil)
+	if scanningEnabled && triggerScanEnabled {
+		plexTargets = m.eligibleTrackingTargets(upload.LocalPath, trackingTargets, triggerName)
+	}
+
+	if len(plexTargets) > 0 {
 		checks["plex_tracking_enabled"] = true
-		if len(dest.PlexTargets) == 0 || m.plexTracker == nil {
-			checks["plex_configured"] = len(dest.PlexTargets) > 0
+		if m.plexTracker == nil {
 			checks["plex_tracker_available"] = m.plexTracker != nil
 			return false, "waiting_config", m.marshalWaitChecks(checks)
 		}
 
-		targetChecks := make([]map[string]any, 0, len(dest.PlexTargets))
+		targetChecks := make([]map[string]any, 0, len(plexTargets))
 		allReady := true
-		for _, target := range dest.PlexTargets {
-			status := m.plexTracker.CheckPath(dest.ID, target.TargetID, upload.LocalPath)
+		for _, target := range plexTargets {
+			status := m.plexTracker.CheckPath(dest.ID, target.ID, upload.LocalPath)
 			entry := map[string]any{
-				"target_id":              target.TargetID,
-				"idle_threshold_seconds": target.IdleThresholdSeconds,
+				"target_id":              target.ID,
+				"idle_threshold_seconds": target.Config.PlexIdleThresholdSecondsValue(),
 				"ready":                  status.Ready,
 				"matched_scan":           status.Matched,
 			}
@@ -1362,8 +1400,51 @@ func (m *Manager) calculateFolderSize(root string) (int64, error) {
 	return total, nil
 }
 
+func (m *Manager) scanningEnabled() bool {
+	if m == nil || m.db == nil {
+		return false
+	}
+	val, err := m.db.GetSetting("scanning.enabled")
+	if err != nil {
+		return true
+	}
+	return val != "false"
+}
+
+func (m *Manager) trackingEnabledPlexTargets() ([]*database.Target, error) {
+	targets, err := m.db.ListTargets()
+	if err != nil {
+		return nil, err
+	}
+	trackingTargets := make([]*database.Target, 0, len(targets))
+	for _, target := range targets {
+		if target.Type == database.TargetTypePlex && target.Enabled && target.Config.PlexScanTrackingEnabledValue() {
+			trackingTargets = append(trackingTargets, target)
+		}
+	}
+	return trackingTargets, nil
+}
+
+func (m *Manager) eligibleTrackingTargets(uploadPath string, trackingTargets []*database.Target, triggerName string) []*database.Target {
+	if uploadPath == "" || len(trackingTargets) == 0 {
+		return nil
+	}
+
+	eligible := make([]*database.Target, 0, len(trackingTargets))
+	for _, target := range trackingTargets {
+		if triggerName != "" && target.Config.ShouldExcludeTrigger(triggerName) {
+			continue
+		}
+		if target.Config.ShouldExcludePath(uploadPath) {
+			continue
+		}
+		eligible = append(eligible, target)
+	}
+	return eligible
+}
+
 // startBatch starts a new batch of uploads
-func (m *Manager) startBatch(uploads []*database.Upload) {
+func (m *Manager) startBatch(uploads []*database.Upload, triggerCache map[int64]*database.Trigger) {
 	// Clear any stale stats from previous batch (important when rclone persists between app restarts)
 	cleanupCtx, cleanupCancel := context.WithTimeout(m.ctx, 5*time.Second)
 	if err := m.rcloneMgr.Client().StatsDelete(cleanupCtx, "autoplow"); err != nil {
@@ -1385,11 +1466,21 @@ func (m *Manager) startBatch(uploads []*database.Upload) {
 	}
 
 	readyUploads := uploads[:0]
+	trackingTargets, err := m.trackingEnabledPlexTargets()
+	if err != nil {
+		m.handleDatabaseError(err, "ListTargets (Plex tracking)")
+		return
+	}
+	scanningEnabled := m.scanningEnabled()
 	for _, upload := range uploads {
 		if !m.validateUploadPath(upload) {
 			continue
 		}
-		ready, waitState, waitChecks := m.checkUploadReadiness(upload)
+		var trigger *database.Trigger
+		if upload.TriggerID != nil {
+			trigger = triggerCache[*upload.TriggerID]
+		}
+		ready, waitState, waitChecks := m.checkUploadReadiness(upload, trackingTargets, trigger, scanningEnabled)
 		if !ready {
 			if waitState != upload.WaitState || waitChecks != upload.WaitChecks {
 				if err := m.db.UpdateUploadWaitState(upload.ID, waitState, waitChecks); err != nil {
@@ -1688,6 +1779,17 @@ func (m *Manager) cleanupEmptyDirectories(dirs []string) {
 		dirSet[dir] = true
 	}
 
+	destRoots := make([]string, 0, len(dests))
+	for _, dest := range dests {
+		if dest.LocalPath == "" {
+			continue
+		}
+		destRoots = append(destRoots, filepath.Clean(dest.LocalPath))
+	}
+	sort.Slice(destRoots, func(i, j int) bool {
+		return len(destRoots[i]) > len(destRoots[j])
+	})
+
 	// Sort directories by depth (deepest first) to clean bottom-up
 	var sortedDirs []string
 	for dir := range dirSet {
@@ -1703,23 +1805,54 @@ func (m *Manager) cleanupEmptyDirectories(dirs []string) {
 	}
 
 	for _, dir := range sortedDirs {
-		// Check if this directory is under a configured destination
-		isUnderDest := false
-		for _, dest := range dests {
-			if strings.HasPrefix(dir, dest.LocalPath) && dir != dest.LocalPath {
-				isUnderDest = true
-				break
-			}
-		}
-		if !isUnderDest {
+		current := filepath.Clean(dir)
+		if current == "" || current == "." {
 			continue
 		}
 
-		// Try to remove the directory (will fail if not empty)
-		if err := os.Remove(dir); err == nil {
-			log.Debug().Str("dir", dir).Msg("Removed empty directory")
+		destRoot := ""
+		for _, root := range destRoots {
+			if isUnderPath(current, root) {
+				destRoot = root
+				break
+			}
+		}
+		if destRoot == "" || current == destRoot {
+			continue
+		}
+
+		for current != destRoot {
+			err := os.Remove(current)
+			if err == nil {
+				log.Debug().Str("dir", current).Msg("Removed empty directory")
+			} else if !os.IsNotExist(err) {
+				break
+			}
+
+			parent := filepath.Dir(current)
+			if parent == current || parent == "." {
+				break
+			}
+			current = parent
 		}
 	}
+}
+
+func isUnderPath(childPath string, parentPath string) bool {
+	if parentPath == "" {
+		return false
+	}
+	rel, err := filepath.Rel(parentPath, childPath)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	if rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // progressMonitor monitors active batch for progress

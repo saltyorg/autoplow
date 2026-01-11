@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -254,6 +255,7 @@ func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 			Path string `json:"path"`
 		} `json:"series"`
 		EpisodeFile struct {
+			Path         string `json:"path"`
 			RelativePath string `json:"relativePath"`
 		} `json:"episodeFile"`
 		RenamedEpisodeFiles []struct {
@@ -271,22 +273,57 @@ func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 		return nil
 	}
 
+	seasonPathFromFile := func(filePath, relativePath string) string {
+		fullPath := filePath
+		if fullPath == "" && relativePath != "" {
+			fullPath = joinPath(payload.Series.Path, relativePath)
+		} else if fullPath != "" && !strings.HasPrefix(fullPath, "/") {
+			fullPath = joinPath(payload.Series.Path, fullPath)
+		}
+		if fullPath == "" {
+			return ""
+		}
+
+		dir := filepath.Dir(filepath.Clean(fullPath))
+		if dir == "." || dir == "/" {
+			return ""
+		}
+		return dir
+	}
+
 	switch payload.EventType {
 	case "Rename":
-		// Return both old and new paths for each renamed file
+		// Return season folder paths for renamed files when available.
+		seen := make(map[string]struct{})
 		var paths []string
 		for _, file := range payload.RenamedEpisodeFiles {
-			paths = append(paths, file.PreviousPath)
-			paths = append(paths, joinPath(payload.Series.Path, file.RelativePath))
+			if season := seasonPathFromFile(file.PreviousPath, ""); season != "" {
+				if _, ok := seen[season]; !ok {
+					seen[season] = struct{}{}
+					paths = append(paths, season)
+				}
+			}
+			if season := seasonPathFromFile("", file.RelativePath); season != "" {
+				if _, ok := seen[season]; !ok {
+					seen[season] = struct{}{}
+					paths = append(paths, season)
+				}
+			}
 		}
 		if len(paths) == 0 {
 			return []string{payload.Series.Path}
 		}
 		return paths
 	case "EpisodeFileDelete":
-		// Return series folder path for episode deletion (file no longer exists)
+		if season := seasonPathFromFile(payload.EpisodeFile.Path, payload.EpisodeFile.RelativePath); season != "" {
+			return []string{season}
+		}
+		// Fallback to series folder path for episode deletion (file no longer exists)
 		return []string{payload.Series.Path}
 	default:
+		if season := seasonPathFromFile(payload.EpisodeFile.Path, payload.EpisodeFile.RelativePath); season != "" {
+			return []string{season}
+		}
 		// For other events (Download, SeriesDelete, Test, etc.), return series path
 		return []string{payload.Series.Path}
 	}

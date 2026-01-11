@@ -819,7 +819,7 @@ func (db *db) ListDestinationsWithPlexTracking() ([]*Destination, error) {
 		SELECT id, local_path, min_file_age_minutes, min_folder_size_gb, use_plex_scan_tracking, transfer_type, enabled,
 			exclude_paths, exclude_extensions, included_triggers, advanced_filters, created_at
 		FROM destinations
-		WHERE enabled = true AND use_plex_scan_tracking = true
+		WHERE enabled = true
 		ORDER BY local_path ASC
 	`)
 	if err != nil {
@@ -839,14 +839,6 @@ func (db *db) ListDestinationsWithPlexTracking() ([]*Destination, error) {
 	}
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close plex tracking destinations rows: %w", err)
-	}
-
-	for _, dest := range destinations {
-		plexTargets, err := db.GetDestinationPlexTargets(dest.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get destination plex targets: %w", err)
-		}
-		dest.PlexTargets = plexTargets
 	}
 
 	return destinations, nil

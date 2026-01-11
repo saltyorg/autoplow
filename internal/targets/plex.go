@@ -493,9 +493,17 @@ func NewPlexTarget(dbTarget *database.Target) *PlexTarget {
 	}
 }
 
+const (
+	plexScanConcurrencyMin = 1
+	plexScanConcurrencyMax = 3
+)
+
 func newPlexScanLimiter(limit int) chan struct{} {
-	if limit <= 0 {
-		return nil
+	if limit < plexScanConcurrencyMin {
+		limit = plexScanConcurrencyMin
+	}
+	if limit > plexScanConcurrencyMax {
+		limit = plexScanConcurrencyMax
 	}
 	return make(chan struct{}, limit)
 }

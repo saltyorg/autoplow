@@ -100,11 +100,12 @@ type ScanResult struct {
 
 // ScanCompletionInfo holds information needed to track scan completion on a target
 type ScanCompletionInfo struct {
-	TargetID    int64
-	TargetName  string
-	ScanPath    string
-	TimeoutSecs int
-	Target      Target // The actual target instance for smart wait support
+	TargetID             int64
+	TargetName           string
+	ScanPath             string
+	TimeoutSecs          int
+	IdleThresholdSeconds int
+	Target               Target // The actual target instance for smart wait support
 }
 
 // ScanAllResult holds the results from ScanAll including completion info for scan tracking
@@ -315,16 +316,19 @@ func (m *Manager) scanTarget(ctx context.Context, dbTarget *database.Target, pat
 		Str("trigger", triggerName).
 		Msg("Target scan request")
 
+	trackingEnabled := dbTarget.Type == database.TargetTypePlex && dbTarget.Config.PlexScanTrackingEnabledValue()
 	prepared := false
-	if preparer, ok := target.(ScanCompletionPreparer); ok {
-		if err := preparer.PrepareScanCompletion(scanPath); err != nil {
-			log.Debug().
-				Str("target", dbTarget.Name).
-				Str("path", scanPath).
-				Err(err).
-				Msg("Failed to prepare scan completion tracking")
-		} else {
-			prepared = true
+	if trackingEnabled {
+		if preparer, ok := target.(ScanCompletionPreparer); ok {
+			if err := preparer.PrepareScanCompletion(scanPath); err != nil {
+				log.Debug().
+					Str("target", dbTarget.Name).
+					Str("path", scanPath).
+					Err(err).
+					Msg("Failed to prepare scan completion tracking")
+			} else {
+				prepared = true
+			}
 		}
 	}
 
@@ -347,13 +351,16 @@ func (m *Manager) scanTarget(ctx context.Context, dbTarget *database.Target, pat
 	}
 
 	// Collect completion info for Plex scan tracking (upload-side)
-	if _, hasSmartDetection := target.(ScanCompletionWaiter); hasSmartDetection {
-		return result, &ScanCompletionInfo{
-			TargetID:    dbTarget.ID,
-			TargetName:  dbTarget.Name,
-			ScanPath:    scanPath,
-			TimeoutSecs: 0,
-			Target:      target,
+	if trackingEnabled {
+		if _, hasSmartDetection := target.(ScanCompletionWaiter); hasSmartDetection {
+			return result, &ScanCompletionInfo{
+				TargetID:             dbTarget.ID,
+				TargetName:           dbTarget.Name,
+				ScanPath:             scanPath,
+				TimeoutSecs:          0,
+				IdleThresholdSeconds: dbTarget.Config.PlexIdleThresholdSecondsValue(),
+				Target:               target,
+			}
 		}
 	}
 

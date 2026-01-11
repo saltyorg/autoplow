@@ -93,6 +93,28 @@ func (h *Handlers) TargetCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if targetType == database.TargetTypePlex {
+		trackingEnabled := r.FormValue("plex_scan_tracking_enabled") == "on"
+		target.Config.PlexScanTrackingEnabled = &trackingEnabled
+
+		limit, err := strconv.Atoi(r.FormValue("plex_max_concurrent_scans"))
+		if err != nil {
+			limit = 1
+		}
+		if limit < 1 {
+			limit = 1
+		}
+		if limit > 3 {
+			limit = 3
+		}
+		target.Config.PlexMaxConcurrentScans = limit
+
+		idleSeconds, err := strconv.Atoi(r.FormValue("plex_idle_threshold_seconds"))
+		if err != nil || idleSeconds < 60 {
+			idleSeconds = 60
+		}
+		target.Config.PlexIdleThresholdSeconds = idleSeconds
+	}
+	if targetType == database.TargetTypePlex {
 		if limitStr := r.FormValue("plex_max_concurrent_scans"); limitStr != "" {
 			if limit, err := strconv.Atoi(limitStr); err == nil && limit >= 0 {
 				target.Config.PlexMaxConcurrentScans = limit
@@ -232,13 +254,30 @@ func (h *Handlers) TargetUpdate(w http.ResponseWriter, r *http.Request) {
 		target.Config.ScanDelay = 0
 	}
 	if target.Type == database.TargetTypePlex {
-		limit, _ := strconv.Atoi(r.FormValue("plex_max_concurrent_scans"))
-		if limit < 0 {
-			limit = 0
+		trackingEnabled := r.FormValue("plex_scan_tracking_enabled") == "on"
+		target.Config.PlexScanTrackingEnabled = &trackingEnabled
+
+		limit, err := strconv.Atoi(r.FormValue("plex_max_concurrent_scans"))
+		if err != nil {
+			limit = 1
+		}
+		if limit < 1 {
+			limit = 1
+		}
+		if limit > 3 {
+			limit = 3
 		}
 		target.Config.PlexMaxConcurrentScans = limit
+
+		idleSeconds, err := strconv.Atoi(r.FormValue("plex_idle_threshold_seconds"))
+		if err != nil || idleSeconds < 60 {
+			idleSeconds = 60
+		}
+		target.Config.PlexIdleThresholdSeconds = idleSeconds
 	} else {
+		target.Config.PlexScanTrackingEnabled = nil
 		target.Config.PlexMaxConcurrentScans = 0
+		target.Config.PlexIdleThresholdSeconds = 0
 	}
 
 	// Parse Emby/Jellyfin specific options

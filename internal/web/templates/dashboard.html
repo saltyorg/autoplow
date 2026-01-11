@@ -86,6 +86,24 @@
                 </div>
                 <div class="ml-3 sm:ml-5 w-0 flex-1">
                     <dl>
+                        <dt class="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Pending</dt>
+                        <dd class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">{{.PendingUploads}}</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+        <div class="p-3 sm:p-5">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 sm:h-6 sm:w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+                    </svg>
+                </div>
+                <div class="ml-3 sm:ml-5 w-0 flex-1">
+                    <dl>
                         <dt class="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Queued</dt>
                         <dd class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">{{.QueuedUploads}}</dd>
                     </dl>
@@ -315,7 +333,7 @@
         </div>
 
         <!-- Upload Stats -->
-        <div id="dashboard-upload-stats" class="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4" hx-get="/dashboard/upload-stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="5s">
+        <div id="dashboard-upload-stats" class="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-5" hx-get="/dashboard/upload-stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" data-sse-polling-fallback="5s">
             {{if .Content}}
             {{template "upload_stats" .Content.Stats}}
             {{else}}

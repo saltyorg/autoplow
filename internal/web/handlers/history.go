@@ -183,6 +183,7 @@ func (h *Handlers) HistoryUploadsStatsPartial(w http.ResponseWriter, r *http.Req
 
 	totalUploads, totalBytes, _ := h.db.GetUploadStats()
 	activeCount, _ := h.db.CountUploads(database.UploadStatusUploading)
+	pendingCount, _ := h.db.CountUploads(database.UploadStatusPending)
 	queuedCount, _ := h.db.CountUploads(database.UploadStatusQueued)
 
 	h.renderPartial(w, "history_uploads.html", "upload_history_stats", map[string]any{
@@ -190,6 +191,7 @@ func (h *Handlers) HistoryUploadsStatsPartial(w http.ResponseWriter, r *http.Req
 		"TotalUploads": totalUploads,
 		"TotalBytes":   totalBytes,
 		"ActiveCount":  activeCount,
+		"PendingCount": pendingCount,
 		"QueuedCount":  queuedCount,
 	})
 }

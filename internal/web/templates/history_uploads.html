@@ -1,8 +1,12 @@
 {{define "upload_history_stats"}}
-<div id="upload-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-4" hx-get="/history/uploads/stats{{if .Remote}}?remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#upload-history-stats > *" data-sse-polling-fallback="10s">
+<div id="upload-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-5" hx-get="/history/uploads/stats{{if .Remote}}?remote={{.Remote}}{{end}}" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#upload-history-stats > *" data-sse-polling-fallback="10s">
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active</dt>
         <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">{{.ActiveCount}}</dd>
+    </div>
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Pending</dt>
+        <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{.PendingCount}}</dd>
     </div>
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Queued</dt>

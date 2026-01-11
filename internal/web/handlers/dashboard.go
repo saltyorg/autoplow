@@ -40,6 +40,7 @@ type DashboardStats struct {
 	FailedScans    int
 	// Upload stats
 	ActiveUploads    int
+	PendingUploads   int
 	QueuedUploads    int
 	CompletedUploads int
 	FailedUploads    int
@@ -105,6 +106,7 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// Upload stats - all time totals (only if enabled)
 	if uploadsEnabled {
 		data.Stats.ActiveUploads, _ = h.db.CountUploads(database.UploadStatusUploading)
+		data.Stats.PendingUploads, _ = h.db.CountUploads(database.UploadStatusPending)
 		data.Stats.QueuedUploads, _ = h.db.CountUploads(database.UploadStatusQueued)
 		data.Stats.CompletedUploads, _ = h.db.CountUploads(database.UploadStatusCompleted)
 		data.Stats.FailedUploads, _ = h.db.CountUploads(database.UploadStatusFailed)
@@ -232,6 +234,7 @@ func (h *Handlers) DashboardUploadStatsPartial(w http.ResponseWriter, r *http.Re
 
 	// Upload stats - all time totals
 	stats.ActiveUploads, _ = h.db.CountUploads(database.UploadStatusUploading)
+	stats.PendingUploads, _ = h.db.CountUploads(database.UploadStatusPending)
 	stats.QueuedUploads, _ = h.db.CountUploads(database.UploadStatusQueued)
 	stats.CompletedUploads, _ = h.db.CountUploads(database.UploadStatusCompleted)
 	stats.FailedUploads, _ = h.db.CountUploads(database.UploadStatusFailed)

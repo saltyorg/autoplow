@@ -380,31 +380,6 @@
                 <input type="number" name="min_folder_size_gb" id="min_folder_size_gb_new" min="0" value="0" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">0 disables. If both age and size are set, size is the primary wait reason but both must pass.</p>
             </div>
-            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
-                <div class="flex items-center">
-                    <input type="checkbox" name="use_plex_scan_tracking" id="use_plex_scan_tracking_new" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
-                    <label for="use_plex_scan_tracking_new" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Use Plex scan tracking (overrides delay checks)</label>
-                </div>
-                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Wait for Plex scans to finish before uploads start. Configure per Plex target idle thresholds below.</p>
-                <div id="plex-tracking-panel-new" class="hidden mt-4 space-y-3">
-                    {{if .Content.PlexTargets}}
-                    {{range .Content.PlexTargets}}
-                    <div class="plex-target-row flex flex-col gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3" data-plex-target-row>
-                        <label class="flex items-center">
-                            <input type="checkbox" name="plex_target_ids[]" value="{{.ID}}" data-plex-name="{{.Name}}" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
-                            <span class="ml-2 text-sm text-gray-900 dark:text-gray-300">{{.Name}}</span>
-                        </label>
-                        <div>
-                            <label for="plex_idle_threshold_{{.ID}}_new" class="block text-xs font-medium text-gray-600 dark:text-gray-400">Idle Threshold (seconds)</label>
-                            <input type="number" name="plex_idle_threshold_{{.ID}}" id="plex_idle_threshold_{{.ID}}_new" min="60" value="60" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
-                        </div>
-                    </div>
-                    {{end}}
-                    {{else}}
-                    <p class="text-sm text-gray-500 dark:text-gray-400">No Plex targets configured. <a href="/targets/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Add a Plex target</a> first.</p>
-                    {{end}}
-                </div>
-            </div>
             <div>
                 <label for="transfer_type_new" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Transfer Type</label>
                 <select name="transfer_type" id="transfer_type_new" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
@@ -557,36 +532,6 @@
         if (localPathInput) {
             localPathInput.addEventListener('input', updateLocalPathWarning);
             localPathInput.addEventListener('blur', updateLocalPathWarning);
-        }
-
-        const plexToggle = document.getElementById('use_plex_scan_tracking_new');
-        const plexPanel = document.getElementById('plex-tracking-panel-new');
-
-        function updatePlexRows() {
-            const rows = document.querySelectorAll('[data-plex-target-row]');
-            rows.forEach((row) => {
-                const checkbox = row.querySelector('input[name="plex_target_ids[]"]');
-                const idleInput = row.querySelector('[data-plex-idle]');
-                if (!checkbox || !idleInput) return;
-                const enabled = plexToggle && plexToggle.checked && checkbox.checked;
-                idleInput.disabled = !enabled;
-                idleInput.classList.toggle('opacity-50', !enabled);
-            });
-        }
-
-        function updatePlexPanel() {
-            if (!plexToggle || !plexPanel) return;
-            const enabled = plexToggle.checked;
-            plexPanel.classList.toggle('hidden', !enabled);
-            updatePlexRows();
-        }
-
-        if (plexToggle) {
-            plexToggle.addEventListener('change', updatePlexPanel);
-            document.querySelectorAll('input[name="plex_target_ids[]"]').forEach((checkbox) => {
-                checkbox.addEventListener('change', updatePlexRows);
-            });
-            updatePlexPanel();
         }
 
         // Exclude paths management
@@ -768,8 +713,6 @@
             form.addEventListener('submit', function(e) {
                 const remoteSelects = form.querySelectorAll('select[name="remote_ids[]"]');
                 const triggerCheckboxes = form.querySelectorAll('input[name="included_triggers[]"]:checked');
-                const plexSelected = form.querySelectorAll('input[name="plex_target_ids[]"]:checked');
-
                 const errors = [];
                 if (!hasLocalTriggers) {
                     errors.push('At least one local trigger is required before configuring uploads');
@@ -782,19 +725,6 @@
                 }
                 if (triggerCheckboxes.length === 0) {
                     errors.push('At least one trigger must be selected');
-                }
-                if (plexToggle && plexToggle.checked) {
-                    if (plexSelected.length === 0) {
-                        errors.push('Select at least one Plex target for scan tracking');
-                    }
-                    plexSelected.forEach((checkbox) => {
-                        const idleInput = form.querySelector('input[name="plex_idle_threshold_' + checkbox.value + '"]');
-                        const idleValue = idleInput ? parseInt(idleInput.value, 10) : 0;
-                        if (!idleValue || idleValue < 60) {
-                            const targetName = checkbox.dataset.plexName || checkbox.value;
-                            errors.push('Idle threshold must be at least 60 seconds for Plex target: ' + targetName);
-                        }
-                    });
                 }
 
                 if (errors.length > 0) {
@@ -833,44 +763,6 @@
                 <label for="min_folder_size_gb_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Upload Folder Total Size (GB)</label>
                 <input type="number" name="min_folder_size_gb" id="min_folder_size_gb_edit" min="0" value="{{.Content.Destination.MinFolderSizeGB}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">0 disables. If both age and size are set, size is the primary wait reason but both must pass.</p>
-            </div>
-            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
-                <div class="flex items-center">
-                    <input type="checkbox" name="use_plex_scan_tracking" id="use_plex_scan_tracking_edit" {{if .Content.Destination.UsePlexTracking}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
-                    <label for="use_plex_scan_tracking_edit" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">Use Plex scan tracking (overrides delay checks)</label>
-                </div>
-                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Wait for Plex scans to finish before uploads start. Configure per Plex target idle thresholds below.</p>
-                <div id="plex-tracking-panel-edit" class="{{if not .Content.Destination.UsePlexTracking}}hidden{{end}} mt-4 space-y-3">
-                    {{if .Content.PlexTargets}}
-                    {{range $plex := .Content.PlexTargets}}
-                    {{- $selected := false -}}
-                    {{- $idle := 60 -}}
-                    {{- if $.Content.Destination.PlexTargets -}}
-                        {{- range $.Content.Destination.PlexTargets -}}
-                            {{- if eq .TargetID $plex.ID -}}
-                                {{- $selected = true -}}
-                                {{- $idle = .IdleThresholdSeconds -}}
-                            {{- end -}}
-                        {{- end -}}
-                    {{- end -}}
-                    {{- if lt $idle 60 -}}
-                        {{- $idle = 60 -}}
-                    {{- end -}}
-                    <div class="plex-target-row flex flex-col gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3" data-plex-target-row>
-                        <label class="flex items-center">
-                            <input type="checkbox" name="plex_target_ids[]" value="{{$plex.ID}}" data-plex-name="{{$plex.Name}}" {{if $selected}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
-                            <span class="ml-2 text-sm text-gray-900 dark:text-gray-300">{{$plex.Name}}</span>
-                        </label>
-                        <div>
-                            <label for="plex_idle_threshold_{{$plex.ID}}_edit" class="block text-xs font-medium text-gray-600 dark:text-gray-400">Idle Threshold (seconds)</label>
-                            <input type="number" name="plex_idle_threshold_{{$plex.ID}}" id="plex_idle_threshold_{{$plex.ID}}_edit" min="60" value="{{$idle}}" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
-                        </div>
-                    </div>
-                    {{end}}
-                    {{else}}
-                    <p class="text-sm text-gray-500 dark:text-gray-400">No Plex targets configured. <a href="/targets/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Add a Plex target</a> first.</p>
-                    {{end}}
-                </div>
             </div>
             <div>
                 <label for="transfer_type_edit" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Transfer Type</label>
@@ -1101,36 +993,6 @@
             localPathInput.addEventListener('blur', updateLocalPathWarning);
         }
 
-        const plexToggle = document.getElementById('use_plex_scan_tracking_edit');
-        const plexPanel = document.getElementById('plex-tracking-panel-edit');
-
-        function updatePlexRows() {
-            const rows = document.querySelectorAll('[data-plex-target-row]');
-            rows.forEach((row) => {
-                const checkbox = row.querySelector('input[name="plex_target_ids[]"]');
-                const idleInput = row.querySelector('[data-plex-idle]');
-                if (!checkbox || !idleInput) return;
-                const enabled = plexToggle && plexToggle.checked && checkbox.checked;
-                idleInput.disabled = !enabled;
-                idleInput.classList.toggle('opacity-50', !enabled);
-            });
-        }
-
-        function updatePlexPanel() {
-            if (!plexToggle || !plexPanel) return;
-            const enabled = plexToggle.checked;
-            plexPanel.classList.toggle('hidden', !enabled);
-            updatePlexRows();
-        }
-
-        if (plexToggle) {
-            plexToggle.addEventListener('change', updatePlexPanel);
-            document.querySelectorAll('input[name="plex_target_ids[]"]').forEach((checkbox) => {
-                checkbox.addEventListener('change', updatePlexRows);
-            });
-            updatePlexPanel();
-        }
-
         // Exclude paths management
         const excludePathsContainer = document.getElementById('exclude-paths-container-edit');
         const addExcludePathBtn = document.getElementById('add-exclude-path-edit');
@@ -1310,8 +1172,6 @@
             form.addEventListener('submit', function(e) {
                 const remoteSelects = form.querySelectorAll('select[name="remote_ids[]"]');
                 const triggerCheckboxes = form.querySelectorAll('input[name="included_triggers[]"]:checked');
-                const plexSelected = form.querySelectorAll('input[name="plex_target_ids[]"]:checked');
-
                 const errors = [];
                 if (!hasLocalTriggers) {
                     errors.push('At least one local trigger is required before configuring uploads');
@@ -1324,19 +1184,6 @@
                 }
                 if (triggerCheckboxes.length === 0) {
                     errors.push('At least one trigger must be selected');
-                }
-                if (plexToggle && plexToggle.checked) {
-                    if (plexSelected.length === 0) {
-                        errors.push('Select at least one Plex target for scan tracking');
-                    }
-                    plexSelected.forEach((checkbox) => {
-                        const idleInput = form.querySelector('input[name="plex_idle_threshold_' + checkbox.value + '"]');
-                        const idleValue = idleInput ? parseInt(idleInput.value, 10) : 0;
-                        if (!idleValue || idleValue < 60) {
-                            const targetName = checkbox.dataset.plexName || checkbox.value;
-                            errors.push('Idle threshold must be at least 60 seconds for Plex target: ' + targetName);
-                        }
-                    });
                 }
 
                 if (errors.length > 0) {
@@ -1379,9 +1226,7 @@
                             <div class="break-all" title="{{.LocalPath}}">{{.LocalPath}}</div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                            {{if .UsePlexTracking}}
-                                Plex tracking ({{len .PlexTargets}} targets)
-                            {{else if and (gt .MinFileAgeMinutes 0) (gt .MinFolderSizeGB 0)}}
+                            {{if and (gt .MinFileAgeMinutes 0) (gt .MinFolderSizeGB 0)}}
                                 Age {{.MinFileAgeMinutes}}m + Size {{.MinFolderSizeGB}}GB
                             {{else if gt .MinFileAgeMinutes 0}}
                                 Age {{.MinFileAgeMinutes}}m
