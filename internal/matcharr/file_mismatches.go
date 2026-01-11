@@ -139,10 +139,7 @@ func (m *Manager) compareFileMismatches(
 		return
 	}
 
-	workerCount := fileConcurrencyLimit(arr, target)
-	if workerCount > len(matches) {
-		workerCount = len(matches)
-	}
+	workerCount := min(fileConcurrencyLimit(arr, target), len(matches))
 	if workerCount < 1 {
 		workerCount = 1
 	}

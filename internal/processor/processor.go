@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -491,9 +492,7 @@ func (p *Processor) processBatch() {
 		for targetID := range targets {
 			targetIDs = append(targetIDs, targetID)
 		}
-		sort.Slice(targetIDs, func(i, j int) bool {
-			return targetIDs[i] < targetIDs[j]
-		})
+		slices.Sort(targetIDs)
 		scanTargets[scanID] = targetIDs
 	}
 

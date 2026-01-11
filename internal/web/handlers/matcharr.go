@@ -1414,7 +1414,7 @@ func matcharrFileMismatchSeasonScanPath(mismatch *database.MatcharrFileMismatch)
 }
 
 func firstScanPathFromList(rawPaths string) string {
-	for _, candidate := range strings.Split(rawPaths, ",") {
+	for candidate := range strings.SplitSeq(rawPaths, ",") {
 		trimmed := strings.TrimSpace(candidate)
 		if trimmed != "" {
 			return trimmed

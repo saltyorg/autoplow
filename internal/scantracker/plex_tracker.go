@@ -146,10 +146,7 @@ func (t *PlexTracker) trackScan(destinationID int64, targetID int64, mappedScanP
 
 	const minIdleThreshold = 60 * time.Second
 
-	idleThreshold := time.Duration(info.IdleThresholdSeconds) * time.Second
-	if idleThreshold < minIdleThreshold {
-		idleThreshold = minIdleThreshold
-	}
+	idleThreshold := max(time.Duration(info.IdleThresholdSeconds)*time.Second, minIdleThreshold)
 
 	key := scanKey{
 		destinationID: destinationID,

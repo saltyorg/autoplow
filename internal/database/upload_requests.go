@@ -55,10 +55,7 @@ func (db *db) CreateUploadRequests(reqs []*UploadRequestEntry) error {
 
 	return db.transaction(func(tx *sql.Tx) error {
 		for start := 0; start < len(reqs); start += maxUploadRequestBatch {
-			end := start + maxUploadRequestBatch
-			if end > len(reqs) {
-				end = len(reqs)
-			}
+			end := min(start+maxUploadRequestBatch, len(reqs))
 			batch := reqs[start:end]
 
 			query := buildUploadRequestInsertQuery(len(batch))
@@ -126,7 +123,7 @@ func buildUploadRequestInsertQuery(count int) string {
 	}
 
 	values := make([]string, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		values[i] = "(?, ?, ?, ?, ?)"
 	}
 
