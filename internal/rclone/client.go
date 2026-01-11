@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rs/zerolog/log"
-
 	"github.com/saltyorg/autoplow/internal/httpclient"
 )
 
@@ -196,8 +194,6 @@ func (c *Client) call(ctx context.Context, endpoint string, params any, result a
 	}
 	body := bytes.NewReader(jsonData)
 
-	log.Trace().Str("endpoint", endpoint).RawJSON("params", jsonData).Msg("Rclone API request")
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -220,8 +216,6 @@ func (c *Client) call(ctx context.Context, endpoint string, params any, result a
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
-
-	log.Trace().Str("endpoint", endpoint).RawJSON("response", respBody).Msg("Rclone API response")
 
 	if resp.StatusCode != http.StatusOK {
 		// Try to parse error response
