@@ -21,6 +21,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/polling"
 	"github.com/saltyorg/autoplow/internal/processor"
 	"github.com/saltyorg/autoplow/internal/rclone"
+	"github.com/saltyorg/autoplow/internal/scantracker"
 	"github.com/saltyorg/autoplow/internal/targets"
 	"github.com/saltyorg/autoplow/internal/throttle"
 	"github.com/saltyorg/autoplow/internal/uploader"
@@ -61,6 +62,7 @@ type Handlers struct {
 	pollingMgr             *polling.Poller
 	matcharrMgr            *matcharr.Manager
 	plexAutoLangMgr        *plexautolang.Manager
+	plexTracker            *scantracker.PlexTracker
 	uploadSubsystemToggler UploadSubsystemToggler
 	versionInfo            VersionInfo
 	versionMu              sync.RWMutex
@@ -128,6 +130,11 @@ func (h *Handlers) SetMatcharrManager(mgr *matcharr.Manager) {
 // SetPlexAutoLangManager sets the Plex Auto Languages manager
 func (h *Handlers) SetPlexAutoLangManager(mgr *plexautolang.Manager) {
 	h.plexAutoLangMgr = mgr
+}
+
+// SetPlexScanTracker sets the Plex scan tracker.
+func (h *Handlers) SetPlexScanTracker(tracker *scantracker.PlexTracker) {
+	h.plexTracker = tracker
 }
 
 // SetVersionInfo sets the application version information

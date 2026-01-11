@@ -35,9 +35,11 @@ type ThrottleStatusData struct {
 // DashboardStats contains summary statistics
 type DashboardStats struct {
 	// Scan stats
-	PendingScans   int
-	CompletedScans int
-	FailedScans    int
+	PendingScans        int
+	ScanningScans       int
+	CompletedScans      int
+	FailedScans         int
+	PlexTrackingEnabled bool
 	// Upload stats
 	ActiveUploads    int
 	PendingUploads   int
@@ -98,10 +100,14 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data.UploadsEnabled = uploadsEnabled
 	data.Stats.UploadsEnabled = uploadsEnabled
 
+	plexInfo := h.plexScanInfo()
+
 	// Scan stats - all time totals
 	data.Stats.PendingScans, _ = h.db.CountScansFiltered(string(database.ScanStatusPending))
+	data.Stats.ScanningScans = plexInfo.pendingCount
 	data.Stats.CompletedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusCompleted))
 	data.Stats.FailedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusFailed))
+	data.Stats.PlexTrackingEnabled = plexInfo.enabled
 
 	// Upload stats - all time totals (only if enabled)
 	if uploadsEnabled {
@@ -127,10 +133,14 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 					triggerName = trigger.Name
 				}
 			}
+			status := string(scan.Status)
+			if plexInfo.matcher != nil && scan.Status == database.ScanStatusCompleted && plexInfo.matcher.HasPending(scan.Path) {
+				status = string(database.ScanStatusScanning)
+			}
 			data.RecentScans = append(data.RecentScans, ScanSummary{
 				ID:        scan.ID,
 				Path:      scan.Path,
-				Status:    string(scan.Status),
+				Status:    status,
 				Trigger:   triggerName,
 				CreatedAt: scan.CreatedAt.Format(time.RFC3339),
 			})
@@ -219,11 +229,14 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 // DashboardStatsPartial returns just the scan stats section (for HTMX polling)
 func (h *Handlers) DashboardStatsPartial(w http.ResponseWriter, r *http.Request) {
 	stats := DashboardStats{}
+	plexInfo := h.plexScanInfo()
 
 	// Scan stats - all time totals
 	stats.PendingScans, _ = h.db.CountScansFiltered(string(database.ScanStatusPending))
+	stats.ScanningScans = plexInfo.pendingCount
 	stats.CompletedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusCompleted))
 	stats.FailedScans, _ = h.db.CountScansFiltered(string(database.ScanStatusFailed))
+	stats.PlexTrackingEnabled = plexInfo.enabled
 
 	h.renderPartial(w, "dashboard.html", "scan_stats", stats)
 }
@@ -245,6 +258,7 @@ func (h *Handlers) DashboardUploadStatsPartial(w http.ResponseWriter, r *http.Re
 // DashboardScansPartial returns recent scans (for HTMX polling)
 func (h *Handlers) DashboardScansPartial(w http.ResponseWriter, r *http.Request) {
 	var scans []ScanSummary
+	plexInfo := h.plexScanInfo()
 
 	recentScans, err := h.db.ListRecentScans(10)
 	if err == nil {
@@ -255,10 +269,14 @@ func (h *Handlers) DashboardScansPartial(w http.ResponseWriter, r *http.Request)
 					triggerName = trigger.Name
 				}
 			}
+			status := string(scan.Status)
+			if plexInfo.matcher != nil && scan.Status == database.ScanStatusCompleted && plexInfo.matcher.HasPending(scan.Path) {
+				status = string(database.ScanStatusScanning)
+			}
 			scans = append(scans, ScanSummary{
 				ID:        scan.ID,
 				Path:      scan.Path,
-				Status:    string(scan.Status),
+				Status:    status,
 				Trigger:   triggerName,
 				CreatedAt: scan.CreatedAt.Format(time.RFC3339),
 			})

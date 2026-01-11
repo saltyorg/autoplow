@@ -1,9 +1,15 @@
 {{define "scan_history_stats"}}
-<div id="scan-history-stats" class="grid grid-cols-2 gap-4 lg:grid-cols-3" hx-get="/history/scans/stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#scan-history-stats > *" data-sse-polling-fallback="10s">
+<div id="scan-history-stats" class="grid grid-cols-2 gap-4 {{if .PlexTrackingEnabled}}lg:grid-cols-4{{else}}lg:grid-cols-3{{end}}" hx-get="/history/scans/stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#scan-history-stats > *" data-sse-polling-fallback="10s">
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Pending</dt>
         <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{if .Stats}}{{add (index .Stats "pending") (index .Stats "retry")}}{{else}}0{{end}}</dd>
     </div>
+    {{if .PlexTrackingEnabled}}
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Scanning</dt>
+        <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">{{.PlexScanningCount}}</dd>
+    </div>
+    {{end}}
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Completed</dt>
         <dd class="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">{{if .Stats}}{{index .Stats "completed"}}{{else}}0{{end}}</dd>

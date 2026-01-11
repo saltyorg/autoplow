@@ -28,6 +28,13 @@ type PlexScanCompletion struct {
 	ScanPath      string
 }
 
+// PendingScan captures a pending Plex scan record for matching.
+type PendingScan struct {
+	DestinationID int64
+	TargetID      int64
+	ScanPath      string
+}
+
 // PlexScanCompletionHandler handles Plex scan completion events.
 type PlexScanCompletionHandler func(PlexScanCompletion)
 
@@ -56,6 +63,29 @@ func (t *PlexTracker) SetOnScanCompletion(handler PlexScanCompletionHandler) {
 	t.mu.Lock()
 	t.onScanCompletion = handler
 	t.mu.Unlock()
+}
+
+// PendingScans returns a snapshot of pending Plex scan records.
+func (t *PlexTracker) PendingScans() []PendingScan {
+	if t == nil {
+		return nil
+	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	pending := make([]PendingScan, 0, len(t.records))
+	for key, record := range t.records {
+		if record.pending {
+			pending = append(pending, PendingScan{
+				DestinationID: key.destinationID,
+				TargetID:      key.targetID,
+				ScanPath:      key.scanPath,
+			})
+		}
+	}
+
+	return pending
 }
 
 type scanKey struct {

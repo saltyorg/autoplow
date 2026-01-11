@@ -1,5 +1,5 @@
 {{define "scan_stats"}}
-<div class="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3">
+<div class="grid grid-cols-2 gap-3 sm:gap-5 {{if .PlexTrackingEnabled}}lg:grid-cols-4{{else}}lg:grid-cols-3{{end}}">
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
         <div class="p-3 sm:p-5">
             <div class="flex items-center">
@@ -17,6 +17,26 @@
             </div>
         </div>
     </div>
+
+    {{if .PlexTrackingEnabled}}
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+        <div class="p-3 sm:p-5">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 sm:h-6 sm:w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992m0 0v4.992m0-4.992L17.835 6.17a8.25 8.25 0 00-14.85 3.656m-1.08 4.474v4.992m0 0h4.992m-4.992 0l3.182 3.183a8.25 8.25 0 0013.803-3.7" />
+                    </svg>
+                </div>
+                <div class="ml-3 sm:ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Scanning</dt>
+                        <dd class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">{{.ScanningScans}}</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
 
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
         <div class="p-3 sm:p-5">

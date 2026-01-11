@@ -44,12 +44,18 @@ func (h *Handlers) buildHistoryScansData(r *http.Request) (map[string]any, error
 		triggers[t.ID] = t.Name
 	}
 
+	plexInfo := h.plexScanInfo()
+
 	var items []ScanHistoryItem
 	for _, s := range scans {
+		status := string(s.Status)
+		if plexInfo.matcher != nil && s.Status == database.ScanStatusCompleted && plexInfo.matcher.HasPending(s.Path) {
+			status = string(database.ScanStatusScanning)
+		}
 		item := ScanHistoryItem{
 			ID:          s.ID,
 			Path:        s.Path,
-			Status:      string(s.Status),
+			Status:      status,
 			CreatedAt:   s.CreatedAt,
 			CompletedAt: s.CompletedAt,
 			Error:       s.LastError,
@@ -72,16 +78,18 @@ func (h *Handlers) buildHistoryScansData(r *http.Request) (map[string]any, error
 	stats, _ := h.db.GetScanStatsByStatus()
 
 	return map[string]any{
-		"Scans":      items,
-		"Page":       page,
-		"TotalPages": totalPages,
-		"TotalCount": totalCount,
-		"Status":     status,
-		"Stats":      stats,
-		"HasPrev":    page > 1,
-		"HasNext":    page < totalPages,
-		"PrevPage":   page - 1,
-		"NextPage":   page + 1,
+		"Scans":               items,
+		"Page":                page,
+		"TotalPages":          totalPages,
+		"TotalCount":          totalCount,
+		"Status":              status,
+		"Stats":               stats,
+		"PlexTrackingEnabled": plexInfo.enabled,
+		"PlexScanningCount":   plexInfo.pendingCount,
+		"HasPrev":             page > 1,
+		"HasNext":             page < totalPages,
+		"PrevPage":            page - 1,
+		"NextPage":            page + 1,
 	}, nil
 }
 
@@ -105,9 +113,12 @@ func (h *Handlers) HistoryScansStatsPartial(w http.ResponseWriter, r *http.Reque
 		log.Error().Err(err).Msg("Failed to load scan stats")
 		stats = nil
 	}
+	plexInfo := h.plexScanInfo()
 
 	h.renderPartial(w, "history_scans.html", "scan_history_stats", map[string]any{
-		"Stats": stats,
+		"Stats":               stats,
+		"PlexTrackingEnabled": plexInfo.enabled,
+		"PlexScanningCount":   plexInfo.pendingCount,
 	})
 }
 

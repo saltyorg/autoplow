@@ -594,6 +594,7 @@ func (s *Server) setupRoutes() {
 	// Set the server as the upload subsystem toggler
 	h.SetUploadSubsystemToggler(s)
 	h.SetTargetsManager(s.targetsMgr)
+	h.SetPlexScanTracker(s.plexTracker)
 
 	// Set managers if already available
 	if s.rcloneMgr != nil {
