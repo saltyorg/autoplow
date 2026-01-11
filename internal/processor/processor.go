@@ -502,19 +502,30 @@ func (p *Processor) processBatch() {
 	for scanID, work := range scanWorks {
 		targetIDs := scanTargets[scanID]
 		if len(targetIDs) == 0 {
-			reason := "no_eligible_targets"
 			if candidateCounts[scanID] > 0 {
-				reason = "deduped_within_buffer"
 				log.Debug().
 					Int64("scan_id", scanID).
 					Str("path", work.scan.Path).
 					Msg("Skipping scan (deduped within buffer)")
-			} else {
-				log.Debug().
-					Int64("scan_id", scanID).
-					Str("path", work.scan.Path).
-					Msg("Skipping scan (no eligible targets)")
+				if err := p.db.DeleteScan(scanID); err != nil {
+					log.Error().Err(err).Int64("scan_id", scanID).Msg("Failed to delete deduped scan")
+				} else if p.sseBroker != nil {
+					p.sseBroker.Broadcast(sse.Event{
+						Type: sse.EventScanCompleted,
+						Data: map[string]any{
+							"scan_id": scanID,
+							"path":    work.scan.Path,
+							"reason":  "deduped_within_buffer",
+						},
+					})
+				}
+				continue
 			}
+
+			log.Debug().
+				Int64("scan_id", scanID).
+				Str("path", work.scan.Path).
+				Msg("Skipping scan (no eligible targets)")
 			if err := p.db.UpdateScanStatus(scanID, database.ScanStatusCompleted); err != nil {
 				log.Error().Err(err).Int64("scan_id", scanID).Msg("Failed to mark scan as completed")
 			} else if p.sseBroker != nil {
@@ -523,7 +534,7 @@ func (p *Processor) processBatch() {
 					Data: map[string]any{
 						"scan_id": scanID,
 						"path":    work.scan.Path,
-						"reason":  reason,
+						"reason":  "no_eligible_targets",
 					},
 				})
 			}

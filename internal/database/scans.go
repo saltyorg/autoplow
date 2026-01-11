@@ -328,6 +328,17 @@ func (db *db) CountPendingScans() (int, error) {
 	return count, nil
 }
 
+// DeleteScan deletes a scan by ID.
+func (db *db) DeleteScan(id int64) error {
+	if err := db.execAndVerifyAffected("DELETE FROM scans WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("scan not found")
+		}
+		return fmt.Errorf("failed to delete scan: %w", err)
+	}
+	return nil
+}
+
 // DeleteOldScans deletes scans older than the given duration
 func (db *db) DeleteOldScans(age time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-age)
