@@ -40,6 +40,11 @@ type plexActivityTracker struct {
 	allowTitleProbe bool
 }
 
+type plexPreparedTracker struct {
+	tracker   *plexActivityTracker
+	createdAt time.Time
+}
+
 type plexTitleMatchDetail struct {
 	trackerNormalized string
 	itemNormalized    string
@@ -341,6 +346,7 @@ func plexNormalizedTitleMatch(targetNormalized, itemNormalized string, yearMatch
 
 const plexMatchOverrideTTL = 30 * time.Minute
 const plexSearchDelay = 3 * time.Second
+const plexPreparedTrackerTTL = 5 * time.Minute
 
 type plexMatchOverride struct {
 	info  plexMatchInfo
@@ -460,8 +466,10 @@ type PlexWebSocketNotification = plexWebSocketNotification
 type PlexTarget struct {
 	dbTarget       *database.Target
 	client         *http.Client
-	subscribers    sync.Map // map[string]*plexActivityTracker - for waiting uploaders
 	matchOverrides sync.Map // map[string]plexMatchOverride - scan path -> match override
+	activityMgr    *plexActivityManager
+	preparedMu     sync.Mutex
+	prepared       map[string][]plexPreparedTracker
 
 	// Notification callbacks for external observers (e.g., Plex Auto Languages)
 	notificationCallbacks []PlexNotificationCallback
@@ -471,8 +479,10 @@ type PlexTarget struct {
 // NewPlexTarget creates a new Plex target
 func NewPlexTarget(dbTarget *database.Target) *PlexTarget {
 	return &PlexTarget{
-		dbTarget: dbTarget,
-		client:   httpclient.NewTraceClient(fmt.Sprintf("%s:%s", dbTarget.Type, dbTarget.Name), config.GetTimeouts().HTTPClient),
+		dbTarget:    dbTarget,
+		client:      httpclient.NewTraceClient(fmt.Sprintf("%s:%s", dbTarget.Type, dbTarget.Name), config.GetTimeouts().HTTPClient),
+		activityMgr: newPlexActivityManager(dbTarget.Name),
+		prepared:    make(map[string][]plexPreparedTracker),
 	}
 }
 
@@ -1473,7 +1483,7 @@ func (s *PlexTarget) watchSessionsOnce(ctx context.Context, callback func(sessio
 					Msg("Received activity notification")
 
 				// Handle activity notifications (global tracking + notify waiting subscribers)
-				s.handleActivityNotifications(notification.NotificationContainer.ActivityNotification)
+				s.activityMgr.handleActivityNotifications(notification.NotificationContainer.ActivityNotification)
 			} else {
 				s.logNotification(notification)
 			}
@@ -1544,127 +1554,131 @@ func (s *PlexTarget) isSessionNotification(notification plexWebSocketNotificatio
 		notificationType == "status"
 }
 
-// handleActivityNotifications processes activity notifications, updating global tracking and notifying waiting subscribers
-func (s *PlexTarget) handleActivityNotifications(activities []plexActivityNotification) {
-	for _, activity := range activities {
-		actType := activity.Activity.Type
-		if !plexAnalysisActivityTypes[actType] {
-			continue
-		}
-
-		subtitle := activity.Activity.Subtitle
-		uuid := activity.Activity.UUID
-
-		// Log all analysis activities at trace level for visibility
-		log.Trace().
+// PrepareScanCompletion registers a scan tracker before sending a scan request.
+func (s *PlexTarget) PrepareScanCompletion(path string) error {
+	tracker, err := s.newActivityTracker(path)
+	if err != nil {
+		log.Debug().
 			Str("target", s.Name()).
-			Str("event", activity.Event).
-			Str("activity", actType).
-			Str("item", subtitle).
-			Str("uuid", uuid).
-			Msg("Plex analysis activity")
+			Str("path", path).
+			Err(err).
+			Msg("Failed to prepare Plex scan tracker")
+		return err
+	}
 
-		if subtitle == "" {
-			continue
-		}
+	s.activityMgr.registerTracker(tracker)
+	s.storePreparedTracker(path, tracker)
+	return nil
+}
 
-		// Notify waiting subscribers (only affects waiting uploaders)
-		s.notifyWaitingSubscribers(subtitle, uuid, actType, activity.Event)
+// CancelPreparedScanCompletion removes any prepared trackers for a path.
+func (s *PlexTarget) CancelPreparedScanCompletion(path string) {
+	if path == "" {
+		return
+	}
+
+	s.preparedMu.Lock()
+	entries := s.prepared[path]
+	if len(entries) == 0 {
+		s.preparedMu.Unlock()
+		return
+	}
+	entry := entries[0]
+	if len(entries) == 1 {
+		delete(s.prepared, path)
+	} else {
+		s.prepared[path] = entries[1:]
+	}
+	s.preparedMu.Unlock()
+
+	if entry.tracker != nil {
+		s.activityMgr.unregisterTracker(entry.tracker.id)
 	}
 }
 
-// notifyWaitingSubscribers notifies any uploaders waiting for scan completion
-func (s *PlexTarget) notifyWaitingSubscribers(itemName, uuid, actType, event string) {
-	s.subscribers.Range(func(key, value any) bool {
-		tracker := value.(*plexActivityTracker)
-		tracker.mu.Lock()
-		if tracker.allowTitleProbe {
-			tracker.applySubtitleOverride(itemName)
-		}
-		matched, details := tracker.matchItemWithDetails(itemName)
-		if !matched {
-			tracker.mu.Unlock()
-			return true
-		}
+func (s *PlexTarget) takePreparedTracker(path string) *plexActivityTracker {
+	if path == "" {
+		return nil
+	}
 
-		tracker.lastActivity = time.Now()
-		tracker.scanStarted = true
+	s.preparedMu.Lock()
+	defer s.preparedMu.Unlock()
+	s.cleanupPreparedTrackersLocked(time.Now())
 
-		uuidUpdated := false
-		switch event {
-		case "started":
-			tracker.activeUUIDs[uuid] = actType
-			uuidUpdated = true
-		case "updated":
-			if _, ok := tracker.activeUUIDs[uuid]; !ok {
-				tracker.activeUUIDs[uuid] = actType
-				uuidUpdated = true
-			}
-		case "ended":
-			if _, ok := tracker.activeUUIDs[uuid]; ok {
-				delete(tracker.activeUUIDs, uuid)
-				uuidUpdated = true
-			}
-		}
+	entries := s.prepared[path]
+	if len(entries) == 0 {
+		return nil
+	}
 
-		trackerID := tracker.id
-		trackerTitle := tracker.title
-		trackerYear := tracker.year
-		seasonPatterns := append([]string(nil), tracker.seasonPatterns...)
-		activeCount := len(tracker.activeUUIDs)
-		tracker.mu.Unlock()
+	tracker := entries[0].tracker
+	if len(entries) == 1 {
+		delete(s.prepared, path)
+	} else {
+		s.prepared[path] = entries[1:]
+	}
+	return tracker
+}
 
-		log.Debug().
-			Str("target", s.Name()).
-			Str("tracker_id", trackerID).
-			Str("event", event).
-			Str("activity", actType).
-			Str("item", itemName).
-			Str("title", trackerTitle).
-			Str("year", trackerYear).
-			Strs("season_patterns", seasonPatterns).
-			Int("active_count", activeCount).
-			Bool("idle_reset", true).
-			Bool("scan_started", true).
-			Msg("Plex activity matched tracker")
+func (s *PlexTarget) storePreparedTracker(path string, tracker *plexActivityTracker) {
+	if path == "" || tracker == nil {
+		return
+	}
 
-		if uuidUpdated {
-			log.Debug().
-				Str("target", s.Name()).
-				Str("tracker_id", trackerID).
-				Str("uuid", uuid).
-				Str("event", event).
-				Int("active_count", activeCount).
-				Msg("Plex activity UUID updated")
-		}
-
-		log.Trace().
-			Str("target", s.Name()).
-			Str("tracker_id", trackerID).
-			Strs("tracker_candidates", plexCandidateTitles(details.trackerCandidates)).
-			Strs("item_candidates", plexCandidateTitles(details.itemCandidates)).
-			Msg("Plex title candidates built")
-
-		log.Trace().
-			Str("target", s.Name()).
-			Str("tracker_id", trackerID).
-			Str("tracker_norm", details.titleMatch.trackerNormalized).
-			Str("item_norm", details.titleMatch.itemNormalized).
-			Bool("year_match", details.titleMatch.yearMatch).
-			Str("match_strategy", details.titleMatch.strategy).
-			Msg("Plex title compare")
-
-		if len(seasonPatterns) > 0 {
-			log.Trace().
-				Str("target", s.Name()).
-				Str("tracker_id", trackerID).
-				Str("item", itemName).
-				Strs("patterns", seasonPatterns).
-				Str("matched_pattern", details.seasonMatchedPattern).
-				Msg("Plex season pattern check")
-		}
-		return true
+	now := time.Now()
+	s.preparedMu.Lock()
+	defer s.preparedMu.Unlock()
+	s.cleanupPreparedTrackersLocked(now)
+	s.prepared[path] = append(s.prepared[path], plexPreparedTracker{
+		tracker:   tracker,
+		createdAt: now,
 	})
+}
+
+func (s *PlexTarget) cleanupPreparedTrackersLocked(now time.Time) {
+	cutoff := now.Add(-plexPreparedTrackerTTL)
+	for path, entries := range s.prepared {
+		kept := entries[:0]
+		for _, entry := range entries {
+			if entry.createdAt.After(cutoff) {
+				kept = append(kept, entry)
+				continue
+			}
+			if entry.tracker != nil {
+				s.activityMgr.unregisterTracker(entry.tracker.id)
+			}
+		}
+		if len(kept) == 0 {
+			delete(s.prepared, path)
+			continue
+		}
+		s.prepared[path] = kept
+	}
+}
+
+func (s *PlexTarget) newActivityTracker(path string) (*plexActivityTracker, error) {
+	matchInfo := s.getMatchOverride(path)
+	overrideUsed := matchInfo != nil
+	if matchInfo == nil {
+		matchInfo = buildPlexMatchInfo(path)
+	}
+	if matchInfo == nil {
+		return nil, fmt.Errorf("cannot extract match info")
+	}
+
+	tracker := &plexActivityTracker{
+		id:              fmt.Sprintf("%s-%d", matchInfo.title, time.Now().UnixNano()),
+		title:           matchInfo.title,
+		titleNormalized: normalizePlexTitle(matchInfo.title),
+		year:            matchInfo.year,
+		seasonPatterns:  matchInfo.seasonPatterns,
+		activeUUIDs:     make(map[string]string),
+		lastActivity:    time.Now(),
+	}
+	if overrideUsed {
+		tracker.searchDone = true
+		tracker.idleStart = time.Now()
+	}
+	return tracker, nil
 }
 
 // WaitForScanCompletion waits for a Plex library scan to complete by monitoring activity notifications.
@@ -1678,54 +1692,47 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 
 // WaitForScanCompletionWithIdle waits for a Plex library scan to complete using a caller-provided idle threshold.
 func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path string, idleThreshold time.Duration) error {
-	// Build match info from Plex metadata or path
-	// For path like "/mnt/local/Media/TV/TV/Absentia (2017) (tvdb-330500)/Season 02":
-	// - showName: "Absentia"
-	// - seasonPatterns: ["Season 02", "S02", "S2"]
-	matchInfo := s.getMatchOverride(path)
-	overrideUsed := matchInfo != nil
-	if matchInfo == nil {
-		matchInfo = buildPlexMatchInfo(path)
-	}
-	if matchInfo == nil {
-		log.Debug().
-			Str("target", s.Name()).
-			Str("path", path).
-			Msg("Cannot extract match info from path, skipping scan completion wait")
-		return nil
-	}
-
 	// Default idle threshold to 30 seconds if unset or invalid.
 	if idleThreshold <= 0 {
 		idleThreshold = 30 * time.Second
 	}
 
-	// Create tracker
-	subID := fmt.Sprintf("%s-%d", matchInfo.title, time.Now().UnixNano())
-	tracker := &plexActivityTracker{
-		id:              subID,
-		title:           matchInfo.title,
-		titleNormalized: normalizePlexTitle(matchInfo.title),
-		year:            matchInfo.year,
-		seasonPatterns:  matchInfo.seasonPatterns,
-		activeUUIDs:     make(map[string]string),
-		lastActivity:    time.Now(),
+	tracker := s.takePreparedTracker(path)
+	if tracker == nil {
+		var err error
+		tracker, err = s.newActivityTracker(path)
+		if err != nil {
+			log.Debug().
+				Str("target", s.Name()).
+				Str("path", path).
+				Err(err).
+				Msg("Cannot extract match info from path, skipping scan completion wait")
+			return nil
+		}
+		s.activityMgr.registerTracker(tracker)
 	}
-	if overrideUsed {
-		tracker.searchDone = true
+	defer s.activityMgr.unregisterTracker(tracker.id)
+
+	if tracker.searchDone && tracker.idleStart.IsZero() {
 		tracker.idleStart = time.Now()
 	}
-	s.subscribers.Store(subID, tracker)
-	defer s.subscribers.Delete(subID)
+
+	tracker.mu.Lock()
+	trackerTitle := tracker.title
+	seasonPatterns := append([]string(nil), tracker.seasonPatterns...)
+	tracker.mu.Unlock()
 
 	log.Debug().
 		Str("target", s.Name()).
-		Str("title", matchInfo.title).
-		Strs("season_patterns", matchInfo.seasonPatterns).
+		Str("title", trackerTitle).
+		Strs("season_patterns", seasonPatterns).
 		Str("idle_threshold", idleThreshold.String()).
 		Msg("Waiting for all Plex activities to complete")
 
-	if !overrideUsed {
+	tracker.mu.Lock()
+	searchDone := tracker.searchDone
+	tracker.mu.Unlock()
+	if !searchDone {
 		go s.updateMatchInfoAfterDelay(ctx, path, tracker)
 	}
 

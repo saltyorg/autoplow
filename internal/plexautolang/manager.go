@@ -20,6 +20,7 @@ import (
 type PlexTargetInterface interface {
 	Name() string
 	DBTarget() *database.Target
+	RegisterActivityCallback(cb func(ActivityNotification))
 	RegisterNotificationCallbackAny(cb func(notification any))
 	GetEpisodeWithStreams(ctx context.Context, ratingKey string) (*Episode, error)
 	GetEpisodeWithStreamsAsUser(ctx context.Context, ratingKey string, userToken string) (*Episode, error)
@@ -329,6 +330,10 @@ func (m *Manager) registerTargetCallback(targetID int64) error {
 
 	// Register callback - use Any variant to avoid circular imports
 	// The notification is converted via JSON marshaling since the types are structurally identical
+	plexTarget.RegisterActivityCallback(func(activity ActivityNotification) {
+		m.handleActivityNotification(targetID, plexTarget, activity)
+	})
+
 	plexTarget.RegisterNotificationCallbackAny(func(notificationAny any) {
 		// Convert via JSON to our local type
 		data, err := json.Marshal(notificationAny)
@@ -339,6 +344,9 @@ func (m *Manager) registerTargetCallback(targetID int64) error {
 		var notification PlexWebSocketNotification
 		if err := json.Unmarshal(data, &notification); err != nil {
 			log.Warn().Err(err).Msg("Failed to unmarshal notification")
+			return
+		}
+		if notification.NotificationContainer.Type == "activity" {
 			return
 		}
 		m.handleNotification(targetID, plexTarget, notification)

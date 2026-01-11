@@ -60,6 +60,16 @@ type ScanCompletionWaiter interface {
 	WaitForScanCompletion(ctx context.Context, path string, timeout time.Duration) error
 }
 
+// ScanCompletionPreparer registers scan tracking before a scan is triggered.
+type ScanCompletionPreparer interface {
+	PrepareScanCompletion(path string) error
+}
+
+// ScanCompletionCanceler removes prepared scan tracking when a scan fails.
+type ScanCompletionCanceler interface {
+	CancelPreparedScanCompletion(path string)
+}
+
 // Session represents an active playback session on a media server
 type Session struct {
 	ID          string // Unique session ID
@@ -305,7 +315,25 @@ func (m *Manager) scanTarget(ctx context.Context, dbTarget *database.Target, pat
 		Str("trigger", triggerName).
 		Msg("Target scan request")
 
+	prepared := false
+	if preparer, ok := target.(ScanCompletionPreparer); ok {
+		if err := preparer.PrepareScanCompletion(scanPath); err != nil {
+			log.Debug().
+				Str("target", dbTarget.Name).
+				Str("path", scanPath).
+				Err(err).
+				Msg("Failed to prepare scan completion tracking")
+		} else {
+			prepared = true
+		}
+	}
+
 	if err := target.Scan(ctx, scanPath); err != nil {
+		if prepared {
+			if canceler, ok := target.(ScanCompletionCanceler); ok {
+				canceler.CancelPreparedScanCompletion(scanPath)
+			}
+		}
 		return ScanResult{
 			Success: false,
 			Message: dbTarget.Name,

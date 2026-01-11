@@ -108,14 +108,17 @@ type Processor struct {
 }
 
 // New creates a new scan processor
-func New(db *database.Manager, config Config) *Processor {
+func New(db *database.Manager, config Config, targetsMgr *targets.Manager) *Processor {
 	ctx, cancel := context.WithCancel(context.Background())
+	if targetsMgr == nil {
+		targetsMgr = targets.NewManager(db)
+	}
 
 	return &Processor{
 		db:            db,
 		config:        config,
 		anchorChecker: NewAnchorChecker(config.Anchor),
-		targetsMgr:    targets.NewManager(db),
+		targetsMgr:    targetsMgr,
 		requests:      make(chan ScanRequest, 100),
 		activeScans:   make(map[int64]bool),
 		fileStability: make(map[string]fileStabilityCheck),

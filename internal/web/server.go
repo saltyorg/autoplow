@@ -82,7 +82,7 @@ func NewServer(db *database.Manager, port int, bind string, allowedNet *net.IPNe
 		authService:   auth.NewAuthService(db),
 		apiKeyService: auth.NewAPIKeyService(db),
 		sseBroker:     sse.NewBroker(),
-		processor:     processor.New(db, processor.DefaultConfig()),
+		processor:     processor.New(db, processor.DefaultConfig(), targetsMgr),
 		targetsMgr:    targetsMgr,
 		plexTracker:   plexTracker,
 	}

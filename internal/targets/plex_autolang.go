@@ -786,6 +786,28 @@ func (s *PlexTarget) DBTarget() *database.Target {
 	return s.dbTarget
 }
 
+// RegisterActivityCallback subscribes to activity notifications without storing them.
+func (s *PlexTarget) RegisterActivityCallback(cb func(activity plexautolang.ActivityNotification)) {
+	if cb == nil {
+		return
+	}
+
+	s.activityMgr.registerLiveSubscriber(func(activity plexActivityNotification) {
+		cb(plexAutolangActivityNotification(activity))
+	})
+}
+
+func plexAutolangActivityNotification(activity plexActivityNotification) plexautolang.ActivityNotification {
+	out := plexautolang.ActivityNotification{
+		Event: activity.Event,
+		UUID:  activity.UUID,
+	}
+	out.Activity.Type = activity.Activity.Type
+	out.Activity.Subtitle = activity.Activity.Subtitle
+	out.Activity.Context.Key = activity.Activity.Context.Key
+	return out
+}
+
 func parsePlexID(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
