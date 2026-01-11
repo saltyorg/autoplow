@@ -4,8 +4,12 @@
 
     let eventSource = null;
     let reconnectAttempts = 0;
+    let fallbackReconnectAttempts = 0;
+    let fallbackEnabled = false;
     const maxReconnectAttempts = 10;
     const baseReconnectDelay = 1000;
+    const fallbackReconnectDelay = 30000;
+    const fallbackReconnectMaxDelay = 600000;
 
     // Map SSE events to HTMX element refreshes
     const eventTargets = {
@@ -81,6 +85,11 @@
         eventSource.onopen = function() {
             console.log('SSE connected');
             reconnectAttempts = 0;
+            fallbackReconnectAttempts = 0;
+            if (fallbackEnabled) {
+                console.log('SSE reconnected, disabling polling fallback');
+                disablePollingFallback();
+            }
         };
 
         eventSource.onerror = function() {
@@ -104,9 +113,15 @@
     }
 
     function scheduleReconnect() {
+        if (fallbackEnabled) {
+            scheduleFallbackReconnect();
+            return;
+        }
+
         if (reconnectAttempts >= maxReconnectAttempts) {
             console.log('SSE max reconnect attempts reached, falling back to polling');
             enablePollingFallback();
+            scheduleFallbackReconnect();
             return;
         }
 
@@ -119,14 +134,53 @@
         }, delay);
     }
 
+    function scheduleFallbackReconnect() {
+        const delay = Math.min(
+            fallbackReconnectDelay * Math.pow(2, fallbackReconnectAttempts),
+            fallbackReconnectMaxDelay
+        );
+        fallbackReconnectAttempts++;
+        console.log('SSE reconnecting in fallback mode in ' + delay + 'ms');
+
+        setTimeout(function() {
+            connect();
+        }, delay);
+    }
+
     function enablePollingFallback() {
+        if (fallbackEnabled) {
+            return;
+        }
+        fallbackEnabled = true;
+
         // Re-enable HTMX polling on elements as fallback
         document.querySelectorAll('[data-sse-polling-fallback]').forEach(function(el) {
+            if (!el.hasAttribute('data-sse-original-trigger')) {
+                el.setAttribute('data-sse-original-trigger', el.getAttribute('hx-trigger') || '');
+            }
             const interval = el.getAttribute('data-sse-polling-fallback');
             if (interval) {
                 el.setAttribute('hx-trigger', 'load, every ' + interval);
                 htmx.process(el);
             }
+        });
+    }
+
+    function disablePollingFallback() {
+        if (!fallbackEnabled) {
+            return;
+        }
+        fallbackEnabled = false;
+
+        document.querySelectorAll('[data-sse-original-trigger]').forEach(function(el) {
+            const original = el.getAttribute('data-sse-original-trigger');
+            if (original) {
+                el.setAttribute('hx-trigger', original);
+            } else {
+                el.removeAttribute('hx-trigger');
+            }
+            el.removeAttribute('data-sse-original-trigger');
+            htmx.process(el);
         });
     }
 
