@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -24,36 +26,416 @@ import (
 
 // plexActivityTracker tracks all activities for an item during scan completion (used by waiting uploaders)
 type plexActivityTracker struct {
-	title          string            // media title - show name or movie name (required match)
-	seasonPatterns []string          // season patterns like "Season 02", "S02" (any must match for TV)
-	activeUUIDs    map[string]string // uuid -> activity type
-	mu             sync.Mutex
-	lastActivity   time.Time
-	scanStarted    bool
+	id              string            // identifier for logging
+	title           string            // media title - show name or movie name (required match)
+	titleNormalized string            // normalized title for fuzzy matching
+	year            string            // optional year for movie matching
+	seasonPatterns  []string          // season patterns like "Season 02", "S02" (any must match for TV)
+	activeUUIDs     map[string]string // uuid -> activity type
+	mu              sync.Mutex
+	lastActivity    time.Time
+	scanStarted     bool
+	idleStart       time.Time
+	searchDone      bool
+	allowTitleProbe bool
 }
 
-// matchesItem checks if the Plex item name matches our title and season
-// The title must match, plus at least one season pattern (if any are set)
-func (t *plexActivityTracker) matchesItem(itemName string) bool {
-	itemLower := strings.ToLower(itemName)
+type plexTitleMatchDetail struct {
+	trackerNormalized string
+	itemNormalized    string
+	yearMatch         bool
+	strategy          string
+}
 
-	// Title must be present
-	if !strings.Contains(itemLower, strings.ToLower(t.title)) {
-		return false
+type plexMatchDetails struct {
+	trackerCandidates    []plexTitleCandidate
+	itemCandidates       []plexTitleCandidate
+	titleMatch           plexTitleMatchDetail
+	seasonMatchedPattern string
+}
+
+// matchItemWithDetails checks if the Plex item name matches our title and season.
+// The title must match, plus at least one season pattern (if any are set).
+func (t *plexActivityTracker) matchItemWithDetails(itemName string) (bool, plexMatchDetails) {
+	details := plexMatchDetails{}
+	if strings.TrimSpace(itemName) == "" {
+		return false, details
+	}
+
+	details.trackerCandidates = plexTrackerTitleCandidates(t.title, t.year)
+	details.itemCandidates = plexActivityTitleCandidates(itemName, t.seasonPatterns)
+	titleMatched, matchDetail := plexCandidatesMatch(details.trackerCandidates, details.itemCandidates)
+	details.titleMatch = matchDetail
+	if !titleMatched {
+		return false, details
 	}
 
 	// If no season patterns, title match is enough (e.g., movie or show-level scan)
 	if len(t.seasonPatterns) == 0 {
-		return true
+		return true, details
 	}
 
 	// At least one season pattern must match
+	itemLower := strings.ToLower(itemName)
 	for _, pattern := range t.seasonPatterns {
 		if strings.Contains(itemLower, strings.ToLower(pattern)) {
-			return true
+			details.seasonMatchedPattern = pattern
+			return true, details
 		}
 	}
-	return false
+	return false, details
+}
+
+func (t *plexActivityTracker) applyMatchInfo(info *plexMatchInfo) {
+	if info == nil || info.title == "" {
+		return
+	}
+	t.title = info.title
+	t.titleNormalized = normalizePlexTitle(info.title)
+	t.year = info.year
+	if len(info.seasonPatterns) > 0 {
+		t.seasonPatterns = info.seasonPatterns
+	}
+}
+
+func (t *plexActivityTracker) markSearchDone(found bool) {
+	t.searchDone = true
+	t.idleStart = time.Now()
+	if !found {
+		t.allowTitleProbe = true
+	}
+}
+
+func (t *plexActivityTracker) applySubtitleOverride(subtitle string) {
+	if !t.allowTitleProbe {
+		return
+	}
+	title := plexTitleFromSubtitle(subtitle, t.seasonPatterns)
+	if title == "" {
+		return
+	}
+	year := extractPlexYear(subtitle)
+	t.title = title
+	t.titleNormalized = normalizePlexTitle(title)
+	if year != "" {
+		t.year = year
+	}
+	t.allowTitleProbe = false
+}
+
+var plexYearPattern = regexp.MustCompile(`\((\d{4})\)`)
+
+func extractPlexYear(name string) string {
+	if matches := plexYearPattern.FindStringSubmatch(name); len(matches) == 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+func plexTitleWithYear(title string, year int) string {
+	if title == "" || year <= 0 {
+		return title
+	}
+	yearToken := fmt.Sprintf("(%d)", year)
+	if strings.Contains(title, yearToken) {
+		return title
+	}
+	return fmt.Sprintf("%s %s", title, yearToken)
+}
+
+func plexYearFromString(year string) int {
+	if year == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(year)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func plexItemTitle(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if idx := strings.IndexAny(name, "(["); idx > 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+	return name
+}
+
+func normalizePlexTitle(title string) string {
+	var builder strings.Builder
+	builder.Grow(len(title))
+	for _, r := range strings.ToLower(title) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			builder.WriteRune(r)
+		}
+	}
+	return builder.String()
+}
+
+type plexTitleCandidate struct {
+	title      string
+	normalized string
+	year       string
+}
+
+func plexTitleFromSubtitle(subtitle string, seasonPatterns []string) string {
+	candidate := strings.TrimSpace(subtitle)
+	if candidate == "" {
+		return ""
+	}
+	for _, pattern := range seasonPatterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(pattern) + `\b`)
+		candidate = re.ReplaceAllString(candidate, "")
+	}
+	candidate = strings.TrimSpace(strings.Trim(candidate, "-:"))
+	return plexItemTitle(candidate)
+}
+
+func plexTrackerTitleCandidates(title, year string) []plexTitleCandidate {
+	if strings.TrimSpace(title) == "" {
+		return nil
+	}
+	base := plexItemTitle(title)
+	yearHint := year
+	if yearHint == "" {
+		yearHint = extractPlexYear(title)
+	}
+
+	titles := []string{title}
+	if base != "" && base != title {
+		titles = append(titles, base)
+	}
+	if yearHint != "" && base != "" {
+		titles = append(titles, fmt.Sprintf("%s (%s)", base, yearHint))
+	}
+	return plexBuildTitleCandidates(titles, yearHint)
+}
+
+func plexActivityTitleCandidates(itemName string, seasonPatterns []string) []plexTitleCandidate {
+	if strings.TrimSpace(itemName) == "" {
+		return nil
+	}
+	yearHint := extractPlexYear(itemName)
+	base := plexTitleFromSubtitle(itemName, seasonPatterns)
+
+	titles := []string{itemName}
+	if base != "" && base != itemName {
+		titles = append(titles, base)
+	}
+	if yearHint != "" && base != "" {
+		titles = append(titles, fmt.Sprintf("%s (%s)", base, yearHint))
+	}
+	return plexBuildTitleCandidates(titles, yearHint)
+}
+
+func plexBuildTitleCandidates(titles []string, yearHint string) []plexTitleCandidate {
+	seen := make(map[string]struct{}, len(titles))
+	out := make([]plexTitleCandidate, 0, len(titles))
+	for _, title := range titles {
+		title = strings.TrimSpace(title)
+		if title == "" {
+			continue
+		}
+		if _, ok := seen[title]; ok {
+			continue
+		}
+		seen[title] = struct{}{}
+		year := extractPlexYear(title)
+		if year == "" {
+			year = yearHint
+		}
+		out = append(out, plexTitleCandidate{
+			title:      title,
+			normalized: normalizePlexTitle(title),
+			year:       year,
+		})
+	}
+	return out
+}
+
+func plexCandidateTitles(candidates []plexTitleCandidate) []string {
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.title == "" {
+			continue
+		}
+		out = append(out, candidate.title)
+	}
+	return out
+}
+
+func plexCandidatesMatch(trackerCandidates, itemCandidates []plexTitleCandidate) (bool, plexTitleMatchDetail) {
+	detail := plexTitleMatchDetail{}
+	for _, tracker := range trackerCandidates {
+		if tracker.normalized == "" {
+			continue
+		}
+		for _, item := range itemCandidates {
+			if item.normalized == "" {
+				continue
+			}
+			if tracker.year != "" && item.year != "" && tracker.year != item.year {
+				continue
+			}
+			yearMatch := tracker.year != "" && item.year != "" && tracker.year == item.year
+			matched, strategy := plexNormalizedTitleMatch(tracker.normalized, item.normalized, yearMatch)
+			if matched {
+				detail = plexTitleMatchDetail{
+					trackerNormalized: tracker.normalized,
+					itemNormalized:    item.normalized,
+					yearMatch:         yearMatch,
+					strategy:          strategy,
+				}
+				return true, detail
+			}
+		}
+	}
+	return false, detail
+}
+
+func plexNormalizedTitleMatch(targetNormalized, itemNormalized string, yearMatch bool) (bool, string) {
+	if itemNormalized == "" || targetNormalized == "" {
+		return false, ""
+	}
+	if itemNormalized == targetNormalized {
+		return true, "exact"
+	}
+
+	short := itemNormalized
+	long := targetNormalized
+	if len(short) > len(long) {
+		short, long = long, short
+	}
+	if short == "" {
+		return false, ""
+	}
+
+	if len(short) < 4 {
+		if yearMatch && strings.HasPrefix(long, short) {
+			return true, "short_prefix_year"
+		}
+		return false, ""
+	}
+	if strings.HasPrefix(long, short) {
+		return true, "prefix"
+	}
+	if len(short) >= 6 {
+		if strings.Contains(long, short) {
+			return true, "contains"
+		}
+		return false, ""
+	}
+	if yearMatch && strings.Contains(long, short) {
+		return true, "year_contains"
+	}
+	return false, ""
+}
+
+const plexMatchOverrideTTL = 30 * time.Minute
+const plexSearchDelay = 3 * time.Second
+
+type plexMatchOverride struct {
+	info  plexMatchInfo
+	setAt time.Time
+}
+
+func (s *PlexTarget) setMatchOverride(path string, info *plexMatchInfo) {
+	if path == "" || info == nil || info.title == "" {
+		return
+	}
+	s.matchOverrides.Store(path, plexMatchOverride{
+		info:  *info,
+		setAt: time.Now(),
+	})
+}
+
+func (s *PlexTarget) logMatchOverride(path string, info *plexMatchInfo, source string) {
+	if path == "" || info == nil || info.title == "" {
+		return
+	}
+	log.Debug().
+		Str("target", s.Name()).
+		Str("path", path).
+		Str("title", info.title).
+		Str("year", info.year).
+		Strs("season_patterns", info.seasonPatterns).
+		Str("source", source).
+		Msg("Plex match override applied")
+}
+
+func (s *PlexTarget) getMatchOverride(path string) *plexMatchInfo {
+	if path == "" {
+		return nil
+	}
+	value, ok := s.matchOverrides.Load(path)
+	if !ok {
+		return nil
+	}
+	override := value.(plexMatchOverride)
+	if time.Since(override.setAt) > plexMatchOverrideTTL {
+		s.matchOverrides.Delete(path)
+		return nil
+	}
+	info := override.info
+	return &info
+}
+
+func (s *PlexTarget) updateMatchInfoAfterDelay(ctx context.Context, path string, tracker *plexActivityTracker) {
+	if path == "" || tracker == nil {
+		return
+	}
+
+	timer := time.NewTimer(plexSearchDelay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+	}
+
+	items, err := s.searchItems(ctx, path)
+	found := false
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("target", s.Name()).
+			Str("path", path).
+			Msg("Plex search failed while preparing scan tracking")
+	} else if len(items) > 0 {
+		if info := plexMatchInfoFromMetadata(path, items); info != nil {
+			tracker.mu.Lock()
+			tracker.applyMatchInfo(info)
+			tracker.allowTitleProbe = false
+			tracker.mu.Unlock()
+			s.setMatchOverride(path, info)
+			s.logMatchOverride(path, info, "plex_search")
+			found = true
+		}
+	}
+
+	tracker.mu.Lock()
+	tracker.markSearchDone(found)
+	trackerID := tracker.id
+	trackerTitle := tracker.title
+	allowTitleProbe := tracker.allowTitleProbe
+	tracker.mu.Unlock()
+
+	log.Debug().
+		Str("target", s.Name()).
+		Str("tracker_id", trackerID).
+		Str("title", trackerTitle).
+		Bool("found", found).
+		Bool("allow_title_probe", allowTitleProbe).
+		Msg("Plex tracker search complete")
 }
 
 // plexAnalysisActivityTypes are the Plex activity types we track for scan completion.
@@ -76,9 +458,10 @@ type PlexWebSocketNotification = plexWebSocketNotification
 
 // PlexTarget implements the Target interface for Plex Media Server
 type PlexTarget struct {
-	dbTarget    *database.Target
-	client      *http.Client
-	subscribers sync.Map // map[string]*plexActivityTracker - for waiting uploaders
+	dbTarget       *database.Target
+	client         *http.Client
+	subscribers    sync.Map // map[string]*plexActivityTracker - for waiting uploaders
+	matchOverrides sync.Map // map[string]plexMatchOverride - scan path -> match override
 
 	// Notification callbacks for external observers (e.g., Plex Auto Languages)
 	notificationCallbacks []PlexNotificationCallback
@@ -151,8 +534,6 @@ func (s *PlexTarget) Scan(ctx context.Context, path string) error {
 		return fmt.Errorf("no library found for path: %s", path)
 	}
 
-	// Track which items we've already processed to avoid duplicates
-	processedItems := make(map[string]bool)
 	scanned := false
 
 	for _, lib := range matchingLibraries {
@@ -170,58 +551,6 @@ func (s *PlexTarget) Scan(ctx context.Context, path string) error {
 			continue
 		}
 		scanned = true
-
-		// If metadata refresh or analysis is enabled, search for the specific item
-		if s.dbTarget.Config.RefreshMetadata || s.dbTarget.Config.AnalyzeMedia {
-			items, err := s.searchItems(ctx, path)
-			if err != nil {
-				log.Warn().Err(err).
-					Str("scanner", s.Name()).
-					Str("path", path).
-					Msg("Failed to search for items")
-				continue
-			}
-
-			if len(items) == 0 {
-				log.Debug().
-					Str("scanner", s.Name()).
-					Str("path", path).
-					Msg("No items found for path, scan completed without metadata operations")
-				continue
-			}
-
-			for _, item := range items {
-				// Skip if already processed
-				if processedItems[item.Key] {
-					log.Debug().
-						Str("scanner", s.Name()).
-						Str("item_key", item.Key).
-						Msg("Item already processed, skipping")
-					continue
-				}
-				processedItems[item.Key] = true
-
-				// Refresh metadata if enabled
-				if s.dbTarget.Config.RefreshMetadata {
-					if err := s.refreshItem(ctx, item.Key); err != nil {
-						log.Error().Err(err).
-							Str("scanner", s.Name()).
-							Str("item_key", item.Key).
-							Msg("Failed to refresh item metadata")
-					}
-				}
-
-				// Analyze media if enabled
-				if s.dbTarget.Config.AnalyzeMedia {
-					if err := s.analyzeItem(ctx, item.Key); err != nil {
-						log.Error().Err(err).
-							Str("scanner", s.Name()).
-							Str("item_key", item.Key).
-							Msg("Failed to analyze item")
-					}
-				}
-			}
-		}
 	}
 
 	if !scanned {
@@ -557,9 +886,14 @@ func (s *PlexTarget) getMatchingLibraries(path string, libraries []Library) []Li
 
 // getSearchTerm extracts a search term from a file path (e.g., show name or movie name)
 func getSearchTerm(path string) string {
-	// Get the directory containing the file
-	dir := filepath.Dir(path)
-	parts := strings.Split(dir, "/")
+	candidatePath := filepath.Clean(path)
+	if candidatePath == "." || candidatePath == string(filepath.Separator) {
+		return ""
+	}
+	if isMediaFile(candidatePath) {
+		candidatePath = filepath.Dir(candidatePath)
+	}
+	parts := strings.Split(filepath.ToSlash(candidatePath), "/")
 
 	// Find the best part to use as search term (skip Season directories)
 	var chosenPart string
@@ -623,6 +957,27 @@ func getSearchTerm(path string) string {
 	}
 
 	return result
+}
+
+var plexMediaExtensions = map[string]struct{}{
+	".avi":  {},
+	".m2ts": {},
+	".m4v":  {},
+	".mkv":  {},
+	".mov":  {},
+	".mp4":  {},
+	".mpeg": {},
+	".mpg":  {},
+	".mts":  {},
+	".ts":   {},
+	".webm": {},
+	".wmv":  {},
+}
+
+func isMediaFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	_, ok := plexMediaExtensions[ext]
+	return ok
 }
 
 // searchItems searches Plex for items matching the given path
@@ -719,6 +1074,130 @@ func (s *PlexTarget) searchItems(ctx context.Context, path string) ([]plexMetada
 	return nil, nil // No matches found
 }
 
+func plexMatchInfoFromMetadata(path string, items []plexMetadata) *plexMatchInfo {
+	base := buildPlexMatchInfo(path)
+	baseYear := 0
+	if base != nil && base.year != "" {
+		baseYear = plexYearFromString(base.year)
+	}
+	for _, item := range items {
+		if item.Title == "" {
+			continue
+		}
+		switch strings.ToLower(item.Type) {
+		case "movie":
+			year := item.Year
+			if year == 0 {
+				year = baseYear
+			}
+			title := plexTitleWithYear(item.Title, year)
+			info := &plexMatchInfo{
+				title:          title,
+				seasonPatterns: nil,
+			}
+			if base != nil && len(base.seasonPatterns) > 0 {
+				info.seasonPatterns = base.seasonPatterns
+			}
+			if year > 0 {
+				info.year = fmt.Sprintf("%d", year)
+			}
+			return info
+		case "show":
+			year := item.Year
+			if year == 0 {
+				year = baseYear
+			}
+			title := plexTitleWithYear(item.Title, year)
+			info := &plexMatchInfo{
+				title:          title,
+				seasonPatterns: nil,
+			}
+			if year > 0 {
+				info.year = fmt.Sprintf("%d", year)
+			}
+			return info
+		case "season":
+			title := item.ParentTitle
+			if title == "" {
+				title = item.GrandparentTitle
+			}
+			if title == "" {
+				title = item.Title
+			}
+			if title == "" {
+				continue
+			}
+			year := baseYear
+			if year == 0 {
+				year = item.Year
+			}
+			title = plexTitleWithYear(title, year)
+			info := &plexMatchInfo{
+				title:          title,
+				seasonPatterns: nil,
+			}
+			if base != nil && len(base.seasonPatterns) > 0 {
+				info.seasonPatterns = base.seasonPatterns
+			} else if item.Index > 0 {
+				info.seasonPatterns = seasonPatternsFromNumber(item.Index)
+			}
+			if year > 0 {
+				info.year = fmt.Sprintf("%d", year)
+			}
+			return info
+		case "episode":
+			title := item.GrandparentTitle
+			if title == "" {
+				title = item.ParentTitle
+			}
+			if title == "" {
+				continue
+			}
+			year := baseYear
+			if year == 0 {
+				year = item.Year
+			}
+			title = plexTitleWithYear(title, year)
+			info := &plexMatchInfo{
+				title:          title,
+				seasonPatterns: nil,
+			}
+			if base != nil && len(base.seasonPatterns) > 0 {
+				info.seasonPatterns = base.seasonPatterns
+			} else if item.ParentIndex > 0 {
+				info.seasonPatterns = seasonPatternsFromNumber(item.ParentIndex)
+			}
+			if year > 0 {
+				info.year = fmt.Sprintf("%d", year)
+			}
+			return info
+		}
+	}
+	return nil
+}
+
+func seasonPatternsFromNumber(seasonNum int) []string {
+	if seasonNum <= 0 {
+		return nil
+	}
+	patterns := []string{
+		fmt.Sprintf("Season %02d", seasonNum),
+		fmt.Sprintf("Season %d", seasonNum),
+		fmt.Sprintf("S%02d", seasonNum),
+		fmt.Sprintf("S%d", seasonNum),
+	}
+	seen := make(map[string]struct{}, len(patterns))
+	out := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		if _, ok := seen[pattern]; ok {
+			continue
+		}
+		seen[pattern] = struct{}{}
+		out = append(out, pattern)
+	}
+	return out
+}
+
 // getEpisodes fetches all episodes for a TV show
 func (s *PlexTarget) getEpisodes(ctx context.Context, showKey string) ([]plexMetadata, error) {
 	// The key format is like "/library/metadata/12345"
@@ -764,64 +1243,6 @@ func (s *PlexTarget) mediaMatchesPath(media []plexMedia, path string) bool {
 		}
 	}
 	return false
-}
-
-// refreshItem triggers a metadata refresh for a specific item
-func (s *PlexTarget) refreshItem(ctx context.Context, itemKey string) error {
-	refreshURL := fmt.Sprintf("%s%s/refresh", s.dbTarget.URL, itemKey)
-
-	req, err := http.NewRequestWithContext(ctx, "PUT", refreshURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create refresh request: %w", err)
-	}
-
-	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("refresh request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("plex refresh returned status %d", resp.StatusCode)
-	}
-
-	log.Debug().
-		Str("scanner", s.Name()).
-		Str("item_key", itemKey).
-		Msg("Refreshed item metadata")
-
-	return nil
-}
-
-// analyzeItem triggers a media analysis for a specific item
-func (s *PlexTarget) analyzeItem(ctx context.Context, itemKey string) error {
-	analyzeURL := fmt.Sprintf("%s%s/analyze", s.dbTarget.URL, itemKey)
-
-	req, err := http.NewRequestWithContext(ctx, "PUT", analyzeURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create analyze request: %w", err)
-	}
-
-	req.Header.Set("X-Plex-Token", s.dbTarget.Token)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("analyze request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("plex analyze returned status %d", resp.StatusCode)
-	}
-
-	log.Debug().
-		Str("scanner", s.Name()).
-		Str("item_key", itemKey).
-		Msg("Analyzed item media")
-
-	return nil
 }
 
 // Plex JSON structures for libraries API
@@ -903,10 +1324,15 @@ type plexSearchResult struct {
 }
 
 type plexMetadata struct {
-	Key   string      `json:"key"`
-	Title string      `json:"title"`
-	Type  string      `json:"type"`
-	Media []plexMedia `json:"Media,omitempty"`
+	Key              string      `json:"key"`
+	Title            string      `json:"title"`
+	Type             string      `json:"type"`
+	Year             int         `json:"year"`
+	ParentTitle      string      `json:"parentTitle"`
+	ParentIndex      int         `json:"parentIndex"`
+	GrandparentTitle string      `json:"grandparentTitle"`
+	Index            int         `json:"index"`
+	Media            []plexMedia `json:"Media,omitempty"`
 }
 
 type plexMedia struct {
@@ -1151,19 +1577,91 @@ func (s *PlexTarget) handleActivityNotifications(activities []plexActivityNotifi
 func (s *PlexTarget) notifyWaitingSubscribers(itemName, uuid, actType, event string) {
 	s.subscribers.Range(func(key, value any) bool {
 		tracker := value.(*plexActivityTracker)
-		// Check if any of our match patterns appear in the Plex item name
-		if tracker.matchesItem(itemName) {
-			tracker.mu.Lock()
-			tracker.lastActivity = time.Now()
-
-			switch event {
-			case "started":
-				tracker.scanStarted = true
-				tracker.activeUUIDs[uuid] = actType
-			case "ended":
-				delete(tracker.activeUUIDs, uuid)
-			}
+		tracker.mu.Lock()
+		if tracker.allowTitleProbe {
+			tracker.applySubtitleOverride(itemName)
+		}
+		matched, details := tracker.matchItemWithDetails(itemName)
+		if !matched {
 			tracker.mu.Unlock()
+			return true
+		}
+
+		tracker.lastActivity = time.Now()
+		tracker.scanStarted = true
+
+		uuidUpdated := false
+		switch event {
+		case "started":
+			tracker.activeUUIDs[uuid] = actType
+			uuidUpdated = true
+		case "updated":
+			if _, ok := tracker.activeUUIDs[uuid]; !ok {
+				tracker.activeUUIDs[uuid] = actType
+				uuidUpdated = true
+			}
+		case "ended":
+			if _, ok := tracker.activeUUIDs[uuid]; ok {
+				delete(tracker.activeUUIDs, uuid)
+				uuidUpdated = true
+			}
+		}
+
+		trackerID := tracker.id
+		trackerTitle := tracker.title
+		trackerYear := tracker.year
+		seasonPatterns := append([]string(nil), tracker.seasonPatterns...)
+		activeCount := len(tracker.activeUUIDs)
+		tracker.mu.Unlock()
+
+		log.Debug().
+			Str("target", s.Name()).
+			Str("tracker_id", trackerID).
+			Str("event", event).
+			Str("activity", actType).
+			Str("item", itemName).
+			Str("title", trackerTitle).
+			Str("year", trackerYear).
+			Strs("season_patterns", seasonPatterns).
+			Int("active_count", activeCount).
+			Bool("idle_reset", true).
+			Bool("scan_started", true).
+			Msg("Plex activity matched tracker")
+
+		if uuidUpdated {
+			log.Debug().
+				Str("target", s.Name()).
+				Str("tracker_id", trackerID).
+				Str("uuid", uuid).
+				Str("event", event).
+				Int("active_count", activeCount).
+				Msg("Plex activity UUID updated")
+		}
+
+		log.Trace().
+			Str("target", s.Name()).
+			Str("tracker_id", trackerID).
+			Strs("tracker_candidates", plexCandidateTitles(details.trackerCandidates)).
+			Strs("item_candidates", plexCandidateTitles(details.itemCandidates)).
+			Msg("Plex title candidates built")
+
+		log.Trace().
+			Str("target", s.Name()).
+			Str("tracker_id", trackerID).
+			Str("tracker_norm", details.titleMatch.trackerNormalized).
+			Str("item_norm", details.titleMatch.itemNormalized).
+			Bool("year_match", details.titleMatch.yearMatch).
+			Str("match_strategy", details.titleMatch.strategy).
+			Msg("Plex title compare")
+
+		if len(seasonPatterns) > 0 {
+			log.Trace().
+				Str("target", s.Name()).
+				Str("tracker_id", trackerID).
+				Str("item", itemName).
+				Strs("patterns", seasonPatterns).
+				Str("matched_pattern", details.seasonMatchedPattern).
+				Msg("Plex season pattern check")
 		}
 		return true
 	})
@@ -1180,11 +1678,15 @@ func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, tim
 
 // WaitForScanCompletionWithIdle waits for a Plex library scan to complete using a caller-provided idle threshold.
 func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path string, idleThreshold time.Duration) error {
-	// Build match info from path
+	// Build match info from Plex metadata or path
 	// For path like "/mnt/local/Media/TV/TV/Absentia (2017) (tvdb-330500)/Season 02":
 	// - showName: "Absentia"
 	// - seasonPatterns: ["Season 02", "S02", "S2"]
-	matchInfo := buildPlexMatchInfo(path)
+	matchInfo := s.getMatchOverride(path)
+	overrideUsed := matchInfo != nil
+	if matchInfo == nil {
+		matchInfo = buildPlexMatchInfo(path)
+	}
 	if matchInfo == nil {
 		log.Debug().
 			Str("target", s.Name()).
@@ -1201,10 +1703,17 @@ func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path str
 	// Create tracker
 	subID := fmt.Sprintf("%s-%d", matchInfo.title, time.Now().UnixNano())
 	tracker := &plexActivityTracker{
-		title:          matchInfo.title,
-		seasonPatterns: matchInfo.seasonPatterns,
-		activeUUIDs:    make(map[string]string),
-		lastActivity:   time.Now(),
+		id:              subID,
+		title:           matchInfo.title,
+		titleNormalized: normalizePlexTitle(matchInfo.title),
+		year:            matchInfo.year,
+		seasonPatterns:  matchInfo.seasonPatterns,
+		activeUUIDs:     make(map[string]string),
+		lastActivity:    time.Now(),
+	}
+	if overrideUsed {
+		tracker.searchDone = true
+		tracker.idleStart = time.Now()
 	}
 	s.subscribers.Store(subID, tracker)
 	defer s.subscribers.Delete(subID)
@@ -1216,6 +1725,10 @@ func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path str
 		Str("idle_threshold", idleThreshold.String()).
 		Msg("Waiting for all Plex activities to complete")
 
+	if !overrideUsed {
+		go s.updateMatchInfoAfterDelay(ctx, path, tracker)
+	}
+
 	// Check every 2 seconds for idle completion
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -1224,25 +1737,51 @@ func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path str
 		select {
 		case <-ticker.C:
 			tracker.mu.Lock()
-			idle := time.Since(tracker.lastActivity)
+			searchDone := tracker.searchDone
+			idleStart := tracker.idleStart
+			lastActivity := tracker.lastActivity
 			started := tracker.scanStarted
 			activeCount := len(tracker.activeUUIDs)
+			currentTitle := tracker.title
+			trackerID := tracker.id
 			tracker.mu.Unlock()
+
+			if !searchDone {
+				continue
+			}
+			if lastActivity.Before(idleStart) {
+				lastActivity = idleStart
+			}
+			idle := time.Since(lastActivity)
+
+			if started {
+				log.Trace().
+					Str("target", s.Name()).
+					Str("tracker_id", trackerID).
+					Str("title", currentTitle).
+					Dur("idle", idle).
+					Dur("idle_threshold", idleThreshold).
+					Int("active_count", activeCount).
+					Time("last_activity", lastActivity).
+					Msg("Plex idle tick")
+			}
 
 			// Complete when no active tasks and idle threshold exceeded
 			if activeCount == 0 && idle > idleThreshold {
 				if started {
 					log.Debug().
 						Str("target", s.Name()).
-						Str("title", matchInfo.title).
+						Str("title", currentTitle).
 						Str("idle", idle.String()).
-						Msg("Plex scan complete (all activities finished)")
+						Bool("tracked_activities", true).
+						Msg("Plex scan complete (tracked activities, idle reached)")
 				} else {
 					log.Debug().
 						Str("target", s.Name()).
-						Str("title", matchInfo.title).
+						Str("title", currentTitle).
 						Str("idle", idle.String()).
-						Msg("Plex scan complete (idle timeout, no activities detected)")
+						Bool("tracked_activities", false).
+						Msg("Plex scan complete (idle only, no activities tracked)")
 				}
 				return nil
 			}
@@ -1256,6 +1795,7 @@ func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path str
 type plexMatchInfo struct {
 	title          string   // media title (show name or movie name)
 	seasonPatterns []string // season patterns for TV, empty for movies
+	year           string   // optional year extracted from path
 }
 
 // buildPlexMatchInfo extracts match info from a path for Plex activity matching
@@ -1289,6 +1829,7 @@ func buildPlexMatchInfo(path string) *plexMatchInfo {
 		info := &plexMatchInfo{
 			title:          showName,
 			seasonPatterns: []string{folderName},
+			year:           extractPlexYear(showFolder),
 		}
 
 		// Add abbreviated season format: "Season 02" -> "S02", "S2"
@@ -1314,6 +1855,7 @@ func buildPlexMatchInfo(path string) *plexMatchInfo {
 	return &plexMatchInfo{
 		title:          title,
 		seasonPatterns: nil, // No season patterns for movies
+		year:           extractPlexYear(folderName),
 	}
 }
 

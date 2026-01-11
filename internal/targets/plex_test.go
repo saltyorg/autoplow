@@ -33,7 +33,7 @@ func TestGetSearchTerm(t *testing.T) {
 		{
 			name:     "TV show without season directory",
 			path:     "/media/TV Shows/Game of Thrones",
-			expected: "TV Shows",
+			expected: "Game of Thrones",
 		},
 		{
 			name:     "Multiple season levels",
