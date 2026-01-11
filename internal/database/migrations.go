@@ -788,7 +788,7 @@ var migrations = []migration{
 			CREATE TABLE destination_plex_targets (
 				destination_id INTEGER REFERENCES destinations(id) ON DELETE CASCADE,
 				target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
-				idle_threshold_seconds INTEGER NOT NULL DEFAULT 30,
+				idle_threshold_seconds INTEGER NOT NULL DEFAULT 60,
 				PRIMARY KEY (destination_id, target_id)
 			);
 			CREATE INDEX idx_destination_plex_targets_target ON destination_plex_targets(target_id);

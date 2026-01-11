@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/rs/zerolog/log"
 
@@ -315,8 +314,10 @@ func (s *PlexTarget) GetEpisodeWithStreams(ctx context.Context, ratingKey string
 
 // GetShowEpisodes fetches all episodes for a show with their stream information
 func (s *PlexTarget) GetShowEpisodes(ctx context.Context, showKey string) ([]plexautolang.Episode, error) {
-	// Clean up the show key if it contains the full path
-	showKey = strings.TrimPrefix(showKey, "/library/metadata/")
+	showKey = normalizePlexMetadataKey(showKey)
+	if showKey == "" {
+		return nil, fmt.Errorf("missing show key")
+	}
 
 	// Get all episodes (allLeaves)
 	episodesURL := fmt.Sprintf("%s/library/metadata/%s/allLeaves", s.dbTarget.URL, showKey)
@@ -372,8 +373,10 @@ func (s *PlexTarget) GetShowEpisodes(ctx context.Context, showKey string) ([]ple
 
 // GetSeasonEpisodes fetches episodes for a specific season
 func (s *PlexTarget) GetSeasonEpisodes(ctx context.Context, seasonKey string) ([]plexautolang.Episode, error) {
-	// Clean up the season key if it contains the full path
-	seasonKey = strings.TrimPrefix(seasonKey, "/library/metadata/")
+	seasonKey = normalizePlexMetadataKey(seasonKey)
+	if seasonKey == "" {
+		return nil, fmt.Errorf("missing season key")
+	}
 
 	episodesURL := fmt.Sprintf("%s/library/metadata/%s/children", s.dbTarget.URL, seasonKey)
 

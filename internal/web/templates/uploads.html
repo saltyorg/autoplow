@@ -396,7 +396,7 @@
                         </label>
                         <div>
                             <label for="plex_idle_threshold_{{.ID}}_new" class="block text-xs font-medium text-gray-600 dark:text-gray-400">Idle Threshold (seconds)</label>
-                            <input type="number" name="plex_idle_threshold_{{.ID}}" id="plex_idle_threshold_{{.ID}}_new" min="1" value="30" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
+                            <input type="number" name="plex_idle_threshold_{{.ID}}" id="plex_idle_threshold_{{.ID}}_new" min="60" value="60" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
                         </div>
                     </div>
                     {{end}}
@@ -799,9 +799,9 @@
                     plexSelected.forEach((checkbox) => {
                         const idleInput = form.querySelector('input[name="plex_idle_threshold_' + checkbox.value + '"]');
                         const idleValue = idleInput ? parseInt(idleInput.value, 10) : 0;
-                        if (!idleValue || idleValue <= 0) {
+                        if (!idleValue || idleValue < 60) {
                             const targetName = checkbox.dataset.plexName || checkbox.value;
-                            errors.push('Idle threshold must be greater than 0 for Plex target: ' + targetName);
+                            errors.push('Idle threshold must be at least 60 seconds for Plex target: ' + targetName);
                         }
                     });
                 }
@@ -853,7 +853,7 @@
                     {{if .Content.PlexTargets}}
                     {{range $plex := .Content.PlexTargets}}
                     {{- $selected := false -}}
-                    {{- $idle := 30 -}}
+                    {{- $idle := 60 -}}
                     {{- if $.Content.Destination.PlexTargets -}}
                         {{- range $.Content.Destination.PlexTargets -}}
                             {{- if eq .TargetID $plex.ID -}}
@@ -862,6 +862,9 @@
                             {{- end -}}
                         {{- end -}}
                     {{- end -}}
+                    {{- if lt $idle 60 -}}
+                        {{- $idle = 60 -}}
+                    {{- end -}}
                     <div class="plex-target-row flex flex-col gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3" data-plex-target-row>
                         <label class="flex items-center">
                             <input type="checkbox" name="plex_target_ids[]" value="{{$plex.ID}}" data-plex-name="{{$plex.Name}}" {{if $selected}}checked{{end}} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
@@ -869,7 +872,7 @@
                         </label>
                         <div>
                             <label for="plex_idle_threshold_{{$plex.ID}}_edit" class="block text-xs font-medium text-gray-600 dark:text-gray-400">Idle Threshold (seconds)</label>
-                            <input type="number" name="plex_idle_threshold_{{$plex.ID}}" id="plex_idle_threshold_{{$plex.ID}}_edit" min="1" value="{{$idle}}" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
+                            <input type="number" name="plex_idle_threshold_{{$plex.ID}}" id="plex_idle_threshold_{{$plex.ID}}_edit" min="60" value="{{$idle}}" class="mt-1 block w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border" data-plex-idle>
                         </div>
                     </div>
                     {{end}}
@@ -1347,9 +1350,9 @@
                     plexSelected.forEach((checkbox) => {
                         const idleInput = form.querySelector('input[name="plex_idle_threshold_' + checkbox.value + '"]');
                         const idleValue = idleInput ? parseInt(idleInput.value, 10) : 0;
-                        if (!idleValue || idleValue <= 0) {
+                        if (!idleValue || idleValue < 60) {
                             const targetName = checkbox.dataset.plexName || checkbox.value;
-                            errors.push('Idle threshold must be greater than 0 for Plex target: ' + targetName);
+                            errors.push('Idle threshold must be at least 60 seconds for Plex target: ' + targetName);
                         }
                     });
                 }

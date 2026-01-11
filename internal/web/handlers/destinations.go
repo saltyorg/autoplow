@@ -747,8 +747,8 @@ func (h *Handlers) parseDestinationPlexTargets(r *http.Request) ([]*database.Des
 
 		idleStr := r.FormValue(fmt.Sprintf("plex_idle_threshold_%d", id))
 		idleSeconds, err := strconv.Atoi(idleStr)
-		if err != nil || idleSeconds <= 0 {
-			return nil, fmt.Errorf("Idle threshold must be greater than 0 for Plex target: %s", target.Name)
+		if err != nil || idleSeconds < 60 {
+			return nil, fmt.Errorf("Idle threshold must be at least 60 seconds for Plex target: %s", target.Name)
 		}
 
 		results = append(results, &database.DestinationPlexTarget{

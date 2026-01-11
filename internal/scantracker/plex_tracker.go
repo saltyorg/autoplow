@@ -101,9 +101,11 @@ func (t *PlexTracker) trackScan(destinationID int64, plexTarget *database.Destin
 		return
 	}
 
+	const minIdleThreshold = 60 * time.Second
+
 	idleThreshold := time.Duration(plexTarget.IdleThresholdSeconds) * time.Second
-	if idleThreshold <= 0 {
-		idleThreshold = 30 * time.Second
+	if idleThreshold < minIdleThreshold {
+		idleThreshold = minIdleThreshold
 	}
 
 	key := scanKey{

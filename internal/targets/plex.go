@@ -26,18 +26,23 @@ import (
 
 // plexActivityTracker tracks all activities for an item during scan completion (used by waiting uploaders)
 type plexActivityTracker struct {
-	id              string            // identifier for logging
-	title           string            // media title - show name or movie name (required match)
-	titleNormalized string            // normalized title for fuzzy matching
-	year            string            // optional year for movie matching
-	seasonPatterns  []string          // season patterns like "Season 02", "S02" (any must match for TV)
-	activeUUIDs     map[string]string // uuid -> activity type
+	id              string   // identifier for logging
+	title           string   // media title - show name or movie name (required match)
+	titleNormalized string   // normalized title for fuzzy matching
+	year            string   // optional year for movie matching
+	seasonPatterns  []string // season patterns like "Season 02", "S02" (any must match for TV)
+	activeUUIDs     map[string]plexActivityState
 	mu              sync.Mutex
 	lastActivity    time.Time
 	scanStarted     bool
 	idleStart       time.Time
 	searchDone      bool
 	allowTitleProbe bool
+}
+
+type plexActivityState struct {
+	activityType string
+	lastSeen     time.Time
 }
 
 type plexPreparedTracker struct {
@@ -1050,7 +1055,11 @@ func (s *PlexTarget) searchItems(ctx context.Context, path string) ([]plexMetada
 
 			// For TV shows, we need to get episodes and check their paths
 			if meta.Type == "show" {
-				episodes, err := s.getEpisodes(ctx, meta.Key)
+				showKey := meta.RatingKey
+				if showKey == "" {
+					showKey = meta.Key
+				}
+				episodes, err := s.getEpisodes(ctx, showKey)
 				if err != nil {
 					log.Warn().Err(err).Str("show", meta.Title).Msg("Failed to get episodes")
 					continue
@@ -1208,11 +1217,28 @@ func seasonPatternsFromNumber(seasonNum int) []string {
 	return out
 }
 
+func normalizePlexMetadataKey(raw string) string {
+	cleaned := strings.TrimSpace(raw)
+	if cleaned == "" {
+		return ""
+	}
+	cleaned = strings.TrimPrefix(cleaned, "/library/metadata/")
+	cleaned = strings.TrimSuffix(cleaned, "/")
+	cleaned = strings.TrimSuffix(cleaned, "/allLeaves")
+	cleaned = strings.TrimSuffix(cleaned, "/children")
+	cleaned = strings.TrimSuffix(cleaned, "/")
+	return cleaned
+}
+
 // getEpisodes fetches all episodes for a TV show
 func (s *PlexTarget) getEpisodes(ctx context.Context, showKey string) ([]plexMetadata, error) {
-	// The key format is like "/library/metadata/12345"
+	showKey = normalizePlexMetadataKey(showKey)
+	if showKey == "" {
+		return nil, fmt.Errorf("missing show key")
+	}
+	// The key format is like "12345"
 	// We need to call "/library/metadata/12345/allLeaves" to get all episodes
-	episodesURL := fmt.Sprintf("%s%s/allLeaves", s.dbTarget.URL, showKey)
+	episodesURL := fmt.Sprintf("%s/library/metadata/%s/allLeaves", s.dbTarget.URL, showKey)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", episodesURL, nil)
 	if err != nil {
@@ -1334,6 +1360,7 @@ type plexSearchResult struct {
 }
 
 type plexMetadata struct {
+	RatingKey        string      `json:"ratingKey"`
 	Key              string      `json:"key"`
 	Title            string      `json:"title"`
 	Type             string      `json:"type"`
@@ -1671,7 +1698,7 @@ func (s *PlexTarget) newActivityTracker(path string) (*plexActivityTracker, erro
 		titleNormalized: normalizePlexTitle(matchInfo.title),
 		year:            matchInfo.year,
 		seasonPatterns:  matchInfo.seasonPatterns,
-		activeUUIDs:     make(map[string]string),
+		activeUUIDs:     make(map[string]plexActivityState),
 		lastActivity:    time.Now(),
 	}
 	if overrideUsed {
@@ -1686,15 +1713,18 @@ func (s *PlexTarget) newActivityTracker(path string) (*plexActivityTracker, erro
 // there's been no activity for the configured idle threshold (default 30 seconds).
 // Returns nil if scan completed, or the context error if timeout/cancelled.
 func (s *PlexTarget) WaitForScanCompletion(ctx context.Context, path string, timeout time.Duration) error {
-	// Default idle threshold (30s) for legacy interface.
-	return s.WaitForScanCompletionWithIdle(ctx, path, 30*time.Second)
+	// Default idle threshold (60s) for legacy interface.
+	return s.WaitForScanCompletionWithIdle(ctx, path, 60*time.Second)
 }
 
 // WaitForScanCompletionWithIdle waits for a Plex library scan to complete using a caller-provided idle threshold.
 func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path string, idleThreshold time.Duration) error {
-	// Default idle threshold to 30 seconds if unset or invalid.
+	// Default idle threshold to 60 seconds if unset or invalid.
 	if idleThreshold <= 0 {
-		idleThreshold = 30 * time.Second
+		idleThreshold = 60 * time.Second
+	}
+	if idleThreshold < 60*time.Second {
+		idleThreshold = 60 * time.Second
 	}
 
 	tracker := s.takePreparedTracker(path)
@@ -1748,10 +1778,26 @@ func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path str
 			idleStart := tracker.idleStart
 			lastActivity := tracker.lastActivity
 			started := tracker.scanStarted
+			staleCount := 0
+			now := time.Now()
+			for uuid, state := range tracker.activeUUIDs {
+				if now.Sub(state.lastSeen) > idleThreshold {
+					delete(tracker.activeUUIDs, uuid)
+					staleCount++
+				}
+			}
 			activeCount := len(tracker.activeUUIDs)
 			currentTitle := tracker.title
 			trackerID := tracker.id
 			tracker.mu.Unlock()
+
+			if staleCount > 0 {
+				log.Trace().
+					Str("target", s.Name()).
+					Str("tracker_id", trackerID).
+					Int("stale_count", staleCount).
+					Msg("Plex stale activities expired")
+			}
 
 			if !searchDone {
 				continue
@@ -1766,8 +1812,8 @@ func (s *PlexTarget) WaitForScanCompletionWithIdle(ctx context.Context, path str
 					Str("target", s.Name()).
 					Str("tracker_id", trackerID).
 					Str("title", currentTitle).
-					Dur("idle", idle).
-					Dur("idle_threshold", idleThreshold).
+					Str("idle", idle.String()).
+					Str("idle_threshold", idleThreshold.String()).
 					Int("active_count", activeCount).
 					Time("last_activity", lastActivity).
 					Msg("Plex idle tick")

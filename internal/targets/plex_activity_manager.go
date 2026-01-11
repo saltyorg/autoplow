@@ -129,14 +129,21 @@ func (m *plexActivityManager) notifyTrackers(itemName, uuid, actType, event stri
 		tracker.scanStarted = true
 
 		uuidUpdated := false
+		now := time.Now()
 		switch event {
 		case "started":
-			tracker.activeUUIDs[uuid] = actType
+			tracker.activeUUIDs[uuid] = plexActivityState{
+				activityType: actType,
+				lastSeen:     now,
+			}
 			uuidUpdated = true
 		case "updated":
 			if _, ok := tracker.activeUUIDs[uuid]; !ok {
-				tracker.activeUUIDs[uuid] = actType
 				uuidUpdated = true
+			}
+			tracker.activeUUIDs[uuid] = plexActivityState{
+				activityType: actType,
+				lastSeen:     now,
 			}
 		case "ended":
 			if _, ok := tracker.activeUUIDs[uuid]; ok {
