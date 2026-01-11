@@ -274,20 +274,29 @@ func (db *db) SetScanTarget(id int64, targetID int64) error {
 	return nil
 }
 
-// FindDuplicatePendingScan checks if a pending or retry scan for the same path exists
-func (db *db) FindDuplicatePendingScan(path string) (*Scan, error) {
+// FindDuplicatePendingScan checks if a pending or retry scan exists for the same path and trigger.
+func (db *db) FindDuplicatePendingScan(path string, triggerID *int64) (*Scan, error) {
 	scan := &Scan{}
-	var triggerID, targetID sql.NullInt64
+	var scanTriggerID, targetID sql.NullInt64
 	var startedAt, completedAt, nextRetryAt sql.NullTime
 	var lastError, eventType, filePathsJSON sql.NullString
 
-	err := db.queryRow(`
+	query := `
 		SELECT id, path, trigger_id, priority, status, created_at, started_at, completed_at, retry_count, next_retry_at, last_error, target_id, event_type, file_paths
 		FROM scans
-		WHERE path = ? AND status IN (?, ?)
+		WHERE path = ? AND status IN (?, ?) AND `
+	args := []any{path, ScanStatusPending, ScanStatusRetry}
+	if triggerID == nil {
+		query += "trigger_id IS NULL"
+	} else {
+		query += "trigger_id = ?"
+		args = append(args, *triggerID)
+	}
+	query += `
 		ORDER BY created_at DESC
 		LIMIT 1
-	`, path, ScanStatusPending, ScanStatusRetry).Scan(&scan.ID, &scan.Path, &triggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType, &filePathsJSON)
+	`
+	err := db.queryRow(query, args...).Scan(&scan.ID, &scan.Path, &scanTriggerID, &scan.Priority, &scan.Status, &scan.CreatedAt, &startedAt, &completedAt, &scan.RetryCount, &nextRetryAt, &lastError, &targetID, &eventType, &filePathsJSON)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -295,7 +304,7 @@ func (db *db) FindDuplicatePendingScan(path string) (*Scan, error) {
 		return nil, fmt.Errorf("failed to find duplicate scan: %w", err)
 	}
 
-	scan.TriggerID = nullInt64ToPtr(triggerID)
+	scan.TriggerID = nullInt64ToPtr(scanTriggerID)
 	scan.TargetID = nullInt64ToPtr(targetID)
 	scan.StartedAt = nullTimeToPtr(startedAt)
 	scan.CompletedAt = nullTimeToPtr(completedAt)

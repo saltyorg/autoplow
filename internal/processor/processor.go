@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -59,6 +60,8 @@ func DefaultConfig() Config {
 		Anchor:                   DefaultAnchorConfig(),
 	}
 }
+
+const scanDedupeBuffer = 5 * time.Second
 
 // ScanRequest represents a request to scan a path
 type ScanRequest struct {
@@ -206,7 +209,7 @@ func (p *Processor) handleRequest(req ScanRequest) {
 	path := filepath.Clean(req.Path)
 
 	// Check for duplicate pending scans
-	existing, err := p.db.FindDuplicatePendingScan(path)
+	existing, err := p.db.FindDuplicatePendingScan(path, req.TriggerID)
 	if err != nil {
 		log.Error().Err(err).Str("path", path).Msg("Failed to check for duplicate scan")
 		return
@@ -322,9 +325,34 @@ func (p *Processor) processBatch() {
 		return
 	}
 
-	// Filter scans by their per-trigger minimum age
-	var readyScans []*database.Scan
+	type scanWork struct {
+		scan          *database.Scan
+		trigger       *database.Trigger
+		triggerName   string
+		uploadCapable bool
+		ready         bool
+		triggerConfig *database.TriggerConfig
+	}
+	type targetKey struct {
+		targetID   int64
+		mappedPath string
+	}
+	type targetCandidate struct {
+		work *scanWork
+	}
+
 	globalMinAge := time.Duration(p.config.MinimumAgeSeconds) * time.Second
+	uploadsEnabled := true
+	if val, _ := p.db.GetSetting("uploads.enabled"); val == "false" {
+		uploadsEnabled = false
+	}
+
+	enabledTargets, err := p.db.ListEnabledTargets()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list enabled targets for scan processing")
+		return
+	}
+
 	triggerCache := make(map[int64]*database.Trigger)
 	getTrigger := func(triggerID int64) *database.Trigger {
 		if trigger, ok := triggerCache[triggerID]; ok {
@@ -340,12 +368,16 @@ func (p *Processor) processBatch() {
 		return trigger
 	}
 
-	for _, scan := range scans {
-		minAge := globalMinAge // default to global setting
+	scanWorks := make(map[int64]*scanWork, len(scans))
+	candidateCounts := make(map[int64]int, len(scans))
+	candidatesByKey := make(map[targetKey][]targetCandidate)
 
-		// Check if trigger has a custom minimum age
+	for _, scan := range scans {
+		minAge := globalMinAge
+		var trigger *database.Trigger
+		triggerName := ""
 		if scan.TriggerID != nil {
-			trigger := getTrigger(*scan.TriggerID)
+			trigger = getTrigger(*scan.TriggerID)
 			if trigger != nil && !trigger.Config.ScanEnabledValue() {
 				if err := p.db.UpdateScanStatus(scan.ID, database.ScanStatusCompleted); err != nil {
 					log.Error().Err(err).Int64("scan_id", scan.ID).Msg("Failed to mark scan as completed")
@@ -354,15 +386,140 @@ func (p *Processor) processBatch() {
 				}
 				continue
 			}
-			if trigger != nil && trigger.Config.MinimumAgeSeconds > 0 {
-				minAge = time.Duration(trigger.Config.MinimumAgeSeconds) * time.Second
+			if trigger != nil {
+				triggerName = trigger.Name
+				if trigger.Config.MinimumAgeSeconds > 0 {
+					minAge = time.Duration(trigger.Config.MinimumAgeSeconds) * time.Second
+				}
 			}
 		}
 
-		// Check if scan is old enough
-		if time.Since(scan.CreatedAt) >= minAge {
-			readyScans = append(readyScans, scan)
+		if minAge < scanDedupeBuffer {
+			minAge = scanDedupeBuffer
 		}
+
+		ready := time.Since(scan.CreatedAt) >= minAge
+		uploadCapable := false
+		if trigger != nil &&
+			uploadsEnabled &&
+			trigger.Config.UploadEnabledValue() &&
+			(trigger.Type == database.TriggerTypeInotify || trigger.Type == database.TriggerTypePolling) {
+			uploadCapable = true
+		}
+
+		work := &scanWork{
+			scan:          scan,
+			trigger:       trigger,
+			triggerName:   triggerName,
+			uploadCapable: uploadCapable,
+			ready:         ready,
+		}
+		if trigger != nil {
+			work.triggerConfig = &trigger.Config
+		}
+		scanWorks[scan.ID] = work
+
+		for _, target := range enabledTargets {
+			if triggerName != "" && target.Config.ShouldExcludeTrigger(triggerName) {
+				continue
+			}
+			if target.Config.ShouldExcludePath(scan.Path) {
+				continue
+			}
+
+			mappedPath := targets.ApplyPathMappings(scan.Path, target.Config.PathMappings)
+			mappedPath = filepath.Clean(mappedPath)
+			if mappedPath == "" || mappedPath == "." {
+				continue
+			}
+
+			key := targetKey{
+				targetID:   target.ID,
+				mappedPath: mappedPath,
+			}
+			candidatesByKey[key] = append(candidatesByKey[key], targetCandidate{work: work})
+			candidateCounts[scan.ID]++
+		}
+	}
+
+	assignments := make(map[int64]map[int64]struct{}, len(scanWorks))
+	assignTarget := func(scanID int64, targetID int64) {
+		assigned := assignments[scanID]
+		if assigned == nil {
+			assigned = make(map[int64]struct{})
+			assignments[scanID] = assigned
+		}
+		assigned[targetID] = struct{}{}
+	}
+
+	for key, candidates := range candidatesByKey {
+		sort.Slice(candidates, func(i, j int) bool {
+			left := candidates[i].work.scan
+			right := candidates[j].work.scan
+			if left.CreatedAt.Equal(right.CreatedAt) {
+				return left.ID < right.ID
+			}
+			return left.CreatedAt.Before(right.CreatedAt)
+		})
+
+		for i := 0; i < len(candidates); {
+			windowStart := candidates[i].work.scan.CreatedAt
+			j := i + 1
+			for j < len(candidates) && candidates[j].work.scan.CreatedAt.Sub(windowStart) <= scanDedupeBuffer {
+				j++
+			}
+
+			winner := candidates[i]
+			for k := i; k < j; k++ {
+				if candidates[k].work.uploadCapable {
+					winner = candidates[k]
+					break
+				}
+			}
+
+			assignTarget(winner.work.scan.ID, key.targetID)
+			i = j
+		}
+	}
+
+	scanTargets := make(map[int64][]int64, len(assignments))
+	for scanID, targets := range assignments {
+		targetIDs := make([]int64, 0, len(targets))
+		for targetID := range targets {
+			targetIDs = append(targetIDs, targetID)
+		}
+		sort.Slice(targetIDs, func(i, j int) bool {
+			return targetIDs[i] < targetIDs[j]
+		})
+		scanTargets[scanID] = targetIDs
+	}
+
+	var readyScans []*database.Scan
+	readyWork := make(map[int64]*scanWork, len(scanWorks))
+	for scanID, work := range scanWorks {
+		targetIDs := scanTargets[scanID]
+		if len(targetIDs) == 0 {
+			if candidateCounts[scanID] > 0 {
+				log.Debug().
+					Int64("scan_id", scanID).
+					Str("path", work.scan.Path).
+					Msg("Skipping scan (deduped within buffer)")
+			} else {
+				log.Debug().
+					Int64("scan_id", scanID).
+					Str("path", work.scan.Path).
+					Msg("Skipping scan (no eligible targets)")
+			}
+			if err := p.db.UpdateScanStatus(scanID, database.ScanStatusCompleted); err != nil {
+				log.Error().Err(err).Int64("scan_id", scanID).Msg("Failed to mark scan as completed")
+			}
+			continue
+		}
+		if !work.ready {
+			continue
+		}
+		readyScans = append(readyScans, work.scan)
+		readyWork[scanID] = work
 	}
 
 	if len(readyScans) == 0 {
@@ -403,11 +560,21 @@ func (p *Processor) processBatch() {
 			if maxConcurrent > 0 && availableSlots <= 0 {
 				return
 			}
+			work := readyWork[scan.ID]
+			if work == nil {
+				continue
+			}
+
+			targetIDs := scanTargets[scan.ID]
+			if len(targetIDs) == 0 {
+				continue
+			}
+
 			// Skip path stability check for delete events since the file won't exist
 			if isDeleteEvent(scan.EventType) {
 				log.Debug().Int64("scan_id", scan.ID).Str("path", scan.Path).Str("event_type", scan.EventType).
 					Msg("Skipping path check for delete event")
-				p.processScan(scan)
+				p.processScan(scan, work.triggerName, targetIDs)
 				if maxConcurrent > 0 {
 					availableSlots--
 				}
@@ -415,12 +582,7 @@ func (p *Processor) processBatch() {
 			}
 
 			// Get trigger config for filesystem type and stability settings
-			var triggerConfig *database.TriggerConfig
-			if scan.TriggerID != nil {
-				if trigger := getTrigger(*scan.TriggerID); trigger != nil {
-					triggerConfig = &trigger.Config
-				}
-			}
+			triggerConfig := work.triggerConfig
 
 			// Check file stability for files (directories use simple age check)
 			// Skip stability check for remote filesystems
@@ -459,7 +621,7 @@ func (p *Processor) processBatch() {
 				continue
 			}
 
-			p.processScan(scan)
+			p.processScan(scan, work.triggerName, targetIDs)
 			if maxConcurrent > 0 {
 				availableSlots--
 			}
@@ -567,8 +729,8 @@ func (p *Processor) groupByParent(scans []*database.Scan) map[string][]*database
 	return batches
 }
 
-// processScan processes a single scan
-func (p *Processor) processScan(scan *database.Scan) {
+// processScan processes a single scan for the assigned targets.
+func (p *Processor) processScan(scan *database.Scan, triggerName string, targetIDs []int64) {
 	p.activeScansMu.Lock()
 	p.activeScans[scan.ID] = true
 	p.activeScansMu.Unlock()
@@ -611,14 +773,6 @@ func (p *Processor) processScan(scan *database.Scan) {
 		default:
 		}
 
-		// Look up trigger name if this scan has a trigger ID
-		var triggerName string
-		if scan.TriggerID != nil {
-			if trigger, err := p.db.GetTrigger(*scan.TriggerID); err == nil && trigger != nil {
-				triggerName = trigger.Name
-			}
-		}
-
 		// Check if scanning is enabled (default to true)
 		scanningEnabled := true
 		if val, _ := p.db.GetSetting("scanning.enabled"); val == "false" {
@@ -634,11 +788,18 @@ func (p *Processor) processScan(scan *database.Scan) {
 		}
 
 		if scanningEnabled {
-			// Trigger scan on all enabled targets
 			ctx, cancel := context.WithTimeout(p.ctx, config.GetTimeouts().ScanOperation)
 			defer cancel()
 
-			scanResult := p.targetsMgr.ScanAll(ctx, scan.Path, triggerName)
+			results := make([]targets.ScanResult, 0, len(targetIDs))
+			completionInfos := make([]targets.ScanCompletionInfo, 0)
+			for _, targetID := range targetIDs {
+				result, completionInfo := p.targetsMgr.ScanTarget(ctx, targetID, scan.Path, triggerName)
+				results = append(results, result)
+				if completionInfo != nil {
+					completionInfos = append(completionInfos, *completionInfo)
+				}
+			}
 
 			// Check for cancellation after target scanning
 			select {
@@ -651,7 +812,7 @@ func (p *Processor) processScan(scan *database.Scan) {
 			// Log results and collect errors
 			successCount := 0
 			var lastError string
-			for _, result := range scanResult.Results {
+			for _, result := range results {
 				if result.Success {
 					successCount++
 					log.Debug().
@@ -672,11 +833,11 @@ func (p *Processor) processScan(scan *database.Scan) {
 				Int64("scan_id", scan.ID).
 				Str("path", scan.Path).
 				Int("success_count", successCount).
-				Int("total_targets", len(scanResult.Results)).
+				Int("total_targets", len(results)).
 				Msg("Scan triggered on targets")
 
 			// Check if all targets failed - schedule retry with exponential backoff
-			if successCount == 0 && len(scanResult.Results) > 0 {
+			if successCount == 0 && len(results) > 0 {
 				scheduled, err := p.db.ScheduleScanRetry(scan.ID, lastError, p.config.MaxRetries)
 				if err != nil {
 					log.Error().Err(err).Int64("scan_id", scan.ID).Msg("Failed to schedule scan retry")
@@ -706,8 +867,8 @@ func (p *Processor) processScan(scan *database.Scan) {
 			}
 
 			// Track Plex scan completion for upload-side gating.
-			if p.plexTracker != nil && len(scanResult.CompletionInfos) > 0 {
-				p.plexTracker.TrackScan(scan, scanResult.CompletionInfos)
+			if p.plexTracker != nil && len(completionInfos) > 0 {
+				p.plexTracker.TrackScan(scan, completionInfos)
 			}
 
 		} else {
