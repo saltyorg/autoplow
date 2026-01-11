@@ -16,7 +16,6 @@ import (
 type ProcessorSettings struct {
 	MinimumAgeSeconds        int
 	BatchIntervalSeconds     int
-	MaxConcurrentScans       int
 	PathNotFoundRetries      int
 	PathNotFoundDelaySeconds int
 	AnchorEnabled            bool
@@ -38,7 +37,6 @@ func (h *Handlers) SettingsProcessorPage(w http.ResponseWriter, r *http.Request)
 	settings := ProcessorSettings{
 		MinimumAgeSeconds:        loader.Int("processor.minimum_age_seconds", 60),
 		BatchIntervalSeconds:     loader.Int("processor.batch_interval_seconds", 30),
-		MaxConcurrentScans:       loader.Int("processor.max_concurrent_scans", 0),
 		PathNotFoundRetries:      loader.Int("processor.path_not_found_retries", 0),
 		PathNotFoundDelaySeconds: loader.Int("processor.path_not_found_delay_seconds", 5),
 		AnchorEnabled:            loader.BoolDefaultTrue("processor.anchor.enabled"),
@@ -76,7 +74,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	// Parse form values
 	minAge, _ := strconv.Atoi(r.FormValue("minimum_age_seconds"))
 	batchInterval, _ := strconv.Atoi(r.FormValue("batch_interval_seconds"))
-	maxConcurrentScans, _ := strconv.Atoi(r.FormValue("max_concurrent_scans"))
 	pathNotFoundRetries, _ := strconv.Atoi(r.FormValue("path_not_found_retries"))
 	pathNotFoundDelaySeconds, _ := strconv.Atoi(r.FormValue("path_not_found_delay_seconds"))
 	anchorEnabled := r.FormValue("anchor_enabled") == "on"
@@ -112,9 +109,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	if batchInterval < 10 {
 		batchInterval = 30
 	}
-	if maxConcurrentScans < 0 {
-		maxConcurrentScans = 0
-	}
 	if pathNotFoundRetries < 0 {
 		pathNotFoundRetries = 0
 	}
@@ -128,9 +122,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 		saveErr = err
 	}
 	if err := h.db.SetSetting("processor.batch_interval_seconds", strconv.Itoa(batchInterval)); err != nil {
-		saveErr = err
-	}
-	if err := h.db.SetSetting("processor.max_concurrent_scans", strconv.Itoa(maxConcurrentScans)); err != nil {
 		saveErr = err
 	}
 	if err := h.db.SetSetting("processor.path_not_found_retries", strconv.Itoa(pathNotFoundRetries)); err != nil {
@@ -166,7 +157,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 		newConfig := processor.Config{
 			MinimumAgeSeconds:        minAge,
 			BatchIntervalSeconds:     batchInterval,
-			MaxConcurrentScans:       maxConcurrentScans,
 			PathNotFoundRetries:      pathNotFoundRetries,
 			PathNotFoundDelaySeconds: pathNotFoundDelaySeconds,
 			Anchor: processor.AnchorConfig{

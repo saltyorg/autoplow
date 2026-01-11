@@ -92,6 +92,13 @@ func (h *Handlers) TargetCreate(w http.ResponseWriter, r *http.Request) {
 			target.Config.ScanDelay = delay
 		}
 	}
+	if targetType == database.TargetTypePlex {
+		if limitStr := r.FormValue("plex_max_concurrent_scans"); limitStr != "" {
+			if limit, err := strconv.Atoi(limitStr); err == nil && limit >= 0 {
+				target.Config.PlexMaxConcurrentScans = limit
+			}
+		}
+	}
 
 	// Parse Emby/Jellyfin specific options
 	if targetType == database.TargetTypeEmby || targetType == database.TargetTypeJellyfin {
@@ -223,6 +230,15 @@ func (h *Handlers) TargetUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		target.Config.ScanDelay = 0
+	}
+	if target.Type == database.TargetTypePlex {
+		limit, _ := strconv.Atoi(r.FormValue("plex_max_concurrent_scans"))
+		if limit < 0 {
+			limit = 0
+		}
+		target.Config.PlexMaxConcurrentScans = limit
+	} else {
+		target.Config.PlexMaxConcurrentScans = 0
 	}
 
 	// Parse Emby/Jellyfin specific options

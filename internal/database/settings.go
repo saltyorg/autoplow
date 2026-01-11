@@ -108,7 +108,6 @@ var DefaultSettings = map[string]any{
 	"processor.minimum_age_seconds":          600,
 	"processor.anchor.enabled":               true,
 	"processor.batch_interval_seconds":       60,
-	"processor.max_concurrent_scans":         0,
 	"processor.max_retries":                  3,
 	"processor.cleanup_days":                 7, // 0 = disabled, keeps scan history forever
 	"processor.path_not_found_retries":       0, // 0 = fail immediately (default)

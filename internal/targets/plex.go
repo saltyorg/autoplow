@@ -475,6 +475,7 @@ type PlexTarget struct {
 	activityMgr    *plexActivityManager
 	preparedMu     sync.Mutex
 	prepared       map[string][]plexPreparedTracker
+	scanLimiter    chan struct{}
 
 	// Notification callbacks for external observers (e.g., Plex Auto Languages)
 	notificationCallbacks []PlexNotificationCallback
@@ -488,7 +489,15 @@ func NewPlexTarget(dbTarget *database.Target) *PlexTarget {
 		client:      httpclient.NewTraceClient(fmt.Sprintf("%s:%s", dbTarget.Type, dbTarget.Name), config.GetTimeouts().HTTPClient),
 		activityMgr: newPlexActivityManager(dbTarget.Name),
 		prepared:    make(map[string][]plexPreparedTracker),
+		scanLimiter: newPlexScanLimiter(dbTarget.Config.PlexMaxConcurrentScans),
 	}
+}
+
+func newPlexScanLimiter(limit int) chan struct{} {
+	if limit <= 0 {
+		return nil
+	}
+	return make(chan struct{}, limit)
 }
 
 // Name returns the scanner name
@@ -536,6 +545,11 @@ func (s *PlexTarget) dispatchNotification(notification plexWebSocketNotification
 
 // Scan triggers a library scan for the given path
 func (s *PlexTarget) Scan(ctx context.Context, path string) error {
+	if err := s.acquireScanSlot(ctx); err != nil {
+		return err
+	}
+	defer s.releaseScanSlot()
+
 	// Get libraries
 	libraries, err := s.GetLibraries(ctx)
 	if err != nil {
@@ -573,6 +587,25 @@ func (s *PlexTarget) Scan(ctx context.Context, path string) error {
 	}
 
 	return nil
+}
+
+func (s *PlexTarget) acquireScanSlot(ctx context.Context) error {
+	if s.scanLimiter == nil {
+		return nil
+	}
+	select {
+	case s.scanLimiter <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *PlexTarget) releaseScanSlot() {
+	if s.scanLimiter == nil {
+		return
+	}
+	<-s.scanLimiter
 }
 
 // scanLibrary triggers a scan for a specific library section

@@ -72,6 +72,8 @@ type TargetConfig struct {
 	PlexSections []int `json:"plex_sections,omitempty"`
 	// AnalyzeMedia triggers Plex to analyze media files after scanning (Plex only)
 	AnalyzeMedia bool `json:"analyze_media,omitempty"`
+	// PlexMaxConcurrentScans limits concurrent scan requests for Plex (0 = unlimited)
+	PlexMaxConcurrentScans int `json:"plex_max_concurrent_scans,omitempty"`
 
 	// Emby/Jellyfin specific
 	LibraryIDs []string `json:"library_ids,omitempty"`

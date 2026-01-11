@@ -25,9 +25,6 @@ type Config struct {
 	// BatchIntervalSeconds is how often to process pending scans
 	BatchIntervalSeconds int `json:"batch_interval_seconds"`
 
-	// MaxConcurrentScans limits the number of active scans (0 = unlimited)
-	MaxConcurrentScans int `json:"max_concurrent_scans"`
-
 	// MaxRetries is the maximum number of retry attempts for failed scans
 	// After this many retries, the scan is marked as permanently failed
 	MaxRetries int `json:"max_retries"`
@@ -52,7 +49,6 @@ func DefaultConfig() Config {
 	return Config{
 		MinimumAgeSeconds:        60,
 		BatchIntervalSeconds:     30,
-		MaxConcurrentScans:       0,
 		MaxRetries:               5,
 		CleanupDays:              7,
 		PathNotFoundRetries:      0,
@@ -61,7 +57,11 @@ func DefaultConfig() Config {
 	}
 }
 
-const scanDedupeBuffer = 5 * time.Second
+const (
+	scanDedupeBuffer = 5 * time.Second
+	// maxConcurrentScansInternal is a hard cap to prevent runaway scan processing.
+	maxConcurrentScansInternal = 50
+)
 
 // ScanRequest represents a request to scan a path
 type ScanRequest struct {
@@ -531,24 +531,21 @@ func (p *Processor) processBatch() {
 
 	log.Debug().Int("count", len(readyScans)).Msg("Processing batch of scans")
 
-	maxConcurrent := p.config.MaxConcurrentScans
-	availableSlots := 0
-	if maxConcurrent > 0 {
-		availableSlots = maxConcurrent - p.ActiveScanCount()
-		if availableSlots <= 0 {
-			log.Debug().
-				Int("active", p.ActiveScanCount()).
-				Int("max", maxConcurrent).
-				Msg("Scan concurrency limit reached, skipping batch")
-			return
-		}
+	activeCount := p.ActiveScanCount()
+	availableSlots := maxConcurrentScansInternal - activeCount
+	if availableSlots <= 0 {
+		log.Debug().
+			Int("active", activeCount).
+			Int("max", maxConcurrentScansInternal).
+			Msg("Scan concurrency limit reached, skipping batch")
+		return
 	}
 
 	// Group scans by parent directory for batching
 	batches := p.groupByParent(readyScans)
 
 	for parentPath, batchScans := range batches {
-		if maxConcurrent > 0 && availableSlots <= 0 {
+		if availableSlots <= 0 {
 			return
 		}
 		// Check anchor/readiness for the parent path
@@ -560,7 +557,7 @@ func (p *Processor) processBatch() {
 
 		// Process each scan in the batch
 		for _, scan := range batchScans {
-			if maxConcurrent > 0 && availableSlots <= 0 {
+			if availableSlots <= 0 {
 				return
 			}
 			work := readyWork[scan.ID]
@@ -578,9 +575,7 @@ func (p *Processor) processBatch() {
 				log.Debug().Int64("scan_id", scan.ID).Str("path", scan.Path).Str("event_type", scan.EventType).
 					Msg("Skipping path check for delete event")
 				p.processScan(scan, work.triggerName, targetIDs)
-				if maxConcurrent > 0 {
-					availableSlots--
-				}
+				availableSlots--
 				continue
 			}
 
@@ -625,9 +620,7 @@ func (p *Processor) processBatch() {
 			}
 
 			p.processScan(scan, work.triggerName, targetIDs)
-			if maxConcurrent > 0 {
-				availableSlots--
-			}
+			availableSlots--
 		}
 	}
 }

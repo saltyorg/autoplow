@@ -403,9 +403,6 @@
                     {{else}}
                     <p class="text-sm text-gray-500 dark:text-gray-400">No Plex targets configured. <a href="/targets/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Add a Plex target</a> first.</p>
                     {{end}}
-                    <div id="plex-concurrency-warning-new" class="hidden rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-3 text-sm text-yellow-800 dark:text-yellow-200">
-                        <strong>Scan concurrency warning:</strong> processor.max_concurrent_scans is set to {{.Content.ProcessorMaxConcurrentScans}}. Consider setting it between 1 and 3 when Plex tracking is enabled.
-                    </div>
                 </div>
             </div>
             <div>
@@ -564,8 +561,6 @@
 
         const plexToggle = document.getElementById('use_plex_scan_tracking_new');
         const plexPanel = document.getElementById('plex-tracking-panel-new');
-        const plexWarning = document.getElementById('plex-concurrency-warning-new');
-        const maxConcurrentScans = parseInt('{{.Content.ProcessorMaxConcurrentScans}}', 10) || 0;
 
         function updatePlexRows() {
             const rows = document.querySelectorAll('[data-plex-target-row]');
@@ -583,10 +578,6 @@
             if (!plexToggle || !plexPanel) return;
             const enabled = plexToggle.checked;
             plexPanel.classList.toggle('hidden', !enabled);
-            if (plexWarning) {
-                const showWarning = enabled && (maxConcurrentScans === 0 || maxConcurrentScans >= 4);
-                plexWarning.classList.toggle('hidden', !showWarning);
-            }
             updatePlexRows();
         }
 
@@ -879,9 +870,6 @@
                     {{else}}
                     <p class="text-sm text-gray-500 dark:text-gray-400">No Plex targets configured. <a href="/targets/new" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Add a Plex target</a> first.</p>
                     {{end}}
-                    <div id="plex-concurrency-warning-edit" class="hidden rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-3 text-sm text-yellow-800 dark:text-yellow-200">
-                        <strong>Scan concurrency warning:</strong> processor.max_concurrent_scans is set to {{.Content.ProcessorMaxConcurrentScans}}. Consider setting it between 1 and 3 when Plex tracking is enabled.
-                    </div>
                 </div>
             </div>
             <div>
@@ -1115,8 +1103,6 @@
 
         const plexToggle = document.getElementById('use_plex_scan_tracking_edit');
         const plexPanel = document.getElementById('plex-tracking-panel-edit');
-        const plexWarning = document.getElementById('plex-concurrency-warning-edit');
-        const maxConcurrentScans = parseInt('{{.Content.ProcessorMaxConcurrentScans}}', 10) || 0;
 
         function updatePlexRows() {
             const rows = document.querySelectorAll('[data-plex-target-row]');
@@ -1134,10 +1120,6 @@
             if (!plexToggle || !plexPanel) return;
             const enabled = plexToggle.checked;
             plexPanel.classList.toggle('hidden', !enabled);
-            if (plexWarning) {
-                const showWarning = enabled && (maxConcurrentScans === 0 || maxConcurrentScans >= 4);
-                plexWarning.classList.toggle('hidden', !showWarning);
-            }
             updatePlexRows();
         }
 

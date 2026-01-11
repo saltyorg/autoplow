@@ -10,7 +10,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
-	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
 )
 
@@ -75,18 +74,14 @@ func (h *Handlers) DestinationNew(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	settingsLoader := config.NewLoader(h.db)
-	maxConcurrentScans := settingsLoader.Int("processor.max_concurrent_scans", 0)
-
 	h.render(w, r, "uploads.html", map[string]any{
-		"IsNew":                       true,
-		"Tab":                         "destinations",
-		"Remotes":                     remotes,
-		"LocalTriggers":               localTriggers,
-		"HasLocalTriggers":            hasLocalTriggers,
-		"Destinations":                destinations,
-		"PlexTargets":                 plexTargets,
-		"ProcessorMaxConcurrentScans": maxConcurrentScans,
+		"IsNew":            true,
+		"Tab":              "destinations",
+		"Remotes":          remotes,
+		"LocalTriggers":    localTriggers,
+		"HasLocalTriggers": hasLocalTriggers,
+		"Destinations":     destinations,
+		"PlexTargets":      plexTargets,
 	})
 }
 
@@ -332,18 +327,14 @@ func (h *Handlers) DestinationEdit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	settingsLoader := config.NewLoader(h.db)
-	maxConcurrentScans := settingsLoader.Int("processor.max_concurrent_scans", 0)
-
 	h.render(w, r, "uploads.html", map[string]any{
-		"Destination":                 dest,
-		"Tab":                         "destinations",
-		"Remotes":                     remotes,
-		"LocalTriggers":               localTriggers,
-		"HasLocalTriggers":            hasLocalTriggers,
-		"Destinations":                destinations,
-		"PlexTargets":                 plexTargets,
-		"ProcessorMaxConcurrentScans": maxConcurrentScans,
+		"Destination":      dest,
+		"Tab":              "destinations",
+		"Remotes":          remotes,
+		"LocalTriggers":    localTriggers,
+		"HasLocalTriggers": hasLocalTriggers,
+		"Destinations":     destinations,
+		"PlexTargets":      plexTargets,
 	})
 }
 
