@@ -250,14 +250,19 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 // parseSonarrWebhook extracts paths from Sonarr webhook payload
 func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 	var payload struct {
-		EventType string `json:"eventType"`
-		Series    struct {
+		EventType       string `json:"eventType"`
+		DestinationPath string `json:"destinationPath"`
+		Series          struct {
 			Path string `json:"path"`
 		} `json:"series"`
 		EpisodeFile struct {
 			Path         string `json:"path"`
 			RelativePath string `json:"relativePath"`
 		} `json:"episodeFile"`
+		EpisodeFiles []struct {
+			Path         string `json:"path"`
+			RelativePath string `json:"relativePath"`
+		} `json:"episodeFiles"`
 		RenamedEpisodeFiles []struct {
 			PreviousPath string `json:"previousPath"`
 			RelativePath string `json:"relativePath"`
@@ -291,6 +296,39 @@ func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 		return dir
 	}
 
+	collectSeasonPaths := func() []string {
+		seen := make(map[string]struct{})
+		paths := make([]string, 0)
+		add := func(path string) {
+			if path == "" {
+				return
+			}
+			if _, ok := seen[path]; ok {
+				return
+			}
+			seen[path] = struct{}{}
+			paths = append(paths, path)
+		}
+
+		for _, file := range payload.EpisodeFiles {
+			add(seasonPathFromFile(file.Path, file.RelativePath))
+		}
+		add(seasonPathFromFile(payload.EpisodeFile.Path, payload.EpisodeFile.RelativePath))
+
+		if len(paths) == 0 && payload.DestinationPath != "" {
+			destPath := payload.DestinationPath
+			if !strings.HasPrefix(destPath, "/") {
+				destPath = joinPath(payload.Series.Path, destPath)
+			}
+			destPath = filepath.Clean(destPath)
+			if destPath != "." && destPath != "/" {
+				add(destPath)
+			}
+		}
+
+		return paths
+	}
+
 	switch payload.EventType {
 	case "Rename":
 		// Return season folder paths for renamed files when available.
@@ -315,14 +353,14 @@ func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 		}
 		return paths
 	case "EpisodeFileDelete":
-		if season := seasonPathFromFile(payload.EpisodeFile.Path, payload.EpisodeFile.RelativePath); season != "" {
-			return []string{season}
+		if paths := collectSeasonPaths(); len(paths) > 0 {
+			return paths
 		}
 		// Fallback to series folder path for episode deletion (file no longer exists)
 		return []string{payload.Series.Path}
 	default:
-		if season := seasonPathFromFile(payload.EpisodeFile.Path, payload.EpisodeFile.RelativePath); season != "" {
-			return []string{season}
+		if paths := collectSeasonPaths(); len(paths) > 0 {
+			return paths
 		}
 		// For other events (Download, SeriesDelete, Test, etc.), return series path
 		return []string{payload.Series.Path}
