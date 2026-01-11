@@ -35,6 +35,25 @@ func (db *db) Migrate() error {
 	// Run migrations
 	for _, migration := range migrations {
 		if migration.Version > currentVersion {
+			if migration.Version == 29 {
+				cols, err := db.tableColumns("uploads")
+				if err != nil {
+					return fmt.Errorf("failed to check uploads columns for migration %d: %w", migration.Version, err)
+				}
+				if _, exists := cols["trigger_id"]; exists {
+					log.Info().Int("version", migration.Version).Str("name", migration.Name).Msg("Skipping migration; column already exists")
+					if err := db.transaction(func(tx *sql.Tx) error {
+						if _, err := tx.Exec("INSERT INTO schema_migrations (version) VALUES (?)", migration.Version); err != nil {
+							return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+						}
+						return nil
+					}); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+
 			log.Info().Int("version", migration.Version).Str("name", migration.Name).Msg("Applying migration")
 
 			if err := db.transaction(func(tx *sql.Tx) error {
