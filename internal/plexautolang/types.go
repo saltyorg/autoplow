@@ -10,6 +10,9 @@ var ErrInvalidUserToken = errors.New("plex user token invalid")
 // ErrNoActiveSessions indicates Plex returned no active sessions.
 var ErrNoActiveSessions = errors.New("plex has no active sessions")
 
+// ErrUserNotFound indicates the Plex session user could not be resolved for a client.
+var ErrUserNotFound = errors.New("plex user not found for client")
+
 // AudioStream represents a Plex audio stream
 type AudioStream struct {
 	ID                   int    `json:"id"`

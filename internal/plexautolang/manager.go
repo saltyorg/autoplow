@@ -467,7 +467,11 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 	// First, identify the user for this client - we need their token to fetch their stream preferences
 	user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier)
 	if err != nil {
-		log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: Failed to get user for client")
+		if errors.Is(err, ErrUserNotFound) {
+			log.Trace().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: User not yet mapped for client")
+		} else {
+			log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: Failed to get user for client")
+		}
 		return
 	}
 
@@ -655,7 +659,11 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	// Get the user for this client
 	user, err := m.getUserForClient(ctx, targetID, target, clientIdentifier)
 	if err != nil {
-		log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Failed to get user for client")
+		if errors.Is(err, ErrUserNotFound) {
+			log.Trace().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Plex Auto Languages: User not yet mapped for client")
+		} else {
+			log.Debug().Err(err).Str("clientIdentifier", clientIdentifier).Msg("Failed to get user for client")
+		}
 		return
 	}
 
@@ -1305,7 +1313,7 @@ func (m *Manager) getUserForClient(ctx context.Context, targetID int64, target P
 		return &user, nil
 	}
 
-	return nil, fmt.Errorf("no user found for client %s", clientIdentifier)
+	return nil, fmt.Errorf("%w: %s", ErrUserNotFound, clientIdentifier)
 }
 
 // getUserToken retrieves or fetches a user's token for this server.
