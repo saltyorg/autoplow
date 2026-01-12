@@ -20,9 +20,6 @@ import (
 
 // Config holds the processor configuration
 type Config struct {
-	// MinimumAgeSeconds is how long a scan must be pending before processing
-	MinimumAgeSeconds int `json:"minimum_age_seconds"`
-
 	// BatchIntervalSeconds is how often to process pending scans
 	BatchIntervalSeconds int `json:"batch_interval_seconds"`
 
@@ -48,7 +45,6 @@ type Config struct {
 // DefaultConfig returns the default processor configuration
 func DefaultConfig() Config {
 	return Config{
-		MinimumAgeSeconds:        60,
 		BatchIntervalSeconds:     30,
 		MaxRetries:               5,
 		CleanupDays:              7,
@@ -345,7 +341,6 @@ func (p *Processor) processBatch() {
 		work *scanWork
 	}
 
-	globalMinAge := time.Duration(p.config.MinimumAgeSeconds) * time.Second
 	uploadsEnabled := true
 	if val, _ := p.db.GetSetting("uploads.enabled"); val == "false" {
 		uploadsEnabled = false
@@ -377,7 +372,7 @@ func (p *Processor) processBatch() {
 	candidatesByKey := make(map[targetKey][]targetCandidate)
 
 	for _, scan := range scans {
-		minAge := globalMinAge
+		minAge := time.Duration(0)
 		var trigger *database.Trigger
 		triggerName := ""
 		if scan.TriggerID != nil {
@@ -659,7 +654,7 @@ func isDeleteEvent(eventType string) bool {
 
 // checkPathStability checks if a path is stable enough to process
 // For files on local filesystem: checks if size has stopped changing
-// For files on remote filesystem or directories: returns true (relies on MinimumAgeSeconds delay)
+// For files on remote filesystem or directories: returns true (relies on age gating in batch processing)
 func (p *Processor) checkPathStability(path string, triggerConfig *database.TriggerConfig) (bool, string) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -669,7 +664,7 @@ func (p *Processor) checkPathStability(path string, triggerConfig *database.Trig
 		return false, "failed to stat path"
 	}
 
-	// Directories use the simple MinimumAgeSeconds delay (already applied by ListPendingScansOlderThan)
+	// Directories rely on the age gating done in batch processing.
 	if info.IsDir() {
 		return true, ""
 	}

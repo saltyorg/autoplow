@@ -14,7 +14,6 @@ import (
 
 // ProcessorSettings holds the processor configuration for display
 type ProcessorSettings struct {
-	MinimumAgeSeconds        int
 	BatchIntervalSeconds     int
 	PathNotFoundRetries      int
 	PathNotFoundDelaySeconds int
@@ -35,7 +34,6 @@ func (h *Handlers) SettingsProcessorPage(w http.ResponseWriter, r *http.Request)
 	loader := config.NewLoader(h.db)
 
 	settings := ProcessorSettings{
-		MinimumAgeSeconds:        loader.Int("processor.minimum_age_seconds", 60),
 		BatchIntervalSeconds:     loader.Int("processor.batch_interval_seconds", 30),
 		PathNotFoundRetries:      loader.Int("processor.path_not_found_retries", 0),
 		PathNotFoundDelaySeconds: loader.Int("processor.path_not_found_delay_seconds", 5),
@@ -72,7 +70,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Parse form values
-	minAge, _ := strconv.Atoi(r.FormValue("minimum_age_seconds"))
 	batchInterval, _ := strconv.Atoi(r.FormValue("batch_interval_seconds"))
 	pathNotFoundRetries, _ := strconv.Atoi(r.FormValue("path_not_found_retries"))
 	pathNotFoundDelaySeconds, _ := strconv.Atoi(r.FormValue("path_not_found_delay_seconds"))
@@ -103,9 +100,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Validate
-	if minAge < 60 {
-		minAge = 60
-	}
 	if batchInterval < 10 {
 		batchInterval = 30
 	}
@@ -118,9 +112,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 
 	// Save to database
 	var saveErr error
-	if err := h.db.SetSetting("processor.minimum_age_seconds", strconv.Itoa(minAge)); err != nil {
-		saveErr = err
-	}
 	if err := h.db.SetSetting("processor.batch_interval_seconds", strconv.Itoa(batchInterval)); err != nil {
 		saveErr = err
 	}
@@ -155,7 +146,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	// Update processor config if available
 	if h.processor != nil {
 		newConfig := processor.Config{
-			MinimumAgeSeconds:        minAge,
 			BatchIntervalSeconds:     batchInterval,
 			PathNotFoundRetries:      pathNotFoundRetries,
 			PathNotFoundDelaySeconds: pathNotFoundDelaySeconds,

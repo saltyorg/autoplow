@@ -82,8 +82,8 @@ type TriggerConfig struct {
 	// Only used when FilesystemType is "local"
 	StabilityCheckSeconds int `json:"stability_check_seconds,omitempty"`
 
-	// Minimum age in seconds before processing (min 60s for remote, min 1s for local)
-	// If not set, uses the global processor MinimumAgeSeconds
+	// Minimum age in seconds before processing.
+	// When set to 0, there is no extra delay beyond the dedupe buffer.
 	MinimumAgeSeconds int `json:"minimum_age_seconds,omitempty"`
 
 	// IncludePaths is a list of path prefixes that this trigger will accept
