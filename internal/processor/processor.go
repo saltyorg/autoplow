@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -20,9 +21,6 @@ import (
 
 // Config holds the processor configuration
 type Config struct {
-	// BatchIntervalSeconds is how often to process pending scans
-	BatchIntervalSeconds int `json:"batch_interval_seconds"`
-
 	// MaxRetries is the maximum number of retry attempts for failed scans
 	// After this many retries, the scan is marked as permanently failed
 	MaxRetries int `json:"max_retries"`
@@ -45,7 +43,6 @@ type Config struct {
 // DefaultConfig returns the default processor configuration
 func DefaultConfig() Config {
 	return Config{
-		BatchIntervalSeconds:     30,
 		MaxRetries:               5,
 		CleanupDays:              7,
 		PathNotFoundRetries:      0,
@@ -56,6 +53,7 @@ func DefaultConfig() Config {
 
 const (
 	scanDedupeBuffer = 5 * time.Second
+	batchInterval    = 1 * time.Second
 	// maxConcurrentScansInternal is a hard cap to prevent runaway scan processing.
 	maxConcurrentScansInternal = 50
 )
@@ -90,6 +88,9 @@ type Processor struct {
 	// Active scans tracking
 	activeScans   map[int64]bool
 	activeScansMu sync.RWMutex
+
+	// pendingHint avoids polling the database when no scans are pending.
+	pendingHint atomic.Bool
 
 	// File stability tracking for files (not directories)
 	fileStability   map[string]fileStabilityCheck
@@ -143,6 +144,7 @@ func (p *Processor) Start() {
 	} else if count > 0 {
 		log.Info().Int64("count", count).Msg("Reset interrupted scans back to pending")
 	}
+	p.refreshPendingHint()
 
 	p.wg.Go(func() {
 		defer func() {
@@ -188,6 +190,20 @@ func (p *Processor) QueueScans(reqs []ScanRequest) {
 	}
 }
 
+func (p *Processor) markPending() {
+	p.pendingHint.Store(true)
+}
+
+func (p *Processor) refreshPendingHint() {
+	count, err := p.db.CountPendingScans()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to count pending scans")
+		p.pendingHint.Store(true)
+		return
+	}
+	p.pendingHint.Store(count > 0)
+}
+
 // requestProcessor handles incoming scan requests
 func (p *Processor) requestProcessor() {
 	for {
@@ -216,6 +232,7 @@ func (p *Processor) handleRequest(req ScanRequest) {
 	}
 
 	if existing != nil {
+		p.markPending()
 		// Merge file paths if new request has any
 		if len(req.FilePaths) > 0 {
 			if err := p.db.AppendScanFilePaths(existing.ID, req.FilePaths); err != nil {
@@ -252,6 +269,7 @@ func (p *Processor) handleRequest(req ScanRequest) {
 		log.Error().Err(err).Str("path", path).Msg("Failed to create scan")
 		return
 	}
+	p.markPending()
 
 	log.Info().Str("path", path).Int64("scan_id", scan.ID).Msg("Scan created")
 
@@ -265,7 +283,7 @@ func (p *Processor) handleRequest(req ScanRequest) {
 
 // batchProcessor periodically processes ready scans
 func (p *Processor) batchProcessor() {
-	ticker := time.NewTicker(time.Duration(p.config.BatchIntervalSeconds) * time.Second)
+	ticker := time.NewTicker(batchInterval)
 	defer ticker.Stop()
 
 	// Cleanup old file stability entries and scan history periodically
@@ -314,6 +332,10 @@ func (p *Processor) cleanupOldScans() {
 
 // processBatch processes a batch of ready scans
 func (p *Processor) processBatch() {
+	if !p.pendingHint.Load() {
+		return
+	}
+
 	// Get all pending scans (we'll filter by per-trigger age)
 	scans, err := p.db.ListPendingScans()
 	if err != nil {
@@ -322,6 +344,7 @@ func (p *Processor) processBatch() {
 	}
 
 	if len(scans) == 0 {
+		p.refreshPendingHint()
 		return
 	}
 

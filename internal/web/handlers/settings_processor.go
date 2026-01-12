@@ -14,7 +14,6 @@ import (
 
 // ProcessorSettings holds the processor configuration for display
 type ProcessorSettings struct {
-	BatchIntervalSeconds     int
 	PathNotFoundRetries      int
 	PathNotFoundDelaySeconds int
 	AnchorEnabled            bool
@@ -34,7 +33,6 @@ func (h *Handlers) SettingsProcessorPage(w http.ResponseWriter, r *http.Request)
 	loader := config.NewLoader(h.db)
 
 	settings := ProcessorSettings{
-		BatchIntervalSeconds:     loader.Int("processor.batch_interval_seconds", 30),
 		PathNotFoundRetries:      loader.Int("processor.path_not_found_retries", 0),
 		PathNotFoundDelaySeconds: loader.Int("processor.path_not_found_delay_seconds", 5),
 		AnchorEnabled:            loader.BoolDefaultTrue("processor.anchor.enabled"),
@@ -70,7 +68,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Parse form values
-	batchInterval, _ := strconv.Atoi(r.FormValue("batch_interval_seconds"))
 	pathNotFoundRetries, _ := strconv.Atoi(r.FormValue("path_not_found_retries"))
 	pathNotFoundDelaySeconds, _ := strconv.Atoi(r.FormValue("path_not_found_delay_seconds"))
 	anchorEnabled := r.FormValue("anchor_enabled") == "on"
@@ -100,9 +97,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Validate
-	if batchInterval < 10 {
-		batchInterval = 30
-	}
 	if pathNotFoundRetries < 0 {
 		pathNotFoundRetries = 0
 	}
@@ -112,9 +106,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 
 	// Save to database
 	var saveErr error
-	if err := h.db.SetSetting("processor.batch_interval_seconds", strconv.Itoa(batchInterval)); err != nil {
-		saveErr = err
-	}
 	if err := h.db.SetSetting("processor.path_not_found_retries", strconv.Itoa(pathNotFoundRetries)); err != nil {
 		saveErr = err
 	}
@@ -146,7 +137,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	// Update processor config if available
 	if h.processor != nil {
 		newConfig := processor.Config{
-			BatchIntervalSeconds:     batchInterval,
 			PathNotFoundRetries:      pathNotFoundRetries,
 			PathNotFoundDelaySeconds: pathNotFoundDelaySeconds,
 			Anchor: processor.AnchorConfig{
