@@ -1,18 +1,21 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/gdrive"
 	"github.com/saltyorg/autoplow/internal/processor"
 )
 
@@ -42,6 +45,22 @@ func getBaseURL(r *http.Request) string {
 	}
 
 	return scheme + "://" + host
+}
+
+func isWebhookTriggerType(triggerType database.TriggerType) bool {
+	switch triggerType {
+	case database.TriggerTypeSonarr,
+		database.TriggerTypeRadarr,
+		database.TriggerTypeLidarr,
+		database.TriggerTypeWebhook,
+		database.TriggerTypeAutoplow,
+		database.TriggerTypeATrain,
+		database.TriggerTypeAutoscan,
+		database.TriggerTypeBazarr:
+		return true
+	default:
+		return false
+	}
 }
 
 // TriggersPage renders the triggers list page
@@ -79,19 +98,48 @@ func (h *Handlers) TriggersPage(w http.ResponseWriter, r *http.Request) {
 // TriggerNew renders the new trigger form
 func (h *Handlers) TriggerNew(w http.ResponseWriter, r *http.Request) {
 	baseURL := getBaseURL(r)
+	accounts, err := h.db.ListGDriveAccounts()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list gdrive accounts")
+		accounts = nil
+	}
 
 	h.render(w, r, "triggers.html", map[string]any{
-		"IsNew":   true,
-		"BaseURL": baseURL,
+		"IsNew":          true,
+		"BaseURL":        baseURL,
+		"GDriveAccounts": accounts,
 	})
 }
 
 // TriggerCreate handles trigger creation
 func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		h.flashErr(w, "Invalid form data")
-		h.redirect(w, r, "/triggers/new")
-		return
+	isAsync := r.Header.Get("HX-Request") == "true"
+	redirectOnError := "/triggers/new"
+	respondError := func(status int, message string) {
+		if isAsync {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(message))
+			return
+		}
+		h.flashErr(w, message)
+		h.redirect(w, r, redirectOnError)
+	}
+	respondSuccess := func(message, redirect string) {
+		if isAsync {
+			w.Header().Set("HX-Redirect", redirect)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.flash(w, message)
+		h.redirect(w, r, redirect)
+	}
+
+	if err := r.ParseMultipartForm(32 << 10); err != nil {
+		if err := r.ParseForm(); err != nil {
+			respondError(http.StatusBadRequest, "Invalid form data")
+			return
+		}
 	}
 
 	name := r.FormValue("name")
@@ -100,8 +148,7 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 	enabled := r.FormValue("enabled") == "on"
 
 	if name == "" {
-		h.flashErr(w, "Name is required")
-		h.redirect(w, r, "/triggers/new")
+		respondError(http.StatusBadRequest, "Name is required")
 		return
 	}
 
@@ -129,8 +176,7 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(watchPaths) == 0 {
-			h.flashErr(w, "At least one watch path is required")
-			h.redirect(w, r, "/triggers/new")
+			respondError(http.StatusBadRequest, "At least one watch path is required")
 			return
 		}
 
@@ -161,8 +207,7 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(watchPaths) == 0 {
-			h.flashErr(w, "At least one watch path is required")
-			h.redirect(w, r, "/triggers/new")
+			respondError(http.StatusBadRequest, "At least one watch path is required")
 			return
 		}
 
@@ -179,38 +224,68 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 		trigger.Config.UploadEnabled = boolPtr(r.FormValue("upload_enabled") == "on")
 	}
 
+	// For gdrive triggers, parse account, drive, and folder selections
+	if trigger.Type == database.TriggerTypeGDrive {
+		accountID, _ := strconv.ParseInt(r.FormValue("gdrive_account_id"), 10, 64)
+		driveID := strings.TrimSpace(r.FormValue("gdrive_drive_id"))
+
+		if accountID <= 0 {
+			respondError(http.StatusBadRequest, "Google Drive account is required")
+			return
+		}
+
+		trigger.Config.GDriveAccountID = accountID
+		trigger.Config.GDriveDriveID = driveID
+
+		mappingIDs := r.Form["gdrive_path_rewrite_from_id[]"]
+		mappingTargets := r.Form["gdrive_path_rewrite_to[]"]
+		mappings, err := h.resolveGDrivePathMappings(r.Context(), accountID, driveID, mappingIDs, mappingTargets)
+		if err != nil {
+			respondError(http.StatusBadRequest, "Invalid Google Drive path mapping: "+err.Error())
+			return
+		}
+		trigger.Config.GDrivePathRewrites = mappings
+		trigger.Config.PathRewrites = nil
+	}
+
 	// Parse path rewrites (for webhook trigger types only, not local triggers)
-	if trigger.Type != database.TriggerTypeInotify && trigger.Type != database.TriggerTypePolling {
+	if trigger.Type != database.TriggerTypeInotify && trigger.Type != database.TriggerTypePolling && trigger.Type != database.TriggerTypeGDrive {
 		rewrites, err := parsePathRewrites(r)
 		if err != nil {
-			h.flashErr(w, "Invalid path rewrite regex: "+err.Error())
-			h.redirect(w, r, "/triggers/new")
+			respondError(http.StatusBadRequest, "Invalid path rewrite regex: "+err.Error())
 			return
 		}
 		trigger.Config.PathRewrites = rewrites
 	}
 
 	// Parse path filters (include/exclude)
-	trigger.Config.IncludePaths = parsePathList(r, "include_paths[]")
-	trigger.Config.ExcludePaths = parsePathList(r, "exclude_paths[]")
-	trigger.Config.FilterAfterRewrite = r.FormValue("filter_after_rewrite") == "on"
+	if trigger.Type == database.TriggerTypeGDrive {
+		trigger.Config.IncludePaths = nil
+		trigger.Config.ExcludePaths = nil
+		trigger.Config.ExcludeExtensions = nil
+		trigger.Config.AdvancedFilters = nil
+		trigger.Config.FilterAfterRewrite = false
+	} else {
+		trigger.Config.IncludePaths = parsePathList(r, "include_paths[]")
+		trigger.Config.ExcludePaths = parsePathList(r, "exclude_paths[]")
+		trigger.Config.FilterAfterRewrite = r.FormValue("filter_after_rewrite") == "on"
 
-	// Parse exclude extensions
-	trigger.Config.ExcludeExtensions = parsePathList(r, "exclude_extensions[]")
+		// Parse exclude extensions
+		trigger.Config.ExcludeExtensions = parsePathList(r, "exclude_extensions[]")
 
-	// Parse advanced filters (regex patterns)
-	advIncludePatterns := parsePathList(r, "advanced_include_patterns[]")
-	advExcludePatterns := parsePathList(r, "advanced_exclude_patterns[]")
-	if len(advIncludePatterns) > 0 || len(advExcludePatterns) > 0 {
-		trigger.Config.AdvancedFilters = &database.AdvancedFilters{
-			IncludePatterns: advIncludePatterns,
-			ExcludePatterns: advExcludePatterns,
-		}
-		// Validate regex patterns
-		if err := trigger.Config.AdvancedFilters.Compile(); err != nil {
-			h.flashErr(w, "Invalid regex pattern: "+err.Error())
-			h.redirect(w, r, "/triggers/new")
-			return
+		// Parse advanced filters (regex patterns)
+		advIncludePatterns := parsePathList(r, "advanced_include_patterns[]")
+		advExcludePatterns := parsePathList(r, "advanced_exclude_patterns[]")
+		if len(advIncludePatterns) > 0 || len(advExcludePatterns) > 0 {
+			trigger.Config.AdvancedFilters = &database.AdvancedFilters{
+				IncludePatterns: advIncludePatterns,
+				ExcludePatterns: advExcludePatterns,
+			}
+			// Validate regex patterns
+			if err := trigger.Config.AdvancedFilters.Compile(); err != nil {
+				respondError(http.StatusBadRequest, "Invalid regex pattern: "+err.Error())
+				return
+			}
 		}
 	}
 
@@ -239,8 +314,8 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	trigger.Config.MinimumAgeSeconds = minAgeSeconds
 
-	// Set auth type and credentials for webhook triggers (not local triggers)
-	if trigger.Type != database.TriggerTypeInotify && trigger.Type != database.TriggerTypePolling {
+	// Set auth type and credentials for webhook triggers
+	if isWebhookTriggerType(trigger.Type) {
 		authTypeStr := r.FormValue("auth_type")
 		if authTypeStr == "basic" {
 			trigger.AuthType = database.AuthTypeBasic
@@ -248,8 +323,7 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 			password := r.FormValue("trigger_password")
 
 			if trigger.Username == "" || password == "" {
-				h.flashErr(w, "Username and password are required for basic auth")
-				h.redirect(w, r, "/triggers/new")
+				respondError(http.StatusBadRequest, "Username and password are required for basic auth")
 				return
 			}
 
@@ -257,8 +331,7 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 			encryptedPassword, err := auth.EncryptTriggerPassword(password)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to encrypt password")
-				h.flashErr(w, "Failed to process password")
-				h.redirect(w, r, "/triggers/new")
+				respondError(http.StatusInternalServerError, "Failed to process password")
 				return
 			}
 			trigger.Password = encryptedPassword
@@ -268,8 +341,7 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 			apiKey, err := h.apiKeyService.GenerateKey()
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to generate API key")
-				h.flashErr(w, "Failed to generate API key")
-				h.redirect(w, r, "/triggers/new")
+				respondError(http.StatusInternalServerError, "Failed to generate API key")
 				return
 			}
 			trigger.APIKey = apiKey
@@ -278,8 +350,7 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.db.CreateTrigger(trigger); err != nil {
 		log.Error().Err(err).Msg("Failed to create trigger")
-		h.flashErr(w, "Failed to create trigger")
-		h.redirect(w, r, "/triggers/new")
+		respondError(http.StatusInternalServerError, "Failed to create trigger")
 		return
 	}
 
@@ -297,9 +368,15 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Notify gdrive manager of new trigger
+	if h.gdriveMgr != nil && trigger.Type == database.TriggerTypeGDrive {
+		if err := h.gdriveMgr.ReloadTrigger(trigger.ID); err != nil {
+			log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to reload gdrive trigger")
+		}
+	}
+
 	log.Info().Str("name", trigger.Name).Str("type", string(trigger.Type)).Msg("Trigger created")
-	h.flash(w, "Trigger created successfully")
-	h.redirect(w, r, "/triggers")
+	respondSuccess("Trigger created successfully", "/triggers")
 }
 
 // TriggerEdit renders the trigger edit form
@@ -336,35 +413,61 @@ func (h *Handlers) TriggerEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	baseURL := getBaseURL(r)
+	accounts, err := h.db.ListGDriveAccounts()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list gdrive accounts")
+		accounts = nil
+	}
 
 	h.render(w, r, "triggers.html", map[string]any{
 		"Trigger":           trigger,
 		"BaseURL":           baseURL,
 		"DecryptedPassword": decryptedPassword,
+		"GDriveAccounts":    accounts,
 	})
 }
 
 // TriggerUpdate handles trigger update
 func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
+	isAsync := r.Header.Get("HX-Request") == "true"
+	respondError := func(status int, message, redirect string) {
+		if isAsync {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(message))
+			return
+		}
+		h.flashErr(w, message)
+		h.redirect(w, r, redirect)
+	}
+	respondSuccess := func(message, redirect string) {
+		if isAsync {
+			w.Header().Set("HX-Redirect", redirect)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.flash(w, message)
+		h.redirect(w, r, redirect)
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		h.flashErr(w, "Invalid trigger ID")
-		h.redirect(w, r, "/triggers")
+		respondError(http.StatusBadRequest, "Invalid trigger ID", "/triggers")
 		return
 	}
 
 	trigger, err := h.db.GetTrigger(id)
 	if err != nil || trigger == nil {
-		h.flashErr(w, "Trigger not found")
-		h.redirect(w, r, "/triggers")
+		respondError(http.StatusNotFound, "Trigger not found", "/triggers")
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		h.flashErr(w, "Invalid form data")
-		h.redirect(w, r, "/triggers/"+idStr)
-		return
+	if err := r.ParseMultipartForm(32 << 10); err != nil {
+		if err := r.ParseForm(); err != nil {
+			respondError(http.StatusBadRequest, "Invalid form data", "/triggers/"+idStr)
+			return
+		}
 	}
 
 	name := r.FormValue("name")
@@ -372,8 +475,7 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 	enabled := r.FormValue("enabled") == "on"
 
 	if name == "" {
-		h.flashErr(w, "Name is required")
-		h.redirect(w, r, "/triggers/"+idStr)
+		respondError(http.StatusBadRequest, "Name is required", "/triggers/"+idStr)
 		return
 	}
 
@@ -397,8 +499,7 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(watchPaths) == 0 {
-			h.flashErr(w, "At least one watch path is required")
-			h.redirect(w, r, "/triggers/"+idStr)
+			respondError(http.StatusBadRequest, "At least one watch path is required", "/triggers/"+idStr)
 			return
 		}
 
@@ -429,8 +530,7 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(watchPaths) == 0 {
-			h.flashErr(w, "At least one watch path is required")
-			h.redirect(w, r, "/triggers/"+idStr)
+			respondError(http.StatusBadRequest, "At least one watch path is required", "/triggers/"+idStr)
 			return
 		}
 
@@ -447,12 +547,35 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 		trigger.Config.UploadEnabled = boolPtr(r.FormValue("upload_enabled") == "on")
 	}
 
+	// For gdrive triggers, update account, drive, and folder selections
+	if trigger.Type == database.TriggerTypeGDrive {
+		accountID, _ := strconv.ParseInt(r.FormValue("gdrive_account_id"), 10, 64)
+		driveID := strings.TrimSpace(r.FormValue("gdrive_drive_id"))
+
+		if accountID <= 0 {
+			respondError(http.StatusBadRequest, "Google Drive account is required", "/triggers/"+idStr)
+			return
+		}
+
+		trigger.Config.GDriveAccountID = accountID
+		trigger.Config.GDriveDriveID = driveID
+
+		mappingIDs := r.Form["gdrive_path_rewrite_from_id[]"]
+		mappingTargets := r.Form["gdrive_path_rewrite_to[]"]
+		mappings, err := h.resolveGDrivePathMappings(r.Context(), accountID, driveID, mappingIDs, mappingTargets)
+		if err != nil {
+			respondError(http.StatusBadRequest, "Invalid Google Drive path mapping: "+err.Error(), "/triggers/"+idStr)
+			return
+		}
+		trigger.Config.GDrivePathRewrites = mappings
+		trigger.Config.PathRewrites = nil
+	}
+
 	// Parse path rewrites (for webhook trigger types only, not local triggers)
-	if trigger.Type != database.TriggerTypeInotify && trigger.Type != database.TriggerTypePolling {
+	if trigger.Type != database.TriggerTypeInotify && trigger.Type != database.TriggerTypePolling && trigger.Type != database.TriggerTypeGDrive {
 		rewrites, err := parsePathRewrites(r)
 		if err != nil {
-			h.flashErr(w, "Invalid path rewrite regex: "+err.Error())
-			h.redirect(w, r, "/triggers/"+idStr)
+			respondError(http.StatusBadRequest, "Invalid path rewrite regex: "+err.Error(), "/triggers/"+idStr)
 			return
 		}
 		trigger.Config.PathRewrites = rewrites
@@ -462,29 +585,36 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse path filters (include/exclude)
-	trigger.Config.IncludePaths = parsePathList(r, "include_paths[]")
-	trigger.Config.ExcludePaths = parsePathList(r, "exclude_paths[]")
-	trigger.Config.FilterAfterRewrite = r.FormValue("filter_after_rewrite") == "on"
-
-	// Parse exclude extensions
-	trigger.Config.ExcludeExtensions = parsePathList(r, "exclude_extensions[]")
-
-	// Parse advanced filters (regex patterns)
-	advIncludePatterns := parsePathList(r, "advanced_include_patterns[]")
-	advExcludePatterns := parsePathList(r, "advanced_exclude_patterns[]")
-	if len(advIncludePatterns) > 0 || len(advExcludePatterns) > 0 {
-		trigger.Config.AdvancedFilters = &database.AdvancedFilters{
-			IncludePatterns: advIncludePatterns,
-			ExcludePatterns: advExcludePatterns,
-		}
-		// Validate regex patterns
-		if err := trigger.Config.AdvancedFilters.Compile(); err != nil {
-			h.flashErr(w, "Invalid regex pattern: "+err.Error())
-			h.redirect(w, r, "/triggers/"+idStr)
-			return
-		}
-	} else {
+	if trigger.Type == database.TriggerTypeGDrive {
+		trigger.Config.IncludePaths = nil
+		trigger.Config.ExcludePaths = nil
+		trigger.Config.ExcludeExtensions = nil
 		trigger.Config.AdvancedFilters = nil
+		trigger.Config.FilterAfterRewrite = false
+	} else {
+		trigger.Config.IncludePaths = parsePathList(r, "include_paths[]")
+		trigger.Config.ExcludePaths = parsePathList(r, "exclude_paths[]")
+		trigger.Config.FilterAfterRewrite = r.FormValue("filter_after_rewrite") == "on"
+
+		// Parse exclude extensions
+		trigger.Config.ExcludeExtensions = parsePathList(r, "exclude_extensions[]")
+
+		// Parse advanced filters (regex patterns)
+		advIncludePatterns := parsePathList(r, "advanced_include_patterns[]")
+		advExcludePatterns := parsePathList(r, "advanced_exclude_patterns[]")
+		if len(advIncludePatterns) > 0 || len(advExcludePatterns) > 0 {
+			trigger.Config.AdvancedFilters = &database.AdvancedFilters{
+				IncludePatterns: advIncludePatterns,
+				ExcludePatterns: advExcludePatterns,
+			}
+			// Validate regex patterns
+			if err := trigger.Config.AdvancedFilters.Compile(); err != nil {
+				respondError(http.StatusBadRequest, "Invalid regex pattern: "+err.Error(), "/triggers/"+idStr)
+				return
+			}
+		} else {
+			trigger.Config.AdvancedFilters = nil
+		}
 	}
 
 	// Parse filesystem settings
@@ -515,8 +645,7 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.db.UpdateTrigger(trigger); err != nil {
 		log.Error().Err(err).Int64("id", id).Msg("Failed to update trigger")
-		h.flashErr(w, "Failed to update trigger")
-		h.redirect(w, r, "/triggers/"+idStr)
+		respondError(http.StatusInternalServerError, "Failed to update trigger", "/triggers/"+idStr)
 		return
 	}
 
@@ -534,9 +663,15 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Notify gdrive watcher of trigger update
+	if h.gdriveMgr != nil && trigger.Type == database.TriggerTypeGDrive {
+		if err := h.gdriveMgr.ReloadTrigger(trigger.ID); err != nil {
+			log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to reload gdrive trigger")
+		}
+	}
+
 	log.Info().Int64("id", id).Str("name", trigger.Name).Msg("Trigger updated")
-	h.flash(w, "Trigger updated successfully")
-	h.redirect(w, r, "/triggers")
+	respondSuccess("Trigger updated successfully", "/triggers")
 }
 
 // TriggerDelete handles trigger deletion
@@ -562,6 +697,11 @@ func (h *Handlers) TriggerDelete(w http.ResponseWriter, r *http.Request) {
 	// Notify polling manager of trigger deletion
 	if h.pollingMgr != nil {
 		h.pollingMgr.RemoveTrigger(id)
+	}
+
+	// Notify gdrive watcher of trigger deletion
+	if h.gdriveMgr != nil {
+		h.gdriveMgr.RemoveTrigger(id)
 	}
 
 	log.Info().Int64("id", id).Msg("Trigger deleted")
@@ -591,8 +731,8 @@ func (h *Handlers) TriggerRegenerateKey(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if trigger.Type == database.TriggerTypeInotify || trigger.Type == database.TriggerTypePolling {
-		h.jsonError(w, "Local triggers do not have API keys", http.StatusBadRequest)
+	if trigger.Type == database.TriggerTypeInotify || trigger.Type == database.TriggerTypePolling || trigger.Type == database.TriggerTypeGDrive {
+		h.jsonError(w, "Non-webhook triggers do not have API keys", http.StatusBadRequest)
 		return
 	}
 
@@ -633,8 +773,8 @@ func (h *Handlers) TriggerUpdatePassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if trigger.Type == database.TriggerTypeInotify || trigger.Type == database.TriggerTypePolling {
-		h.jsonError(w, "Local triggers do not have authentication", http.StatusBadRequest)
+	if trigger.Type == database.TriggerTypeInotify || trigger.Type == database.TriggerTypePolling || trigger.Type == database.TriggerTypeGDrive {
+		h.jsonError(w, "Non-webhook triggers do not have authentication", http.StatusBadRequest)
 		return
 	}
 
@@ -691,6 +831,8 @@ func boolPtr(value bool) *bool {
 	return &value
 }
 
+const gdrivePathRewriteValidationTimeout = 20 * time.Second
+
 // parsePathRewrites extracts path rewrite rules from form data
 // Returns the rewrites and an error if any regex pattern is invalid
 // Note: All rewrites must be the same type (all simple OR all regex, not mixed)
@@ -744,6 +886,60 @@ func parsePathRewrites(r *http.Request) ([]database.PathRewrite, error) {
 	return rewrites, nil
 }
 
+func (h *Handlers) resolveGDrivePathMappings(ctx context.Context, accountID int64, driveID string, fromIDs, toPaths []string) ([]database.GDrivePathRewrite, error) {
+	if len(fromIDs) == 0 || len(toPaths) == 0 {
+		return nil, nil
+	}
+
+	account, err := h.db.GetGDriveAccount(accountID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load Google Drive account")
+	}
+	if account == nil {
+		return nil, fmt.Errorf("Google Drive account not found")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, gdrivePathRewriteValidationTimeout)
+	defer cancel()
+
+	driveSvc, err := gdrive.NewService(h.db).DriveServiceForAccount(ctx, account)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Google Drive")
+	}
+
+	resolver := gdrive.NewPathResolver(driveSvc, driveID, "")
+	rewrites := make([]database.GDrivePathRewrite, 0, len(fromIDs))
+	for i := 0; i < len(fromIDs) && i < len(toPaths); i++ {
+		fromID := strings.TrimSpace(fromIDs[i])
+		to := strings.TrimSpace(toPaths[i])
+		if fromID == "" || to == "" {
+			continue
+		}
+
+		var resolvedPath string
+		if fromID == "root" {
+			resolvedPath = "/"
+		} else {
+			path, _, err := resolver.ResolvePath(fromID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve Google Drive folder path")
+			}
+			resolvedPath = path
+		}
+		if resolvedPath == "" || !strings.HasPrefix(resolvedPath, "/") {
+			return nil, fmt.Errorf("path mapping must resolve to a drive-relative path")
+		}
+
+		rewrites = append(rewrites, database.GDrivePathRewrite{
+			FromID:   fromID,
+			FromPath: resolvedPath,
+			To:       to,
+		})
+	}
+
+	return rewrites, nil
+}
+
 // ManualScan handles quick manual scan requests from the UI
 func (h *Handlers) ManualScan(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
@@ -766,8 +962,9 @@ func (h *Handlers) ManualScan(w http.ResponseWriter, r *http.Request) {
 
 	// Queue the scan with high priority and no trigger association
 	h.processor.QueueScan(processor.ScanRequest{
-		Path:     path,
-		Priority: 100, // High priority for manual scans
+		Path:        path,
+		TriggerPath: path,
+		Priority:    100, // High priority for manual scans
 	})
 
 	log.Info().Str("path", path).Msg("Manual scan queued from UI")

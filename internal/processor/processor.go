@@ -21,20 +21,9 @@ import (
 
 // Config holds the processor configuration
 type Config struct {
-	// MaxRetries is the maximum number of retry attempts for failed scans
-	// After this many retries, the scan is marked as permanently failed
-	MaxRetries int `json:"max_retries"`
-
 	// CleanupDays is how many days to keep completed/failed scan history
 	// Set to 0 to disable cleanup and keep scan history forever
 	CleanupDays int `json:"cleanup_days"`
-
-	// PathNotFoundRetries is the number of times to retry when a path doesn't exist
-	// Set to 0 to fail immediately (default behavior)
-	PathNotFoundRetries int `json:"path_not_found_retries"`
-
-	// PathNotFoundDelaySeconds is the fixed delay between retry attempts when path not found
-	PathNotFoundDelaySeconds int `json:"path_not_found_delay_seconds"`
 
 	// Anchor configuration
 	Anchor AnchorConfig `json:"anchor"`
@@ -43,11 +32,8 @@ type Config struct {
 // DefaultConfig returns the default processor configuration
 func DefaultConfig() Config {
 	return Config{
-		MaxRetries:               5,
-		CleanupDays:              7,
-		PathNotFoundRetries:      0,
-		PathNotFoundDelaySeconds: 5,
-		Anchor:                   DefaultAnchorConfig(),
+		CleanupDays: 7,
+		Anchor:      DefaultAnchorConfig(),
 	}
 }
 
@@ -60,11 +46,12 @@ const (
 
 // ScanRequest represents a request to scan a path
 type ScanRequest struct {
-	Path      string
-	TriggerID *int64
-	Priority  int
-	EventType string
-	FilePaths []string // Original file paths that triggered this scan (for tracking/context)
+	Path        string
+	TriggerPath string
+	TriggerID   *int64
+	Priority    int
+	EventType   string
+	FilePaths   []string // Original file paths that triggered this scan (for tracking/context)
 }
 
 // fileStabilityCheck tracks file size for stability checking
@@ -143,6 +130,11 @@ func (p *Processor) Start() {
 		log.Error().Err(err).Msg("Failed to reset interrupted scans")
 	} else if count > 0 {
 		log.Info().Int64("count", count).Msg("Reset interrupted scans back to pending")
+	}
+	if count, err := p.db.MarkRetryScansFailed(); err != nil {
+		log.Error().Err(err).Msg("Failed to mark retry scans as failed")
+	} else if count > 0 {
+		log.Info().Int64("count", count).Msg("Marked retry scans as failed")
 	}
 	p.refreshPendingHint()
 
@@ -223,6 +215,11 @@ func (p *Processor) requestProcessor() {
 func (p *Processor) handleRequest(req ScanRequest) {
 	// Normalize the path (path rewriting is now done per-trigger in the API handler)
 	path := filepath.Clean(req.Path)
+	triggerPath := req.TriggerPath
+	if triggerPath == "" {
+		triggerPath = req.Path
+	}
+	triggerPath = filepath.Clean(triggerPath)
 
 	// Check for duplicate pending scans
 	existing, err := p.db.FindDuplicatePendingScan(path, req.TriggerID)
@@ -233,6 +230,11 @@ func (p *Processor) handleRequest(req ScanRequest) {
 
 	if existing != nil {
 		p.markPending()
+		if existing.TriggerPath == "" && triggerPath != "" {
+			if err := p.db.UpdateScanTriggerPath(existing.ID, triggerPath); err != nil {
+				log.Error().Err(err).Str("path", path).Msg("Failed to update trigger path for existing scan")
+			}
+		}
 		// Merge file paths if new request has any
 		if len(req.FilePaths) > 0 {
 			if err := p.db.AppendScanFilePaths(existing.ID, req.FilePaths); err != nil {
@@ -257,12 +259,13 @@ func (p *Processor) handleRequest(req ScanRequest) {
 
 	// Create new scan record
 	scan := &database.Scan{
-		Path:      path,
-		TriggerID: req.TriggerID,
-		Priority:  req.Priority,
-		Status:    database.ScanStatusPending,
-		EventType: req.EventType,
-		FilePaths: req.FilePaths,
+		Path:        path,
+		TriggerPath: triggerPath,
+		TriggerID:   req.TriggerID,
+		Priority:    req.Priority,
+		Status:      database.ScanStatusPending,
+		EventType:   req.EventType,
+		FilePaths:   req.FilePaths,
 	}
 
 	if err := p.db.CreateScan(scan); err != nil {
@@ -465,13 +468,23 @@ func (p *Processor) processBatch() {
 	}
 
 	assignments := make(map[int64]map[int64]struct{}, len(scanWorks))
-	assignTarget := func(scanID int64, targetID int64) {
+	scanTargetPaths := make(map[int64]map[int64]string, len(scanWorks))
+	assignTarget := func(scanID int64, targetID int64, mappedPath string) {
 		assigned := assignments[scanID]
 		if assigned == nil {
 			assigned = make(map[int64]struct{})
 			assignments[scanID] = assigned
 		}
 		assigned[targetID] = struct{}{}
+		if mappedPath == "" {
+			return
+		}
+		paths := scanTargetPaths[scanID]
+		if paths == nil {
+			paths = make(map[int64]string)
+			scanTargetPaths[scanID] = paths
+		}
+		paths[targetID] = mappedPath
 	}
 
 	for key, candidates := range candidatesByKey {
@@ -499,7 +512,7 @@ func (p *Processor) processBatch() {
 				}
 			}
 
-			assignTarget(winner.work.scan.ID, key.targetID)
+			assignTarget(winner.work.scan.ID, key.targetID, key.mappedPath)
 			i = j
 		}
 	}
@@ -613,7 +626,7 @@ func (p *Processor) processBatch() {
 			if isDeleteEvent(scan.EventType) {
 				log.Debug().Int64("scan_id", scan.ID).Str("path", scan.Path).Str("event_type", scan.EventType).
 					Msg("Skipping path check for delete event")
-				p.processScan(scan, work.triggerName, targetIDs)
+				p.processScan(scan, work.triggerName, targetIDs, scanTargetPaths[scan.ID])
 				availableSlots--
 				continue
 			}
@@ -625,21 +638,7 @@ func (p *Processor) processBatch() {
 			// Skip stability check for remote filesystems
 			stable, stabilityReason := p.checkPathStability(scan.Path, triggerConfig)
 			if !stable {
-				// If path doesn't exist, check if we should retry
 				if stabilityReason == "path does not exist" {
-					if p.config.PathNotFoundRetries > 0 && scan.RetryCount < p.config.PathNotFoundRetries {
-						// Schedule retry by updating retry_count and next_retry_at, keep status pending
-						nextRetryAt := time.Now().Add(time.Duration(p.config.PathNotFoundDelaySeconds) * time.Second)
-						if err := p.db.SetScanPathNotFoundRetry(scan.ID, scan.RetryCount+1, nextRetryAt); err != nil {
-							log.Error().Err(err).Int64("scan_id", scan.ID).Msg("Failed to schedule path retry")
-						} else {
-							log.Debug().Int64("scan_id", scan.ID).Str("path", scan.Path).
-								Int("retry", scan.RetryCount+1).Int("max", p.config.PathNotFoundRetries).
-								Msg("Path not found, will retry")
-						}
-						continue
-					}
-					// Retries exhausted or disabled - fail immediately
 					errMsg := "path does not exist"
 					if err := p.db.UpdateScanError(scan.ID, errMsg); err != nil {
 						log.Error().Err(err).Int64("scan_id", scan.ID).Msg("Failed to mark scan as failed")
@@ -658,7 +657,7 @@ func (p *Processor) processBatch() {
 				continue
 			}
 
-			p.processScan(scan, work.triggerName, targetIDs)
+			p.processScan(scan, work.triggerName, targetIDs, scanTargetPaths[scan.ID])
 			availableSlots--
 		}
 	}
@@ -669,7 +668,8 @@ func (p *Processor) processBatch() {
 func isDeleteEvent(eventType string) bool {
 	switch eventType {
 	case "MovieFileDelete", "EpisodeFileDelete", "TrackFileDelete",
-		"MovieDelete", "SeriesDelete", "ArtistDelete", "AlbumDelete":
+		"MovieDelete", "SeriesDelete", "ArtistDelete", "AlbumDelete",
+		"gdrive_delete":
 		return true
 	}
 	return false
@@ -765,7 +765,7 @@ func (p *Processor) groupByParent(scans []*database.Scan) map[string][]*database
 }
 
 // processScan processes a single scan for the assigned targets.
-func (p *Processor) processScan(scan *database.Scan, triggerName string, targetIDs []int64) {
+func (p *Processor) processScan(scan *database.Scan, triggerName string, targetIDs []int64, targetPaths map[int64]string) {
 	p.activeScansMu.Lock()
 	p.activeScans[scan.ID] = true
 	p.activeScansMu.Unlock()
@@ -823,6 +823,11 @@ func (p *Processor) processScan(scan *database.Scan, triggerName string, targetI
 		}
 
 		if scanningEnabled {
+			if len(targetPaths) > 0 {
+				if err := p.db.SetScanTargetPaths(scan.ID, targetPaths); err != nil {
+					log.Warn().Err(err).Int64("scan_id", scan.ID).Msg("Failed to store scan target paths")
+				}
+			}
 			ctx, cancel := context.WithTimeout(p.ctx, config.GetTimeouts().ScanOperation)
 			defer cancel()
 
@@ -871,33 +876,26 @@ func (p *Processor) processScan(scan *database.Scan, triggerName string, targetI
 				Int("total_targets", len(results)).
 				Msg("Scan triggered on targets")
 
-			// Check if all targets failed - schedule retry with exponential backoff
+			// Check if all targets failed - mark scan failed
 			if successCount == 0 && len(results) > 0 {
-				scheduled, err := p.db.ScheduleScanRetry(scan.ID, lastError, p.config.MaxRetries)
-				if err != nil {
-					log.Error().Err(err).Int64("scan_id", scan.ID).Msg("Failed to schedule scan retry")
+				errMsg := lastError
+				if errMsg == "" {
+					errMsg = "scan failed"
+				}
+				if err := p.db.UpdateScanError(scan.ID, errMsg); err != nil {
+					log.Error().Err(err).Int64("scan_id", scan.ID).Msg("Failed to mark scan as failed")
 					return
 				}
-				if scheduled {
-					log.Info().
-						Int64("scan_id", scan.ID).
-						Str("path", scan.Path).
-						Int("retry_count", scan.RetryCount+1).
-						Msg("Scan scheduled for retry")
-				} else {
-					// Broadcast scan failed event
-					if p.sseBroker != nil {
-						p.sseBroker.Broadcast(sse.Event{
-							Type: sse.EventScanFailed,
-							Data: map[string]any{"scan_id": scan.ID, "path": scan.Path, "error": lastError},
-						})
-					}
-					log.Error().
-						Int64("scan_id", scan.ID).
-						Str("path", scan.Path).
-						Int("max_retries", p.config.MaxRetries).
-						Msg("Scan failed permanently after max retries")
+				if p.sseBroker != nil {
+					p.sseBroker.Broadcast(sse.Event{
+						Type: sse.EventScanFailed,
+						Data: map[string]any{"scan_id": scan.ID, "path": scan.Path, "error": errMsg},
+					})
 				}
+				log.Error().
+					Int64("scan_id", scan.ID).
+					Str("path", scan.Path).
+					Msg("Scan failed (all targets failed)")
 				return
 			}
 

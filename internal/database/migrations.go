@@ -904,6 +904,68 @@ var migrations = []migration{
 			ALTER TABLE matcharr_file_mismatches ADD COLUMN multi_episode TEXT DEFAULT '';
 		`,
 	},
+	{
+		Version: 31,
+		Name:    "gdrive_accounts_and_state",
+		SQL: `
+			CREATE TABLE gdrive_accounts (
+				id INTEGER PRIMARY KEY,
+				subject TEXT NOT NULL UNIQUE,
+				email TEXT,
+				display_name TEXT,
+				refresh_token TEXT NOT NULL,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+
+			CREATE TABLE gdrive_sync_state (
+				trigger_id INTEGER PRIMARY KEY REFERENCES triggers(id) ON DELETE CASCADE,
+				page_token TEXT,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+			CREATE INDEX idx_gdrive_sync_state_updated ON gdrive_sync_state(updated_at);
+		`,
+	},
+	{
+		Version: 32,
+		Name:    "gdrive_account_auth_type",
+		SQL: `
+			ALTER TABLE gdrive_accounts ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'oauth';
+			ALTER TABLE gdrive_accounts ADD COLUMN service_account_json TEXT NOT NULL DEFAULT '';
+		`,
+	},
+	{
+		Version: 33,
+		Name:    "scan_trigger_paths",
+		SQL: `
+			ALTER TABLE scans ADD COLUMN trigger_path TEXT;
+
+			CREATE TABLE scan_target_paths (
+				scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+				target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
+				scan_path TEXT NOT NULL,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (scan_id, target_id)
+			);
+			CREATE INDEX idx_scan_target_paths_scan ON scan_target_paths(scan_id);
+		`,
+	},
+	{
+		Version: 34,
+		Name:    "gdrive_snapshot_entries",
+		SQL: `
+			CREATE TABLE gdrive_snapshot_entries (
+				trigger_id INTEGER NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+				file_id TEXT NOT NULL,
+				parent_id TEXT,
+				name TEXT NOT NULL,
+				mime_type TEXT NOT NULL,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (trigger_id, file_id)
+			);
+			CREATE INDEX idx_gdrive_snapshot_trigger ON gdrive_snapshot_entries(trigger_id);
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -572,25 +574,115 @@ func (h *Handlers) TargetLibraries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create targets manager and get libraries
-	mgr := targets.NewManager(h.db)
-	t, err := mgr.GetTargetForDBTarget(target)
-	if err != nil {
-		h.jsonError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	refresh := r.URL.Query().Get("refresh") == "1"
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	var libraries []targets.Library
+	if refresh {
+		// Create targets manager and get libraries
+		mgr := targets.NewManager(h.db)
+		t, err := mgr.GetTargetForDBTarget(target)
+		if err != nil {
+			h.jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-	libraries, err := t.GetLibraries(ctx)
-	if err != nil {
-		h.jsonError(w, err.Error(), http.StatusInternalServerError)
-		return
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		libraries, err = t.GetLibraries(ctx)
+		if err != nil {
+			h.jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := h.db.SetCachedLibraries(target.ID, buildTargetLibraryCache(target.ID, libraries)); err != nil {
+			log.Warn().Err(err).Int64("target_id", target.ID).Str("target", target.Name).
+				Msg("Failed to update library cache")
+		}
+	} else {
+		cached, err := h.db.GetCachedLibrariesAnyAge(target.ID)
+		if err != nil {
+			h.jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		libraries = buildLibrariesFromCache(cached)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(libraries)
+}
+
+func buildTargetLibraryCache(targetID int64, libraries []targets.Library) []database.TargetLibrary {
+	dbLibraries := make([]database.TargetLibrary, 0, len(libraries))
+	for _, lib := range libraries {
+		// Handle libraries with multiple paths
+		if len(lib.Paths) > 0 {
+			for _, path := range lib.Paths {
+				dbLibraries = append(dbLibraries, database.TargetLibrary{
+					TargetID:  targetID,
+					LibraryID: lib.ID,
+					Name:      lib.Name,
+					Type:      lib.Type,
+					Path:      path,
+				})
+			}
+		} else if lib.Path != "" {
+			// Fallback to single path field
+			dbLibraries = append(dbLibraries, database.TargetLibrary{
+				TargetID:  targetID,
+				LibraryID: lib.ID,
+				Name:      lib.Name,
+				Type:      lib.Type,
+				Path:      lib.Path,
+			})
+		}
+	}
+	return dbLibraries
+}
+
+func buildLibrariesFromCache(cached []database.TargetLibrary) []targets.Library {
+	if len(cached) == 0 {
+		return nil
+	}
+
+	libraryMap := make(map[string]*targets.Library)
+	order := make([]string, 0, len(cached))
+
+	for _, lib := range cached {
+		entry, exists := libraryMap[lib.LibraryID]
+		if !exists {
+			entry = &targets.Library{
+				ID:   lib.LibraryID,
+				Name: lib.Name,
+				Type: lib.Type,
+			}
+			libraryMap[lib.LibraryID] = entry
+			order = append(order, lib.LibraryID)
+		}
+
+		path := strings.TrimSpace(lib.Path)
+		if path == "" {
+			continue
+		}
+		path = filepath.Clean(path)
+		already := slices.Contains(entry.Paths, path)
+		if already {
+			continue
+		}
+		entry.Paths = append(entry.Paths, path)
+		if entry.Path == "" {
+			entry.Path = path
+		}
+	}
+
+	libraries := make([]targets.Library, 0, len(order))
+	for _, id := range order {
+		if entry := libraryMap[id]; entry != nil {
+			libraries = append(libraries, *entry)
+		}
+	}
+
+	return libraries
 }
 
 // parseExcludeExtensions extracts exclude extensions from form data

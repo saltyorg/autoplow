@@ -19,6 +19,7 @@ const (
 	TriggerTypeWebhook  TriggerType = "webhook"
 	TriggerTypeInotify  TriggerType = "inotify"
 	TriggerTypePolling  TriggerType = "polling"
+	TriggerTypeGDrive   TriggerType = "gdrive"
 	TriggerTypeAutoplow TriggerType = "autoplow"
 	TriggerTypeATrain   TriggerType = "a_train"
 	TriggerTypeAutoscan TriggerType = "autoscan"
@@ -108,6 +109,15 @@ type TriggerConfig struct {
 	// Default (false): filters are applied BEFORE path rewrites (on original paths)
 	// When true: filters are applied AFTER path rewrites (on rewritten paths)
 	FilterAfterRewrite bool `json:"filter_after_rewrite,omitempty"`
+
+	// Google Drive account ID for gdrive triggers
+	GDriveAccountID int64 `json:"gdrive_account_id,omitempty"`
+
+	// Google Drive ID (empty for My Drive)
+	GDriveDriveID string `json:"gdrive_drive_id,omitempty"`
+
+	// GDrivePathRewrites are Google Drive specific path mappings (folder ID to local path).
+	GDrivePathRewrites []GDrivePathRewrite `json:"gdrive_path_rewrites,omitempty"`
 }
 
 // AdvancedFilters provides regex-based include/exclude filtering
@@ -200,6 +210,32 @@ type PathRewrite struct {
 	compiledRegex *regexp.Regexp `json:"-"`
 }
 
+// GDrivePathRewrite represents a Google Drive folder mapping to a local path.
+type GDrivePathRewrite struct {
+	FromID   string `json:"from_id"`
+	FromPath string `json:"from_path"`
+	To       string `json:"to"`
+}
+
+// GDrivePathRewriteRules converts GDrive path rewrites into generic path rewrite rules.
+func (c *TriggerConfig) GDrivePathRewriteRules() []PathRewrite {
+	if c == nil || len(c.GDrivePathRewrites) == 0 {
+		return nil
+	}
+
+	rules := make([]PathRewrite, 0, len(c.GDrivePathRewrites))
+	for _, rewrite := range c.GDrivePathRewrites {
+		if rewrite.FromPath == "" || rewrite.To == "" {
+			continue
+		}
+		rules = append(rules, PathRewrite{
+			From: rewrite.FromPath,
+			To:   rewrite.To,
+		})
+	}
+	return rules
+}
+
 // CompileRegex compiles the regex pattern if IsRegex is true
 // Returns an error if the pattern is invalid
 func (pr *PathRewrite) CompileRegex() error {
@@ -252,6 +288,34 @@ func (c *TriggerConfig) MatchesPathFilters(path string) bool {
 		}
 	}
 
+	// Check exclude extensions - if file extension matches any, skip it
+	if len(c.ExcludeExtensions) > 0 {
+		ext := strings.ToLower(filepath.Ext(path))
+		for _, excludeExt := range c.ExcludeExtensions {
+			// Normalize the exclude extension (ensure it starts with .)
+			normalizedExt := strings.ToLower(excludeExt)
+			if !strings.HasPrefix(normalizedExt, ".") {
+				normalizedExt = "." + normalizedExt
+			}
+			if ext == normalizedExt {
+				return false
+			}
+		}
+	}
+
+	// Check advanced filters (regex-based)
+	if c.AdvancedFilters != nil {
+		if !c.AdvancedFilters.Matches(path) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// MatchesPathFiltersWithoutPrefixes checks path filters without include/exclude prefixes.
+// This is useful when include/exclude prefixes are derived elsewhere (e.g., gdrive mappings).
+func (c *TriggerConfig) MatchesPathFiltersWithoutPrefixes(path string) bool {
 	// Check exclude extensions - if file extension matches any, skip it
 	if len(c.ExcludeExtensions) > 0 {
 		ext := strings.ToLower(filepath.Ext(path))

@@ -1491,10 +1491,11 @@
             el.innerHTML = '<span class="skeleton-pill w-24"></span><span class="skeleton-pill w-32"></span>';
         };
 
-        const fetchLibraries = async (container, targetId) => {
+        const fetchLibraries = async (container, targetId, refresh = false) => {
             setSkeleton(container);
             try {
-                const response = await fetch(`/targets/${targetId}/libraries`);
+                const url = refresh ? `/targets/${targetId}/libraries?refresh=1` : `/targets/${targetId}/libraries`;
+                const response = await fetch(url);
                 if (!response.ok) throw new Error('Failed to fetch');
                 const libraries = await response.json();
 
@@ -1517,7 +1518,7 @@
             btn.addEventListener('click', () => {
                 const targetId = btn.dataset.refreshLibraries;
                 const container = document.querySelector(`#libraries-${targetId}`);
-                if (container) fetchLibraries(container, targetId);
+                if (container) fetchLibraries(container, targetId, true);
             });
         });
     })();

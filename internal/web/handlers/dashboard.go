@@ -134,6 +134,9 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			status := string(scan.Status)
+			if scan.Status == database.ScanStatusRetry {
+				status = string(database.ScanStatusFailed)
+			}
 			if plexInfo.matcher != nil && scan.Status == database.ScanStatusCompleted && plexInfo.matcher.HasPending(scan.Path) {
 				status = string(database.ScanStatusScanning)
 			}
@@ -270,6 +273,9 @@ func (h *Handlers) DashboardScansPartial(w http.ResponseWriter, r *http.Request)
 				}
 			}
 			status := string(scan.Status)
+			if scan.Status == database.ScanStatusRetry {
+				status = string(database.ScanStatusFailed)
+			}
 			if plexInfo.matcher != nil && scan.Status == database.ScanStatusCompleted && plexInfo.matcher.HasPending(scan.Path) {
 				status = string(database.ScanStatusScanning)
 			}

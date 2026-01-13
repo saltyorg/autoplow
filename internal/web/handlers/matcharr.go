@@ -42,6 +42,7 @@ type fileMismatchDetailRow struct {
 	TargetFileNames string
 	ArrFilePath     string
 	TargetFilePaths string
+	MultiEpisode    string
 }
 
 type fileMismatchSeasonGroup struct {
@@ -1649,6 +1650,7 @@ func buildFileMismatchRows(mismatches []*database.MatcharrFileMismatch) []fileMi
 			TargetFileNames: mismatch.TargetFileNames,
 			ArrFilePath:     mismatch.ArrFilePath,
 			TargetFilePaths: mismatch.TargetFilePaths,
+			MultiEpisode:    mismatch.MultiEpisode,
 		})
 	}
 

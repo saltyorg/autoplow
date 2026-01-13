@@ -1,26 +1,38 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
 	"github.com/saltyorg/autoplow/internal/database"
-	"github.com/saltyorg/autoplow/internal/processor"
 )
 
 // ScanHistoryItem represents a scan for the history page
 type ScanHistoryItem struct {
 	ID          int64
 	Path        string
+	TriggerPath string
 	TriggerName string
 	Status      string
 	CreatedAt   time.Time
 	CompletedAt *time.Time
 	Error       string
+	TargetPaths []ScanHistoryTargetPath
+}
+
+// ScanHistoryTargetPath represents a scan path sent to a target.
+type ScanHistoryTargetPath struct {
+	TargetID   int64
+	TargetName string
+	Path       string
 }
 
 func (h *Handlers) buildHistoryScansData(r *http.Request) (map[string]any, error) {
@@ -38,10 +50,27 @@ func (h *Handlers) buildHistoryScansData(r *http.Request) (map[string]any, error
 		return nil, err
 	}
 
+	scanIDs := make([]int64, 0, len(scans))
+	for _, s := range scans {
+		scanIDs = append(scanIDs, s.ID)
+	}
+
 	triggers := make(map[int64]string)
 	triggerList, _ := h.db.ListTriggers()
 	for _, t := range triggerList {
 		triggers[t.ID] = t.Name
+	}
+
+	targetNames := make(map[int64]string)
+	targetList, _ := h.db.ListTargets()
+	for _, target := range targetList {
+		targetNames[target.ID] = target.Name
+	}
+
+	targetPathsByScan, err := h.db.ListScanTargetPaths(scanIDs)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load scan target paths")
+		targetPathsByScan = make(map[int64][]database.ScanTargetPath)
 	}
 
 	plexInfo := h.plexScanInfo()
@@ -49,16 +78,43 @@ func (h *Handlers) buildHistoryScansData(r *http.Request) (map[string]any, error
 	var items []ScanHistoryItem
 	for _, s := range scans {
 		status := string(s.Status)
+		if s.Status == database.ScanStatusRetry {
+			status = string(database.ScanStatusFailed)
+		}
 		if plexInfo.matcher != nil && s.Status == database.ScanStatusCompleted && plexInfo.matcher.HasPending(s.Path) {
 			status = string(database.ScanStatusScanning)
 		}
+		triggerPath := s.TriggerPath
+		if triggerPath == "" {
+			triggerPath = s.Path
+		}
+		targetPaths := make([]ScanHistoryTargetPath, 0, len(targetPathsByScan[s.ID]))
+		for _, targetPath := range targetPathsByScan[s.ID] {
+			name := targetNames[targetPath.TargetID]
+			if name == "" {
+				name = fmt.Sprintf("Target #%d", targetPath.TargetID)
+			}
+			targetPaths = append(targetPaths, ScanHistoryTargetPath{
+				TargetID:   targetPath.TargetID,
+				TargetName: name,
+				Path:       targetPath.ScanPath,
+			})
+		}
+		sort.Slice(targetPaths, func(i, j int) bool {
+			if targetPaths[i].TargetName == targetPaths[j].TargetName {
+				return targetPaths[i].TargetID < targetPaths[j].TargetID
+			}
+			return targetPaths[i].TargetName < targetPaths[j].TargetName
+		})
 		item := ScanHistoryItem{
 			ID:          s.ID,
 			Path:        s.Path,
+			TriggerPath: triggerPath,
 			Status:      status,
 			CreatedAt:   s.CreatedAt,
 			CompletedAt: s.CompletedAt,
 			Error:       s.LastError,
+			TargetPaths: targetPaths,
 		}
 		if s.TriggerID != nil {
 			if name, ok := triggers[*s.TriggerID]; ok {
@@ -133,46 +189,52 @@ func (h *Handlers) HistoryScansTablePartial(w http.ResponseWriter, r *http.Reque
 	h.renderPartial(w, "history_scans.html", "scan_history_table", data)
 }
 
-// RetryScan queues a new scan using the same parameters as a historical scan.
-func (h *Handlers) RetryScan(w http.ResponseWriter, r *http.Request) {
+// DeleteScanHistoryItem removes a scan history entry.
+func (h *Handlers) DeleteScanHistoryItem(w http.ResponseWriter, r *http.Request) {
+	redirectURL := "/history/scans"
+	params := make([]string, 0, 2)
+	if page := r.URL.Query().Get("page"); page != "" {
+		if p, err := strconv.Atoi(page); err == nil && p > 0 {
+			params = append(params, "page="+strconv.Itoa(p))
+		}
+	}
+	if status := r.URL.Query().Get("status"); status != "" {
+		params = append(params, "status="+url.QueryEscape(status))
+	}
+	if len(params) > 0 {
+		redirectURL += "?" + strings.Join(params, "&")
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		h.flashErr(w, "Invalid scan ID")
-		h.redirect(w, r, "/history/scans")
+		h.redirect(w, r, redirectURL)
 		return
 	}
 
-	// Get the scan
 	scan, err := h.db.GetScan(id)
 	if err != nil {
-		log.Error().Err(err).Int64("id", id).Msg("Failed to get scan for retry")
+		log.Error().Err(err).Int64("id", id).Msg("Failed to get scan for delete")
 		h.flashErr(w, "Scan not found")
-		h.redirect(w, r, "/history/scans")
+		h.redirect(w, r, redirectURL)
 		return
 	}
 	if scan == nil {
 		h.flashErr(w, "Scan not found")
-		h.redirect(w, r, "/history/scans")
+		h.redirect(w, r, redirectURL)
 		return
 	}
 
-	if h.processor == nil {
-		h.flashErr(w, "Scan processor unavailable")
-		h.redirect(w, r, "/history/scans")
+	if err := h.db.DeleteScan(id); err != nil {
+		log.Error().Err(err).Int64("id", id).Msg("Failed to delete scan")
+		h.flashErr(w, "Failed to delete scan")
+		h.redirect(w, r, redirectURL)
 		return
 	}
 
-	h.processor.QueueScan(processor.ScanRequest{
-		Path:      scan.Path,
-		TriggerID: scan.TriggerID,
-		Priority:  scan.Priority,
-		EventType: scan.EventType,
-		FilePaths: scan.FilePaths,
-	})
-
-	h.flash(w, "Scan queued for retry")
-	h.redirect(w, r, "/history/scans")
+	h.flash(w, "Scan deleted")
+	h.redirect(w, r, redirectURL)
 }
 
 // HistoryUploads renders the upload history page

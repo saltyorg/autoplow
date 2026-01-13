@@ -14,6 +14,7 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/database"
 	"github.com/saltyorg/autoplow/internal/processor"
+	"github.com/saltyorg/autoplow/internal/triggerpaths"
 )
 
 // APITriggerSonarr handles Sonarr webhook triggers
@@ -220,16 +221,41 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 		return
 	}
 
+	type queuedPath struct {
+		raw       string
+		rewritten string
+	}
+	pathPairs := make([]queuedPath, 0, len(paths))
+
 	// Apply path filters and rewrites in the configured order
 	// Default: filter before rewrite (filters apply to original paths)
-	if trigger.Config.FilterAfterRewrite {
-		// Filter after rewrite: rewrites first, then filters on rewritten paths
-		paths = applyPathRewrites(paths, trigger.Config.PathRewrites)
-		paths = filterPaths(paths, &trigger.Config)
-	} else {
-		// Default: filter before rewrite (filters apply to original paths)
-		paths = filterPaths(paths, &trigger.Config)
-		paths = applyPathRewrites(paths, trigger.Config.PathRewrites)
+	for _, path := range paths {
+		cleaned := filepath.Clean(strings.TrimSpace(path))
+		if cleaned == "" || cleaned == "." {
+			continue
+		}
+		if trigger.Config.FilterAfterRewrite {
+			// Filter after rewrite: rewrites first, then filters on rewritten paths
+			rewritten := triggerpaths.ApplyPathRewrites([]string{cleaned}, trigger.Config.PathRewrites)[0]
+			rewritten = filepath.Clean(rewritten)
+			if !trigger.Config.MatchesPathFilters(rewritten) {
+				continue
+			}
+			pathPairs = append(pathPairs, queuedPath{raw: cleaned, rewritten: rewritten})
+		} else {
+			// Default: filter before rewrite (filters apply to original paths)
+			if !trigger.Config.MatchesPathFilters(cleaned) {
+				continue
+			}
+			rewritten := triggerpaths.ApplyPathRewrites([]string{cleaned}, trigger.Config.PathRewrites)[0]
+			rewritten = filepath.Clean(rewritten)
+			pathPairs = append(pathPairs, queuedPath{raw: cleaned, rewritten: rewritten})
+		}
+	}
+
+	paths = make([]string, 0, len(pathPairs))
+	for _, pair := range pathPairs {
+		paths = append(paths, pair.rewritten)
 	}
 
 	if len(paths) == 0 {
@@ -253,12 +279,13 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 		Msg("Trigger received")
 
 	// Queue scans for processing
-	for _, path := range paths {
+	for _, pair := range pathPairs {
 		h.processor.QueueScan(processor.ScanRequest{
-			Path:      path,
-			TriggerID: &triggerID,
-			Priority:  trigger.Priority,
-			EventType: eventType,
+			Path:        pair.rewritten,
+			TriggerPath: pair.raw,
+			TriggerID:   &triggerID,
+			Priority:    trigger.Priority,
+			EventType:   eventType,
 		})
 	}
 
@@ -704,52 +731,6 @@ func (h *Handlers) parseBazarrTrigger(r *http.Request) []string {
 	}
 
 	return nil
-}
-
-// applyPathRewrites applies trigger's path rewrite rules to a list of paths
-func applyPathRewrites(paths []string, rewrites []database.PathRewrite) []string {
-	if len(rewrites) == 0 {
-		return paths
-	}
-
-	result := make([]string, len(paths))
-	for i, path := range paths {
-		result[i] = rewritePath(path, rewrites)
-	}
-	return result
-}
-
-// rewritePath applies path rewrite rules to a single path
-// Supports both simple prefix replacement and regex-based replacement
-func rewritePath(path string, rewrites []database.PathRewrite) string {
-	result := path
-	for i := range rewrites {
-		newPath := rewrites[i].Rewrite(result)
-		if newPath != result {
-			result = newPath
-			// For simple prefix replacement, only the first match applies
-			// For regex, all rules are applied sequentially
-			if !rewrites[i].IsRegex {
-				break
-			}
-		}
-	}
-	return result
-}
-
-// filterPaths applies trigger's include/exclude path filters to a list of paths
-func filterPaths(paths []string, config *database.TriggerConfig) []string {
-	if len(config.IncludePaths) == 0 && len(config.ExcludePaths) == 0 {
-		return paths
-	}
-
-	var result []string
-	for _, path := range paths {
-		if config.MatchesPathFilters(path) {
-			result = append(result, path)
-		}
-	}
-	return result
 }
 
 // ignoredArrEvents defines which event types to ignore from *arr applications.

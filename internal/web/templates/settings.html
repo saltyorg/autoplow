@@ -208,6 +208,9 @@
             {{if .UploadsEnabled}}
             <a href="/settings/rclone" class="{{if eq .Content.Tab "rclone"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Rclone</a>
             {{end}}
+            {{if .ScanningEnabled}}
+            <a href="/settings/gdrive" class="{{if eq .Content.Tab "gdrive"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Google Drive</a>
+            {{end}}
             <a href="/settings/logging" class="{{if eq .Content.Tab "logging"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Logging</a>
             <a href="/settings/about" class="{{if eq .Content.Tab "about"}}border-indigo-500 text-indigo-600 dark:text-indigo-400{{else}}border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300{{end}} whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">About</a>
         </nav>
@@ -221,13 +224,7 @@
         </div>
         <div class="px-4 py-5 sm:p-6">
             <form action="/settings" method="POST" class="space-y-6 max-w-3xl">
-                <div class="grid grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Max Retries</label>
-                        <input type="text" inputmode="numeric" name="max_retries" value="{{.Content.Settings.MaxRetries}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum retry attempts for failed operations</p>
-                    </div>
-
+                <div class="grid grid-cols-1 gap-6">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scan History Cleanup (days)</label>
                         <input type="text" inputmode="numeric" name="cleanup_days" value="{{.Content.Settings.CleanupDays}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
@@ -336,6 +333,138 @@
                     </button>
                 </form>
             </div>
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">Clear Scan History</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Delete all scan history records. This cannot be undone.</p>
+                </div>
+                <form method="POST" action="/settings/clear-scan-history" onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Clear Scan History', body: 'Are you sure you want to delete all scan history? This cannot be undone.', confirmText: 'Delete', cancelText: 'Cancel' });">
+                    <button type="submit" class="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-600 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50">
+                        Clear History
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{if eq .Content.Tab "gdrive"}}
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Google Drive OAuth</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="/settings/gdrive" method="POST" class="space-y-6 max-w-3xl">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Client ID</label>
+                        <input type="text" name="gdrive_client_id" value="{{.Content.Settings.ClientID}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Client Secret</label>
+                        <input type="password" name="gdrive_client_secret" value="{{.Content.Settings.ClientSecret}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Authorized redirect URL: <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">{{.Content.Settings.RedirectURL}}</code></p>
+                <div class="rounded-md bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-700 dark:text-blue-300">
+                    <span class="font-semibold">Required APIs:</span> Google Drive API
+                </div>
+                <div class="flex justify-end">
+                    <button type="submit" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">OAuth Accounts</h3>
+                <a href="/settings/gdrive/connect" class="btn-primary text-sm {{if or (eq .Content.Settings.ClientID "") (eq .Content.Settings.ClientSecret "")}}pointer-events-none opacity-50{{end}}">Connect Account</a>
+            </div>
+        </div>
+        <div class="px-4 py-5 sm:p-6 space-y-4">
+            {{if .Content.Settings.OAuthAccounts}}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Account</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Email</th>
+                            <th class="px-3 py-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {{range .Content.Settings.OAuthAccounts}}
+                        <tr>
+                            <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{if .DisplayName}}{{.DisplayName}}{{else}}Google Drive Account{{end}}</td>
+                            <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{{.Email}}</td>
+                            <td class="px-3 py-2 text-right">
+                                <form action="/settings/gdrive/accounts/{{.ID}}/disconnect" method="POST">
+                                    <button type="submit" class="text-xs text-red-600 dark:text-red-400 hover:text-red-500">Disconnect</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{else}}
+            <p class="text-sm text-gray-500 dark:text-gray-400">No OAuth accounts connected.</p>
+            {{end}}
+            {{if or (eq .Content.Settings.ClientID "") (eq .Content.Settings.ClientSecret "")}}
+            <p class="text-xs text-yellow-600 dark:text-yellow-400">Set the client ID and secret before connecting an account.</p>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Service Accounts</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6 space-y-6">
+            <div class="rounded-md bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                <p><span class="font-semibold">Required APIs:</span> Google Drive API</p>
+                <p>Permissions come from sharing drives or folders with the service account email.</p>
+            </div>
+            <form action="/settings/gdrive/service-account" method="POST" enctype="multipart/form-data" class="space-y-4 max-w-3xl">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Service account JSON key</label>
+                    <input type="file" name="gdrive_service_account" accept=".json,application/json" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Upload the service account key file from Google Cloud.</p>
+                </div>
+                <div class="flex justify-end">
+                    <button type="submit" class="btn-primary">Add Service Account</button>
+                </div>
+            </form>
+            {{if .Content.Settings.ServiceAccounts}}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Project</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Email</th>
+                            <th class="px-3 py-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {{range .Content.Settings.ServiceAccounts}}
+                        <tr>
+                            <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{if .DisplayName}}{{.DisplayName}}{{else}}Service Account{{end}}</td>
+                            <td class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{{.Email}}</td>
+                            <td class="px-3 py-2 text-right">
+                                <form action="/settings/gdrive/accounts/{{.ID}}/disconnect" method="POST">
+                                    <button type="submit" class="text-xs text-red-600 dark:text-red-400 hover:text-red-500">Disconnect</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{else}}
+            <p class="text-sm text-gray-500 dark:text-gray-400">No service accounts connected.</p>
+            {{end}}
         </div>
     </div>
     {{end}}
@@ -351,20 +480,6 @@
             </div>
             <div class="px-4 py-5 sm:p-6">
                 <form action="/settings/processor" method="POST" class="space-y-6 max-w-3xl">
-                    <div class="grid grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Not Found Retries</label>
-                            <input type="text" inputmode="numeric" name="path_not_found_retries" value="{{.Content.Settings.PathNotFoundRetries}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Retries when path doesn't exist. Set to 0 to fail immediately.</p>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Not Found Delay (seconds)</label>
-                            <input type="text" inputmode="numeric" name="path_not_found_delay_seconds" value="{{.Content.Settings.PathNotFoundDelaySeconds}}" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fixed delay between retry attempts</p>
-                        </div>
-                    </div>
-
                     <!-- Anchor Settings -->
                     <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
                         <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">File Anchor Settings</h4>
@@ -378,12 +493,12 @@
 
                             <!-- Default Anchor Files -->
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Default Anchor Files (optional)</label>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">At least one of these files must exist for paths without specific override</p>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Default Anchor Files (absolute paths)</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">All of these files must exist for every scan. Leave empty to only use path-specific anchors.</p>
                                 <div id="default-anchor-files" class="space-y-2">
                                     {{range .Content.Settings.AnchorFiles}}
                                     <div class="flex items-center gap-2 anchor-file-row">
-                                        <input type="text" name="anchor_files[]" value="{{.}}" placeholder=".ready" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                        <input type="text" name="anchor_files[]" value="{{.}}" placeholder="/mnt/unionfs/anchor.file" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                                         <button type="button" onclick="this.closest('.anchor-file-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                         </button>
@@ -399,13 +514,13 @@
                             <!-- Path-specific anchor files -->
                             <div class="mt-6">
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Path-Specific Anchor Files</label>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Configure different anchor files for specific paths (useful for different container/host mappings)</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Paths under the prefix require the anchor file below (absolute path). These do not apply to other paths.</p>
 
                                 <div id="path-anchors" class="space-y-3">
                                     {{range .Content.Settings.PathAnchorFiles}}
                                     <div class="flex items-center gap-3 path-anchor-row">
                                         <input type="text" name="path_anchor_path[]" value="{{.Path}}" placeholder="/mnt/media/movies" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                                        <input type="text" name="path_anchor_file[]" value="{{.AnchorFile}}" placeholder=".plex_ready" class="w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                        <input type="text" name="path_anchor_file[]" value="{{.AnchorFile}}" placeholder="/mnt/unionfs/Media/anchor.file" class="w-56 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                                         <button type="button" onclick="this.closest('.path-anchor-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                         </button>
@@ -427,7 +542,7 @@
                         const row = document.createElement('div');
                         row.className = 'flex items-center gap-2 anchor-file-row';
                         row.innerHTML = `
-                            <input type="text" name="anchor_files[]" placeholder=".ready" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <input type="text" name="anchor_files[]" placeholder="/mnt/unionfs/anchor.file" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                             <button type="button" onclick="this.closest('.anchor-file-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                             </button>
@@ -441,7 +556,7 @@
                         row.className = 'flex items-center gap-3 path-anchor-row';
                         row.innerHTML = `
                             <input type="text" name="path_anchor_path[]" placeholder="/mnt/media/movies" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                            <input type="text" name="path_anchor_file[]" placeholder=".plex_ready" class="w-40 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                            <input type="text" name="path_anchor_file[]" placeholder="/mnt/unionfs/Media/anchor.file" class="w-56 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                             <button type="button" onclick="this.closest('.path-anchor-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                             </button>

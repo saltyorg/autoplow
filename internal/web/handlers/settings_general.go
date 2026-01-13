@@ -13,7 +13,6 @@ import (
 
 // GeneralSettings holds the general configuration for display
 type GeneralSettings struct {
-	MaxRetries        int
 	CleanupDays       int
 	ScanningEnabled   bool
 	UploadsEnabled    bool
@@ -28,7 +27,6 @@ func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
 	loader := config.NewLoader(h.db)
 
 	settings := GeneralSettings{
-		MaxRetries:        loader.Int("processor.max_retries", 3),
 		CleanupDays:       loader.Int("processor.cleanup_days", 7),
 		ScanningEnabled:   loader.BoolDefaultTrue("scanning.enabled"),
 		UploadsEnabled:    loader.BoolDefaultTrue("uploads.enabled"),
@@ -57,7 +55,6 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	wasUploadsEnabled := loader.BoolDefaultTrue("uploads.enabled")
 
 	// Parse form values
-	maxRetries, _ := strconv.Atoi(r.FormValue("max_retries"))
 	cleanupDays, _ := strconv.Atoi(r.FormValue("cleanup_days"))
 	scanningEnabled := r.FormValue("scanning_enabled") == "on"
 	uploadsEnabled := r.FormValue("uploads_enabled") == "on"
@@ -90,18 +87,12 @@ func (h *Handlers) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate
-	if maxRetries < 0 {
-		maxRetries = 3
-	}
 	if cleanupDays < 0 {
 		cleanupDays = 0 // 0 = disabled
 	}
 
 	// Save to database
 	var saveErr error
-	if err := h.db.SetSetting("processor.max_retries", strconv.Itoa(maxRetries)); err != nil {
-		saveErr = err
-	}
 	if err := h.db.SetSetting("processor.cleanup_days", strconv.Itoa(cleanupDays)); err != nil {
 		saveErr = err
 	}
@@ -167,6 +158,19 @@ func (h *Handlers) ClearUploadHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.flash(w, "Cleared "+strconv.FormatInt(count, 10)+" upload history records")
+	h.redirect(w, r, "/settings")
+}
+
+// ClearScanHistory handles clearing all scan history
+func (h *Handlers) ClearScanHistory(w http.ResponseWriter, r *http.Request) {
+	count, err := h.db.ClearScanHistory()
+	if err != nil {
+		h.flashErr(w, "Failed to clear scan history")
+		h.redirect(w, r, "/settings")
+		return
+	}
+
+	h.flash(w, "Cleared "+strconv.FormatInt(count, 10)+" scan history records")
 	h.redirect(w, r, "/settings")
 }
 

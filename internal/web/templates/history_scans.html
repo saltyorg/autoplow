@@ -2,7 +2,7 @@
 <div id="scan-history-stats" class="grid grid-cols-2 gap-4 {{if .PlexTrackingEnabled}}lg:grid-cols-4{{else}}lg:grid-cols-3{{end}}" hx-get="/history/scans/stats" hx-trigger="load, sse-refresh" hx-swap="innerHTML" hx-select="#scan-history-stats > *" data-sse-polling-fallback="10s">
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Pending</dt>
-        <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{if .Stats}}{{add (index .Stats "pending") (index .Stats "retry")}}{{else}}0{{end}}</dd>
+        <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">{{if .Stats}}{{index .Stats "pending"}}{{else}}0{{end}}</dd>
     </div>
     {{if .PlexTrackingEnabled}}
     <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
@@ -28,7 +28,7 @@
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead class="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Path</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Mapped Path</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Trigger</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
@@ -40,7 +40,7 @@
                 {{range .Scans}}
                 <tr>
                     <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                        <div class="break-all" title="{{.Path}}">{{.Path}}</div>
+                        <div class="font-mono text-gray-700 dark:text-gray-200 break-all" title="{{.Path}}">{{.Path}}</div>
                         {{if .Error}}
                         <div class="text-xs text-red-500 dark:text-red-400 truncate mt-1" title="{{.Error}}">{{.Error}}</div>
                         {{end}}
@@ -50,16 +50,57 @@
                         <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
                             {{if eq .Status "completed"}}bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-green-400{{end}}
                             {{if eq .Status "pending"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
-                            {{if eq .Status "retry"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
                             {{if eq .Status "scanning"}}bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{{end}}
                             {{if eq .Status "failed"}}bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-400{{end}}
                         ">{{.Status}}</span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        <form method="POST" action="/history/scans/{{.ID}}/retry" class="inline">
-                            <button type="submit" class="btn-primary text-sm">Retry</button>
+                        <button
+                            type="button"
+                            data-scan-toggle="{{.ID}}"
+                            aria-expanded="false"
+                            aria-controls="scan-{{.ID}}-details"
+                            onclick="toggleScanDetails({{.ID}})"
+                            class="btn-secondary text-sm mr-2">
+                            View
+                        </button>
+                        <form method="POST" action="/history/scans/{{.ID}}/delete?page={{$.Page}}{{if $.Status}}&status={{$.Status}}{{end}}" onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Delete Scan', body: 'Delete this scan history entry? This cannot be undone and does not cancel active scans.', confirmText: 'Delete', cancelText: 'Cancel' });" class="inline">
+                            <button type="submit" class="btn-danger text-sm">Delete</button>
                         </form>
+                    </td>
+                </tr>
+                <tr id="scan-{{.ID}}-details" class="hidden bg-gray-50 dark:bg-gray-900/40">
+                    <td colspan="5" class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                        <div>
+                            <p class="text-sm font-semibold">Scan Details</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Original, mapped, and target scan paths.</p>
+                        </div>
+                        <div class="mt-3 grid gap-4 sm:grid-cols-2">
+                            <div>
+                                <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Original Path</p>
+                                <p class="mt-1 font-mono text-sm break-all text-gray-900 dark:text-gray-100">{{.TriggerPath}}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Mapped Path</p>
+                                <p class="mt-1 font-mono text-sm break-all text-gray-900 dark:text-gray-100">{{.Path}}</p>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Target Paths</p>
+                                {{if .TargetPaths}}
+                                <div class="mt-1 space-y-1">
+                                    {{range .TargetPaths}}
+                                    <div class="text-sm text-gray-700 dark:text-gray-200">
+                                        <span class="font-medium">{{.TargetName}}:</span>
+                                        <span class="font-mono break-all">{{.Path}}</span>
+                                    </div>
+                                    {{end}}
+                                </div>
+                                {{else}}
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">No target scans recorded.</p>
+                                {{end}}
+                            </div>
+                        </div>
                     </td>
                 </tr>
                 {{end}}
@@ -140,6 +181,21 @@
 
     {{template "scan_history_table" .Content}}
 </div>
+<script>
+function toggleScanDetails(id) {
+    const detailsRow = document.getElementById(`scan-${id}-details`);
+    const toggleBtn = document.querySelector(`[data-scan-toggle="${id}"]`);
+    if (!detailsRow) {
+        return;
+    }
+    const isHidden = detailsRow.classList.contains('hidden');
+    detailsRow.classList.toggle('hidden');
+    if (toggleBtn) {
+        toggleBtn.setAttribute('aria-expanded', String(isHidden));
+        toggleBtn.textContent = isHidden ? 'Hide' : 'View';
+    }
+}
+</script>
 {{end}}
 
 {{template "base" .}}

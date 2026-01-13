@@ -9,7 +9,7 @@
         </div>
     </div>
 
-    <form action="/triggers" method="POST" class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6" onsubmit="return validatePathRewrites('path-rewrites-list')">
+    <form action="/triggers" method="POST" class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6" onsubmit="return handleTriggerFormSubmit(event, 'path-rewrites-list')">
         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
                 <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
@@ -28,6 +28,7 @@
                     <option value="autoplow">Autoplow (Instance-to-Instance)</option>
                     <option value="a_train">A-Train (Google Drive)</option>
                     <option value="autoscan">Autoscan (Compatibility)</option>
+                    <option value="gdrive">Google Drive (Polling)</option>
                     <option value="inotify">Inotify (File Watch)</option>
                     <option value="polling">Polling (Directory Scanner)</option>
                 </select>
@@ -141,6 +142,54 @@
             </div>
         </div>
 
+        <!-- Google Drive-specific fields -->
+        <div id="gdrive-fields" class="hidden space-y-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div>
+                <label for="gdrive_account_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Account</label>
+                {{if .Content.GDriveAccounts}}
+                <select name="gdrive_account_id" id="gdrive_account_id"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="">Select an account</option>
+                    {{range .Content.GDriveAccounts}}
+                    <option value="{{.ID}}">{{if .DisplayName}}{{.DisplayName}}{{else}}Google Drive Account{{end}}{{if .Email}} ({{.Email}}){{end}} {{if eq .AuthType "service_account"}}[Service Account]{{else}}[OAuth]{{end}}</option>
+                    {{end}}
+                </select>
+                {{else}}
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Connect a Google Drive account or add a service account in Settings before creating this trigger.</p>
+                {{end}}
+            </div>
+            <div>
+                <label for="gdrive_drive_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Drive</label>
+                <select name="gdrive_drive_id" id="gdrive_drive_id"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="">My Drive</option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Choose My Drive or a shared drive for this trigger.</p>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">This trigger always monitors the full drive. Use Include Paths below to scope what gets processed.</p>
+        </div>
+
+        <div id="gdrive-mapping-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/60 px-4">
+            <div class="w-full max-w-2xl rounded-lg bg-white dark:bg-gray-800 shadow-xl">
+                <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Select Google Drive Folder</h3>
+                    <button type="button" id="gdrive-mapping-modal-close" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="px-4 py-4 space-y-3">
+                    <div class="text-xs text-gray-500 dark:text-gray-400" id="gdrive-mapping-breadcrumb"></div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" id="gdrive-mapping-up" class="btn-secondary text-xs">Up</button>
+                        <button type="button" id="gdrive-mapping-select-current" class="btn-secondary text-xs">Select This Folder</button>
+                        <button type="button" id="gdrive-mapping-select-root" class="btn-secondary text-xs">Select Drive Root</button>
+                    </div>
+                    <div id="gdrive-mapping-folder-list" class="max-h-72 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-md">
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Authentication Settings (for webhook triggers only) -->
         <div id="auth-fields" class="hidden space-y-6 border-t border-gray-200 dark:border-gray-700 pt-6">
             <h4 class="text-sm font-medium text-gray-900 dark:text-white">Authentication</h4>
@@ -185,6 +234,22 @@
             </div>
         </div>
 
+        <!-- Google Drive Path Mapping -->
+        <div id="gdrive-path-rewrites-section" class="hidden border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-2">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Mapping (Google Drive)</label>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map a Drive folder to a local path using the folder picker.</p>
+                </div>
+                <button type="button" id="gdrive-add-path-rewrite" class="btn-secondary text-xs">
+                    Add Mapping
+                </button>
+            </div>
+            <div id="gdrive-path-rewrites-list" class="space-y-3"></div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Pick the exact Drive folder you want to map.</p>
+            <div id="gdrive-path-rewrites-data" class="hidden"></div>
+        </div>
+
         <!-- Path Rewrites Section -->
         <div id="path-rewrites-section" class="border-t border-gray-200 dark:border-gray-700 pt-6">
             <div>
@@ -209,24 +274,26 @@
         </div>
 
         <!-- Path Filters Section -->
-        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+        <div id="path-filters-section" class="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Path Filters (Optional)</h4>
             <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Filter which paths this trigger will accept. Include paths are checked first (if any specified, path must match at least one). Exclude paths are then checked (path matching any will be rejected).</p>
 
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div id="path-prefix-filters" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <!-- Include Paths -->
                 <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Include Paths</label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Only accept paths starting with these prefixes (leave empty to accept all)</p>
+                    <div id="include-paths-standard">
+                        <div class="flex items-center justify-between mb-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Include Paths</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Only accept paths starting with these prefixes (leave empty to accept all)</p>
+                            </div>
+                            <button type="button" onclick="addIncludePath()" class="btn-secondary text-xs">
+                                Add
+                            </button>
                         </div>
-                        <button type="button" onclick="addIncludePath()" class="btn-secondary text-xs">
-                            Add
-                        </button>
-                    </div>
-                    <div id="include-paths-list" class="space-y-2">
-                        <!-- Include paths will be added here dynamically -->
+                        <div id="include-paths-list" class="space-y-2">
+                            <!-- Include paths will be added here dynamically -->
+                        </div>
                     </div>
                 </div>
 
@@ -246,7 +313,6 @@
                     </div>
                 </div>
             </div>
-
             <!-- Filter Timing Toggle (for webhook triggers only) -->
             <div id="filter-timing-toggle" class="mt-4 hidden">
                 <div class="flex items-center">
@@ -350,8 +416,10 @@
         const typeSelect = document.getElementById('type');
         const inotifyFields = document.getElementById('inotify-fields');
         const pollingFields = document.getElementById('polling-fields');
+        const gdriveFields = document.getElementById('gdrive-fields');
         const authFields = document.getElementById('auth-fields');
         const pathRewritesSection = document.getElementById('path-rewrites-section');
+        const gdrivePathRewritesSection = document.getElementById('gdrive-path-rewrites-section');
         const basicAuthFields = document.getElementById('basic-auth-fields');
         const authTypeApiKey = document.getElementById('auth_type_api_key');
         const authTypeBasic = document.getElementById('auth_type_basic');
@@ -362,6 +430,7 @@
         const stabilityCheckField = document.getElementById('stability-check-field');
         const minAgeInput = document.getElementById('minimum_age_seconds');
         const filterTimingToggle = document.getElementById('filter-timing-toggle');
+        const pathFiltersSection = document.getElementById('path-filters-section');
 
         function setSectionEnabled(section, enabled) {
             if (!section) return;
@@ -374,23 +443,39 @@
         function updateFields() {
             const isInotify = typeSelect.value === 'inotify';
             const isPolling = typeSelect.value === 'polling';
+            const isGDrive = typeSelect.value === 'gdrive';
             const isLocalTrigger = isInotify || isPolling;
+            const isWebhookTrigger = ['sonarr', 'radarr', 'lidarr', 'webhook', 'autoplow', 'a_train', 'autoscan', 'bazarr'].includes(typeSelect.value);
 
             // Show/hide type-specific fields
             inotifyFields.classList.toggle('hidden', !isInotify);
             pollingFields.classList.toggle('hidden', !isPolling);
+            if (gdriveFields) {
+                gdriveFields.classList.toggle('hidden', !isGDrive);
+                setSectionEnabled(gdriveFields, isGDrive);
+            }
+            if (gdrivePathRewritesSection) {
+                gdrivePathRewritesSection.classList.toggle('hidden', !isGDrive);
+                setSectionEnabled(gdrivePathRewritesSection, isGDrive);
+            }
             setSectionEnabled(inotifyFields, isInotify);
             setSectionEnabled(pollingFields, isPolling);
-            authFields.classList.toggle('hidden', isLocalTrigger);
+            authFields.classList.toggle('hidden', !isWebhookTrigger);
 
             // Hide path rewrites for local triggers
             if (pathRewritesSection) {
-                pathRewritesSection.classList.toggle('hidden', isLocalTrigger);
+                pathRewritesSection.classList.toggle('hidden', isLocalTrigger || isGDrive);
+                setSectionEnabled(pathRewritesSection, !isLocalTrigger && !isGDrive);
+            }
+
+            if (pathFiltersSection) {
+                pathFiltersSection.classList.toggle('hidden', isGDrive);
+                setSectionEnabled(pathFiltersSection, !isGDrive);
             }
 
             // Hide filter timing toggle for local triggers (they don't use path rewrites)
             if (filterTimingToggle) {
-                filterTimingToggle.classList.toggle('hidden', isLocalTrigger);
+                filterTimingToggle.classList.toggle('hidden', isLocalTrigger || isGDrive);
             }
 
             if (isLocalTrigger) {
@@ -496,6 +581,62 @@
         return true;
     }
 
+    function handleTriggerFormSubmit(event, listId) {
+        if (event) {
+            event.preventDefault();
+        }
+        let form = event?.currentTarget || event?.target;
+        if (form && form.tagName !== 'FORM') {
+            form = form.closest('form');
+        }
+        if (!form) {
+            return false;
+        }
+        if (listId && !validatePathRewrites(listId)) {
+            return false;
+        }
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return false;
+        }
+
+        submitTriggerForm(form);
+        return false;
+    }
+
+    async function submitTriggerForm(form) {
+        const submitButtons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+        submitButtons.forEach((btn) => {
+            btn.disabled = true;
+        });
+        try {
+            const response = await fetch(form.action, {
+                method: (form.method || 'POST').toUpperCase(),
+                body: new FormData(form),
+                headers: {
+                    'HX-Request': 'true'
+                }
+            });
+            const redirect = response.headers.get('HX-Redirect');
+            if (!response.ok) {
+                const text = await response.text();
+                showToast(false, text || 'Failed to save trigger');
+                return;
+            }
+            if (redirect) {
+                window.location.assign(redirect);
+                return;
+            }
+            showToast(true, 'Trigger saved');
+        } catch (err) {
+            showToast(false, 'Failed to save trigger');
+        } finally {
+            submitButtons.forEach((btn) => {
+                btn.disabled = false;
+            });
+        }
+    }
+
     function addPathRewrite(isRegex) {
         const list = document.getElementById('path-rewrites-list');
         const row = document.createElement('div');
@@ -592,7 +733,7 @@
         </div>
     </div>
 
-    <form action="/triggers/{{.Content.Trigger.ID}}" method="POST" class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6" onsubmit="return validateEditPathRewrites()">
+    <form action="/triggers/{{.Content.Trigger.ID}}" method="POST" class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6" onsubmit="return handleTriggerFormSubmit(event)">
         <input type="hidden" name="_method" value="PUT">
 
         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -760,6 +901,54 @@
             list.appendChild(row);
         }
         </script>
+        {{else if eq .Content.Trigger.Type "gdrive"}}
+        <!-- Google Drive-specific fields -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-6">
+            <div>
+                <label for="gdrive_account_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Account</label>
+                {{if .Content.GDriveAccounts}}
+                <select name="gdrive_account_id" id="gdrive_account_id"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="">Select an account</option>
+                    {{range .Content.GDriveAccounts}}
+                    <option value="{{.ID}}" {{if eq .ID $.Content.Trigger.Config.GDriveAccountID}}selected{{end}}>{{if .DisplayName}}{{.DisplayName}}{{else}}Google Drive Account{{end}}{{if .Email}} ({{.Email}}){{end}} {{if eq .AuthType "service_account"}}[Service Account]{{else}}[OAuth]{{end}}</option>
+                    {{end}}
+                </select>
+                {{else}}
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Connect a Google Drive account or add a service account in Settings before updating this trigger.</p>
+                {{end}}
+            </div>
+            <div>
+                <label for="gdrive_drive_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Drive</label>
+                <select name="gdrive_drive_id" id="gdrive_drive_id" data-selected-drive="{{.Content.Trigger.Config.GDriveDriveID}}"
+                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="">My Drive</option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Choose My Drive or a shared drive for this trigger.</p>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">This trigger always monitors the full drive. Use Include Paths below to scope what gets processed.</p>
+        </div>
+
+        <div id="gdrive-mapping-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/60 px-4">
+            <div class="w-full max-w-2xl rounded-lg bg-white dark:bg-gray-800 shadow-xl">
+                <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Select Google Drive Folder</h3>
+                    <button type="button" id="gdrive-mapping-modal-close" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="px-4 py-4 space-y-3">
+                    <div class="text-xs text-gray-500 dark:text-gray-400" id="gdrive-mapping-breadcrumb"></div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" id="gdrive-mapping-up" class="btn-secondary text-xs">Up</button>
+                        <button type="button" id="gdrive-mapping-select-current" class="btn-secondary text-xs">Select This Folder</button>
+                        <button type="button" id="gdrive-mapping-select-root" class="btn-secondary text-xs">Select Drive Root</button>
+                    </div>
+                    <div id="gdrive-mapping-folder-list" class="max-h-72 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-md">
+                    </div>
+                </div>
+            </div>
+        </div>
         {{else}}
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Webhook URL</label>
@@ -875,8 +1064,26 @@
         {{end}}
         {{end}}
 
-        <!-- Path Rewrites Section (for webhook trigger types only, not local triggers) -->
-        {{if and (ne .Content.Trigger.Type "inotify") (ne .Content.Trigger.Type "polling")}}
+        {{if eq .Content.Trigger.Type "gdrive"}}
+        <div id="gdrive-path-rewrites-section" class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <div class="flex items-center justify-between mb-2">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Mapping (Google Drive)</label>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map a Drive folder to a local path using the folder picker.</p>
+                </div>
+                <button type="button" id="gdrive-add-path-rewrite" class="btn-secondary text-xs">
+                    Add Mapping
+                </button>
+            </div>
+            <div id="gdrive-path-rewrites-list" class="space-y-3"></div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Pick the exact Drive folder you want to map.</p>
+            <div id="gdrive-path-rewrites-data" class="hidden">
+                {{range .Content.Trigger.Config.GDrivePathRewrites}}
+                <div data-from-id="{{.FromID}}" data-from-path="{{.FromPath}}" data-to="{{.To}}"></div>
+                {{end}}
+            </div>
+        </div>
+        {{else if and (ne .Content.Trigger.Type "inotify") (ne .Content.Trigger.Type "polling")}}
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
             <div>
                 <div class="flex items-center justify-between mb-2">
@@ -945,6 +1152,62 @@
             }
 
             return true;
+        }
+
+        function handleTriggerFormSubmit(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            let form = event?.currentTarget || event?.target;
+            if (form && form.tagName !== 'FORM') {
+                form = form.closest('form');
+            }
+            if (!form) {
+                return false;
+            }
+            if (!validateEditPathRewrites()) {
+                return false;
+            }
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return false;
+            }
+
+            submitTriggerForm(form);
+            return false;
+        }
+
+        async function submitTriggerForm(form) {
+            const submitButtons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+            submitButtons.forEach((btn) => {
+                btn.disabled = true;
+            });
+            try {
+                const response = await fetch(form.action, {
+                    method: (form.method || 'POST').toUpperCase(),
+                    body: new FormData(form),
+                    headers: {
+                        'HX-Request': 'true'
+                    }
+                });
+                const redirect = response.headers.get('HX-Redirect');
+                if (!response.ok) {
+                    const text = await response.text();
+                    showToast(false, text || 'Failed to save trigger');
+                    return;
+                }
+                if (redirect) {
+                    window.location.assign(redirect);
+                    return;
+                }
+                showToast(true, 'Trigger saved');
+            } catch (err) {
+                showToast(false, 'Failed to save trigger');
+            } finally {
+                submitButtons.forEach((btn) => {
+                    btn.disabled = false;
+                });
+            }
         }
 
         function addEditPathRewrite(isRegex) {
@@ -1034,6 +1297,7 @@
         }
         </script>
 
+        {{if ne .Content.Trigger.Type "gdrive"}}
         <!-- Path Filters Section (Edit form) -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Path Filters (Optional)</h4>
@@ -1042,24 +1306,26 @@
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <!-- Include Paths -->
                 <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Include Paths</label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Only accept paths starting with these prefixes (leave empty to accept all)</p>
-                        </div>
-                        <button type="button" onclick="addEditIncludePath()" class="btn-secondary text-xs">
-                            Add
-                        </button>
-                    </div>
-                    <div id="edit-include-paths-list" class="space-y-2">
-                        {{range .Content.Trigger.Config.IncludePaths}}
-                        <div class="flex items-center gap-2 include-path-row">
-                            <input type="text" name="include_paths[]" value="{{.}}" placeholder="/mnt/media/movies" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
-                            <button type="button" onclick="this.closest('.include-path-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Include Paths</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Only accept paths starting with these prefixes (leave empty to accept all)</p>
+                            </div>
+                            <button type="button" onclick="addEditIncludePath()" class="btn-secondary text-xs">
+                                Add
                             </button>
                         </div>
-                        {{end}}
+                        <div id="edit-include-paths-list" class="space-y-2">
+                            {{range .Content.Trigger.Config.IncludePaths}}
+                            <div class="flex items-center gap-2 include-path-row">
+                                <input type="text" name="include_paths[]" value="{{.}}" placeholder="/mnt/media/movies" class="flex-1 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                                <button type="button" onclick="this.closest('.include-path-row').remove()" class="text-red-600 dark:text-red-400 hover:text-red-500 p-1">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                            {{end}}
+                        </div>
                     </div>
                 </div>
 
@@ -1088,7 +1354,7 @@
             </div>
 
             <!-- Filter Timing Toggle (for webhook triggers only) -->
-            {{if and (ne .Content.Trigger.Type "inotify") (ne .Content.Trigger.Type "polling")}}
+            {{if and (ne .Content.Trigger.Type "inotify") (ne .Content.Trigger.Type "polling") (ne .Content.Trigger.Type "gdrive")}}
             <div class="mt-4">
                 <div class="flex items-center">
                     <input type="checkbox" name="filter_after_rewrite" id="edit_filter_after_rewrite"
@@ -1176,6 +1442,7 @@
                 <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Examples: <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">.*\.(mkv|mp4)$</code> for video files, <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">(?i)sample</code> for case-insensitive "sample"</p>
             </div>
         </div>
+        {{end}}
 
         <!-- Filesystem Settings Section (Edit form) -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
@@ -1478,7 +1745,10 @@
     }
 
     function hideTriggerDetails() {
-        document.getElementById('trigger-details-modal').classList.add('hidden');
+        const modal = document.getElementById('trigger-details-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
     }
 
     let currentTriggerId = null;
@@ -1556,19 +1826,22 @@
         return div.innerHTML;
     }
 
-    // Close modal on escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            hideTriggerDetails();
-        }
-    });
+    const triggerDetailsModal = document.getElementById('trigger-details-modal');
+    if (triggerDetailsModal) {
+        // Close modal on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                hideTriggerDetails();
+            }
+        });
 
-    // Close modal on backdrop click
-    document.getElementById('trigger-details-modal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            hideTriggerDetails();
-        }
-    });
+        // Close modal on backdrop click
+        triggerDetailsModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideTriggerDetails();
+            }
+        });
+    }
     </script>
 
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -1601,6 +1874,7 @@
                                 {{else if eq .Type "autoplow"}}bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-400
                                 {{else if eq .Type "a_train"}}bg-cyan-100 text-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-400
                                 {{else if eq .Type "autoscan"}}bg-pink-100 text-pink-800 dark:bg-pink-900/50 dark:text-pink-400
+                                {{else if eq .Type "gdrive"}}bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-400
                                 {{else if eq .Type "inotify"}}bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-400
                                 {{else if eq .Type "polling"}}bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-400
                                 {{else}}bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300{{end}}">
@@ -1623,7 +1897,7 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div class="flex justify-end gap-2">
-                                {{if and (ne .Type "inotify") (ne .Type "polling")}}
+                                {{if and (ne .Type "inotify") (ne .Type "polling") (ne .Type "gdrive")}}
                                 <button type="button"
                                     onclick="showTriggerDetails({{.ID}}, '{{.Name}}', '{{.Type}}', '{{.AuthType}}', '{{.APIKey}}', '{{.Username}}', '{{index $.Content.Passwords .ID}}', '{{$.Content.BaseURL}}')"
                                     class="btn-primary text-sm">View</button>
@@ -1672,6 +1946,342 @@
         </div>
     </div>
     {{end}}
+
+    <script>
+    (function() {
+        const accountSelect = document.getElementById('gdrive_account_id');
+        const driveSelect = document.getElementById('gdrive_drive_id');
+
+        if (!accountSelect || !driveSelect) {
+            return;
+        }
+
+        function resetGDriveSelections() {
+            if (window.resetGDriveMappings) {
+                window.resetGDriveMappings();
+            }
+        }
+
+        async function loadDrives() {
+            const accountId = accountSelect.value;
+            driveSelect.innerHTML = '<option value="">My Drive</option>';
+
+            if (!accountId) {
+                return;
+            }
+
+            const resp = await fetch(`/settings/gdrive/accounts/${accountId}/drives`);
+            if (!resp.ok) {
+                return;
+            }
+            const data = await resp.json();
+            if (data && Array.isArray(data.drives)) {
+                data.drives.forEach((drive) => {
+                    const option = document.createElement('option');
+                    option.value = drive.id;
+                    option.textContent = drive.name;
+                    driveSelect.appendChild(option);
+                });
+            }
+
+            const selectedDrive = driveSelect.dataset.selectedDrive;
+            if (selectedDrive) {
+                driveSelect.value = selectedDrive;
+                driveSelect.dataset.selectedDrive = '';
+            }
+        }
+
+        accountSelect.addEventListener('change', () => {
+            resetGDriveSelections();
+            driveSelect.dataset.selectedDrive = '';
+            loadDrives();
+        });
+
+        driveSelect.addEventListener('change', () => {
+            resetGDriveSelections();
+        });
+
+        if (accountSelect.value) {
+            loadDrives();
+        }
+    })();
+    </script>
+
+    <script>
+    (function() {
+        const section = document.getElementById('gdrive-path-rewrites-section');
+        const list = document.getElementById('gdrive-path-rewrites-list');
+        const addButton = document.getElementById('gdrive-add-path-rewrite');
+        const accountSelect = document.getElementById('gdrive_account_id');
+        const driveSelect = document.getElementById('gdrive_drive_id');
+        const modal = document.getElementById('gdrive-mapping-modal');
+        const closeButton = document.getElementById('gdrive-mapping-modal-close');
+        const folderList = document.getElementById('gdrive-mapping-folder-list');
+        const breadcrumb = document.getElementById('gdrive-mapping-breadcrumb');
+        const upButton = document.getElementById('gdrive-mapping-up');
+        const selectCurrentButton = document.getElementById('gdrive-mapping-select-current');
+        const selectRootButton = document.getElementById('gdrive-mapping-select-root');
+
+        if (!section || !list || !addButton) {
+            return;
+        }
+        if (!accountSelect || !driveSelect || !modal || !closeButton || !folderList || !breadcrumb || !upButton || !selectCurrentButton || !selectRootButton) {
+            return;
+        }
+
+        let activeSelectHandler = null;
+        let breadcrumbStack = [];
+        let currentParentId = 'root';
+        let currentParentPath = '';
+        let currentParentDisplayPath = '';
+        let rootPath = '';
+        let rootDisplayPath = '';
+
+        function setModalVisible(show) {
+            modal.classList.toggle('hidden', !show);
+            modal.classList.toggle('flex', show);
+        }
+
+        function setFolderListMessage(message) {
+            folderList.innerHTML = '';
+            const row = document.createElement('div');
+            row.className = 'px-3 py-2 text-sm text-gray-500 dark:text-gray-400';
+            row.textContent = message;
+            folderList.appendChild(row);
+        }
+
+        function formatDisplayPath(value) {
+            const cleaned = (value || '').replace(/^\/+/, '');
+            return cleaned || '/';
+        }
+
+        function renderBreadcrumb() {
+            breadcrumb.textContent = currentParentDisplayPath || currentParentPath || '';
+            upButton.disabled = breadcrumbStack.length <= 1;
+        }
+
+        function closeModal() {
+            setModalVisible(false);
+            activeSelectHandler = null;
+        }
+
+        function selectFolder(folder) {
+            if (!activeSelectHandler) {
+                return;
+            }
+            activeSelectHandler(folder);
+            closeModal();
+        }
+
+        async function loadFolders(parentId) {
+            const accountId = accountSelect.value;
+            const driveId = driveSelect.value;
+            const targetParentId = parentId || 'root';
+
+            if (!accountId) {
+                setFolderListMessage('Select a Google Drive account first.');
+                return;
+            }
+
+            setFolderListMessage('Loading folders...');
+
+            const params = new URLSearchParams();
+            if (driveId) {
+                params.set('drive_id', driveId);
+            }
+            params.set('parent_id', targetParentId);
+
+            const resp = await fetch(`/settings/gdrive/accounts/${accountId}/folders?${params.toString()}`);
+            if (!resp.ok) {
+                setFolderListMessage('Failed to load folders.');
+                return;
+            }
+
+            const data = await resp.json();
+            folderList.innerHTML = '';
+
+            if (data && data.parent_path) {
+                currentParentId = targetParentId;
+                currentParentPath = data.parent_path;
+                currentParentDisplayPath = data.parent_display_path || data.parent_path;
+                if (targetParentId === 'root') {
+                    rootPath = currentParentPath;
+                    rootDisplayPath = currentParentDisplayPath;
+                }
+                renderBreadcrumb();
+            }
+
+            if (!data || !Array.isArray(data.folders) || data.folders.length === 0) {
+                setFolderListMessage('No folders found.');
+                return;
+            }
+
+            data.folders.forEach((folder) => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between px-3 py-2';
+
+                const openButton = document.createElement('button');
+                openButton.type = 'button';
+                openButton.className = 'text-sm text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400';
+                openButton.textContent = folder.name;
+                openButton.addEventListener('click', () => {
+                    breadcrumbStack.push(folder.id);
+                    loadFolders(folder.id);
+                });
+
+                const selectButton = document.createElement('button');
+                selectButton.type = 'button';
+                selectButton.className = 'text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-500';
+                selectButton.textContent = 'Select';
+                selectButton.addEventListener('click', () => {
+                    selectFolder({
+                        id: folder.id,
+                        path: folder.path,
+                        displayPath: folder.display_path || formatDisplayPath(folder.path)
+                    });
+                });
+
+                row.appendChild(openButton);
+                row.appendChild(selectButton);
+                folderList.appendChild(row);
+            });
+        }
+
+        function openFolderPicker(onSelect) {
+            if (!accountSelect.value) {
+                alert('Select a Google Drive account first.');
+                return;
+            }
+            activeSelectHandler = onSelect;
+            breadcrumbStack = ['root'];
+            loadFolders('root');
+            setModalVisible(true);
+        }
+
+        function setRowSelection(row, folder) {
+            const fromInput = row.querySelector('[data-role="gdrive-map-from-id"]');
+            const preview = row.querySelector('[data-role="gdrive-map-preview"]');
+            if (!fromInput || !preview) {
+                return;
+            }
+            if (!folder || !folder.id) {
+                fromInput.value = '';
+                row.dataset.fromPath = '';
+                preview.textContent = 'Select a folder';
+                return;
+            }
+            fromInput.value = folder.id;
+            row.dataset.fromPath = folder.path || '';
+            preview.textContent = folder.displayPath || formatDisplayPath(folder.path);
+        }
+
+        function addRow(initial) {
+            const row = document.createElement('div');
+            row.className = 'rounded-md border border-gray-200 dark:border-gray-700 p-3 space-y-2';
+            row.dataset.role = 'gdrive-map-row';
+            row.innerHTML = `
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div class="flex-1 min-w-0">
+                        <label class="block text-xs text-gray-500 dark:text-gray-400">Drive folder</label>
+                        <button type="button" data-role="gdrive-map-browse" class="mt-1 w-full btn-secondary text-xs">Browse</button>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <label class="block text-xs text-gray-500 dark:text-gray-400">Map to path</label>
+                        <input type="text" name="gdrive_path_rewrite_to[]" data-role="gdrive-map-to" placeholder="/mnt/media" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    </div>
+                    <div class="flex items-center pt-1">
+                        <button type="button" data-role="gdrive-map-remove" class="text-xs text-red-600 dark:text-red-400 hover:text-red-500">Remove</button>
+                    </div>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 break-all">
+                    From: <code data-role="gdrive-map-preview" class="bg-gray-100 dark:bg-gray-700 px-1 rounded"></code>
+                </div>
+                <input type="hidden" name="gdrive_path_rewrite_from_id[]" data-role="gdrive-map-from-id">
+            `;
+
+            list.appendChild(row);
+
+            const browseButton = row.querySelector('[data-role="gdrive-map-browse"]');
+            const toInput = row.querySelector('[data-role="gdrive-map-to"]');
+            const removeButton = row.querySelector('[data-role="gdrive-map-remove"]');
+
+            if (initial?.to) {
+                toInput.value = initial.to;
+            }
+            if (initial?.fromId) {
+                setRowSelection(row, {
+                    id: initial.fromId,
+                    path: initial.fromPath || '',
+                    displayPath: formatDisplayPath(initial.fromPath)
+                });
+            } else {
+                setRowSelection(row, null);
+            }
+
+            browseButton.addEventListener('click', () => {
+                openFolderPicker((folder) => {
+                    setRowSelection(row, folder);
+                });
+            });
+            removeButton.addEventListener('click', () => row.remove());
+        }
+
+        window.resetGDriveMappings = function() {
+            list.innerHTML = '';
+        };
+
+        window.openGDriveFolderPicker = openFolderPicker;
+
+        addButton.addEventListener('click', () => addRow());
+
+        closeButton.addEventListener('click', closeModal);
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+
+        upButton.addEventListener('click', () => {
+            if (breadcrumbStack.length <= 1) {
+                return;
+            }
+            breadcrumbStack.pop();
+            const nextParentId = breadcrumbStack[breadcrumbStack.length - 1];
+            loadFolders(nextParentId);
+        });
+
+        selectCurrentButton.addEventListener('click', () => {
+            if (!currentParentId || !currentParentPath) {
+                return;
+            }
+            selectFolder({
+                id: currentParentId,
+                path: currentParentPath,
+                displayPath: currentParentDisplayPath || formatDisplayPath(currentParentPath)
+            });
+        });
+
+        selectRootButton.addEventListener('click', () => {
+            const path = rootPath || '/';
+            selectFolder({
+                id: 'root',
+                path: path,
+                displayPath: rootDisplayPath || formatDisplayPath(path)
+            });
+        });
+
+        const seed = document.getElementById('gdrive-path-rewrites-data');
+        if (seed) {
+            seed.querySelectorAll('[data-from-id]').forEach((entry) => {
+                const fromId = entry.dataset.fromId || '';
+                const fromPath = entry.dataset.fromPath || '';
+                const toPath = entry.dataset.to || '';
+                addRow({ fromId: fromId, fromPath: fromPath, to: toPath });
+            });
+        }
+    })();
+    </script>
+    
 </div>
 {{end}}
 

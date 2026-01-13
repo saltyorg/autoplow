@@ -421,10 +421,11 @@ func (w *Watcher) fireScan(path string, triggerID int64, priority int) {
 			Msg("Inotify triggered scan")
 
 		w.processor.QueueScan(processor.ScanRequest{
-			Path:      scanPath,
-			TriggerID: &triggerID,
-			Priority:  priority,
-			FilePaths: []string{path},
+			Path:        scanPath,
+			TriggerPath: scanPath,
+			TriggerID:   &triggerID,
+			Priority:    priority,
+			FilePaths:   []string{path},
 		})
 	}
 
@@ -554,10 +555,11 @@ func (w *Watcher) ScanExistingFiles() {
 		if triggerScanEnabled {
 			for dir, files := range filesByDir {
 				w.processor.QueueScan(processor.ScanRequest{
-					Path:      dir,
-					TriggerID: &triggerID,
-					Priority:  1000, // Lower priority than real-time events
-					FilePaths: files,
+					Path:        dir,
+					TriggerPath: dir,
+					TriggerID:   &triggerID,
+					Priority:    1000, // Lower priority than real-time events
+					FilePaths:   files,
 				})
 			}
 		}
@@ -630,10 +632,11 @@ func (w *Watcher) queueExistingFilesForPath(trigger *database.Trigger, rootPath 
 	if scanningEnabled {
 		for dir, files := range filesByDir {
 			w.processor.QueueScan(processor.ScanRequest{
-				Path:      dir,
-				TriggerID: &triggerID,
-				Priority:  trigger.Priority,
-				FilePaths: files,
+				Path:        dir,
+				TriggerPath: dir,
+				TriggerID:   &triggerID,
+				Priority:    trigger.Priority,
+				FilePaths:   files,
 			})
 		}
 	}

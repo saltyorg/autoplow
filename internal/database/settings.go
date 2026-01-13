@@ -100,45 +100,42 @@ func (db *db) DeleteSetting(key string) error {
 
 // Default settings
 var DefaultSettings = map[string]any{
-	"log.level":                              "info",
-	"log.max_size_mb":                        logging.DefaultMaxSizeMB,
-	"log.max_backups":                        logging.DefaultMaxBackups,
-	"log.max_age_days":                       logging.DefaultMaxAgeDays,
-	"log.compress":                           logging.DefaultCompress,
-	"processor.anchor.enabled":               true,
-	"processor.max_retries":                  3,
-	"processor.cleanup_days":                 7, // 0 = disabled, keeps scan history forever
-	"processor.path_not_found_retries":       0, // 0 = fail immediately (default)
-	"processor.path_not_found_delay_seconds": 5,
-	"scanning.enabled":                       true,  // Enable media server scanning
-	"uploads.enabled":                        true,  // Enable cloud uploads
-	"display.use_binary_units":               true,  // true = MiB/s (1024), false = MB/s (1000)
-	"display.use_bits_for_bitrate":           true,  // true = Mbps (bits), false = MiB/s (bytes) for streaming
-	"display.date_format":                    "ymd", // ymd, dmy, mdy
-	"display.time_format":                    "24h", // 24h, 12h
-	"throttle.enabled":                       false,
-	"throttle.pause_below_speed":             "1M",
-	"throttle.idle_speed":                    "0",
-	"throttle.rules":                         []map[string]string{},
-	"schedule.enabled":                       false,
-	"rclone.managed":                         true, // true = managed (Autoplow runs rclone), false = unmanaged (external rclone)
-	"rclone.binary_path":                     "/usr/bin/rclone",
-	"rclone.config_path":                     "",
-	"rclone.rcd_address":                     "127.0.0.1:5572",
-	"rclone.auto_start":                      true,
-	"rclone.restart_on_fail":                 true,
-	"rclone.max_restarts":                    10,
-	"rclone.transfers":                       4,     // concurrent file transfers
-	"rclone.checkers":                        8,     // concurrent file checkers
-	"rclone.buffer_size":                     "16M", // buffer size per transfer (SizeSuffix)
-	"rclone.log.level":                       "NOTICE",
-	"rclone.log.file_max_age":                "0s",
-	"rclone.log.file_max_backups":            0,
-	"rclone.log.file_max_size":               "0",
-	"rclone.log.file_compress":               false,
-	"notifications.discord.enabled":          false,
-	"notifications.discord.webhook_url":      "",
-	"notifications.discord.events":           []string{"upload_complete", "upload_failed"},
+	"log.level":                         "info",
+	"log.max_size_mb":                   logging.DefaultMaxSizeMB,
+	"log.max_backups":                   logging.DefaultMaxBackups,
+	"log.max_age_days":                  logging.DefaultMaxAgeDays,
+	"log.compress":                      logging.DefaultCompress,
+	"processor.anchor.enabled":          true,
+	"processor.cleanup_days":            7,     // 0 = disabled, keeps scan history forever
+	"scanning.enabled":                  true,  // Enable media server scanning
+	"uploads.enabled":                   true,  // Enable cloud uploads
+	"display.use_binary_units":          true,  // true = MiB/s (1024), false = MB/s (1000)
+	"display.use_bits_for_bitrate":      true,  // true = Mbps (bits), false = MiB/s (bytes) for streaming
+	"display.date_format":               "ymd", // ymd, dmy, mdy
+	"display.time_format":               "24h", // 24h, 12h
+	"throttle.enabled":                  false,
+	"throttle.pause_below_speed":        "1M",
+	"throttle.idle_speed":               "0",
+	"throttle.rules":                    []map[string]string{},
+	"schedule.enabled":                  false,
+	"rclone.managed":                    true, // true = managed (Autoplow runs rclone), false = unmanaged (external rclone)
+	"rclone.binary_path":                "/usr/bin/rclone",
+	"rclone.config_path":                "",
+	"rclone.rcd_address":                "127.0.0.1:5572",
+	"rclone.auto_start":                 true,
+	"rclone.restart_on_fail":            true,
+	"rclone.max_restarts":               10,
+	"rclone.transfers":                  4,     // concurrent file transfers
+	"rclone.checkers":                   8,     // concurrent file checkers
+	"rclone.buffer_size":                "16M", // buffer size per transfer (SizeSuffix)
+	"rclone.log.level":                  "NOTICE",
+	"rclone.log.file_max_age":           "0s",
+	"rclone.log.file_max_backups":       0,
+	"rclone.log.file_max_size":          "0",
+	"rclone.log.file_compress":          false,
+	"notifications.discord.enabled":     false,
+	"notifications.discord.webhook_url": "",
+	"notifications.discord.events":      []string{"upload_complete", "upload_failed"},
 }
 
 // InitializeDefaults sets default values for settings that don't exist

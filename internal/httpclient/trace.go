@@ -67,6 +67,19 @@ func (t *traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
+	if suppressResponseBody(t.name, req.URL) {
+		log.Trace().
+			Str("client", t.name).
+			Str("method", req.Method).
+			Str("url", urlStr).
+			Int("status", resp.StatusCode).
+			Str("duration", duration.String()).
+			Int64("content_length", resp.ContentLength).
+			Bool("body_suppressed", true).
+			Msg("HTTP response")
+		return resp, nil
+	}
+
 	bodyBytes, readErr := readAndRestoreBody(resp)
 	logEvent := log.Trace().
 		Str("client", t.name).
@@ -128,6 +141,18 @@ func redactURL(u *url.URL) string {
 func isSensitiveQueryKey(key string) bool {
 	switch strings.ToLower(key) {
 	case "apikey", "api_key", "api-key", "token", "access_token", "x-plex-token", "authorization", "auth":
+		return true
+	default:
+		return false
+	}
+}
+
+func suppressResponseBody(clientName string, u *url.URL) bool {
+	if clientName != "rclone" || u == nil {
+		return false
+	}
+	switch u.Path {
+	case "/config/providers", "/options/get":
 		return true
 	default:
 		return false

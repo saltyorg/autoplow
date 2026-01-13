@@ -347,10 +347,11 @@ func (p *Poller) doScan(tp *triggerPoll) {
 					Msg("Polling trigger queuing scan")
 
 				p.processor.QueueScan(processor.ScanRequest{
-					Path:      dir,
-					TriggerID: &triggerID,
-					Priority:  tp.trigger.Priority,
-					FilePaths: files,
+					Path:        dir,
+					TriggerPath: dir,
+					TriggerID:   &triggerID,
+					Priority:    tp.trigger.Priority,
+					FilePaths:   files,
 				})
 			}
 

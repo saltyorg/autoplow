@@ -143,10 +143,7 @@ func (m *Manager) compareFileMismatches(
 		return
 	}
 
-	workerCount := min(fileConcurrencyLimit(arr, target), len(matches))
-	if workerCount < 1 {
-		workerCount = 1
-	}
+	workerCount := max(min(fileConcurrencyLimit(arr, target), len(matches)), 1)
 
 	var episodeCache sync.Map
 	var movieCache sync.Map

@@ -13,6 +13,7 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/gdrive"
 	"github.com/saltyorg/autoplow/internal/httpclient"
 	"github.com/saltyorg/autoplow/internal/inotify"
 	"github.com/saltyorg/autoplow/internal/matcharr"
@@ -58,6 +59,7 @@ type Handlers struct {
 	uploadMgr              *uploader.Manager
 	throttleMgr            *throttle.Manager
 	notificationMgr        *notification.Manager
+	gdriveMgr              *gdrive.Poller
 	inotifyMgr             *inotify.Watcher
 	pollingMgr             *polling.Poller
 	matcharrMgr            *matcharr.Manager
@@ -66,6 +68,8 @@ type Handlers struct {
 	uploadSubsystemToggler UploadSubsystemToggler
 	versionInfo            VersionInfo
 	versionMu              sync.RWMutex
+	gdriveStateMu          sync.Mutex
+	gdriveStates           map[string]gdriveOAuthState
 	isDev                  bool
 }
 
@@ -78,6 +82,7 @@ func New(db *database.Manager, templates map[string]*template.Template, authServ
 		apiKeyService:      apiKeyService,
 		triggerAuthService: auth.NewTriggerAuthService(db),
 		processor:          proc,
+		gdriveStates:       make(map[string]gdriveOAuthState),
 		isDev:              isDev,
 	}
 }
@@ -105,6 +110,11 @@ func (h *Handlers) SetThrottleManager(mgr *throttle.Manager) {
 // SetNotificationManager sets the notification manager
 func (h *Handlers) SetNotificationManager(mgr *notification.Manager) {
 	h.notificationMgr = mgr
+}
+
+// SetGDriveManager sets the Google Drive manager
+func (h *Handlers) SetGDriveManager(mgr *gdrive.Poller) {
+	h.gdriveMgr = mgr
 }
 
 // SetInotifyManager sets the inotify manager

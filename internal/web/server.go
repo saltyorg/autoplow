@@ -19,6 +19,7 @@ import (
 
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/gdrive"
 	"github.com/saltyorg/autoplow/internal/inotify"
 	"github.com/saltyorg/autoplow/internal/logging"
 	"github.com/saltyorg/autoplow/internal/matcharr"
@@ -61,6 +62,7 @@ type Server struct {
 	throttleMgr     *throttle.Manager
 	plexTracker     *scantracker.PlexTracker
 	notificationMgr *notification.Manager
+	gdriveMgr       *gdrive.Poller
 	inotifyMgr      *inotify.Watcher
 	pollingMgr      *polling.Poller
 	matcharrMgr     *matcharr.Manager
@@ -289,7 +291,7 @@ func (s *Server) StartUploadSubsystem() error {
 	}
 	s.uploadMgr.Start()
 	s.uploadMgr.RequeuePlexWaitingScans(func(path string) {
-		s.processor.QueueScan(processor.ScanRequest{Path: path})
+		s.processor.QueueScan(processor.ScanRequest{Path: path, TriggerPath: path})
 	})
 
 	// Create throttle manager if not exists
@@ -364,6 +366,14 @@ func (s *Server) SetNotificationManager(mgr *notification.Manager) {
 // NotificationManager returns the notification manager
 func (s *Server) NotificationManager() *notification.Manager {
 	return s.notificationMgr
+}
+
+// SetGDriveManager sets the Google Drive manager and updates handlers
+func (s *Server) SetGDriveManager(mgr *gdrive.Poller) {
+	s.gdriveMgr = mgr
+	if s.handlers != nil {
+		s.handlers.SetGDriveManager(mgr)
+	}
 }
 
 // SetInotifyManager sets the inotify manager and updates handlers
@@ -460,6 +470,7 @@ func templateFuncMap() template.FuncMap {
 			}
 			return fmt.Sprintf("%ds", sec)
 		},
+		"gdriveSimplifiedPath": gdrive.SimplifiedPath,
 		"add": func(a, b int) int {
 			return a + b
 		},
@@ -603,6 +614,9 @@ func (s *Server) setupRoutes() {
 	if s.uploadMgr != nil {
 		h.SetUploadManager(s.uploadMgr)
 	}
+	if s.gdriveMgr != nil {
+		h.SetGDriveManager(s.gdriveMgr)
+	}
 
 	// Public routes (no auth required)
 	r.Group(func(r chi.Router) {
@@ -735,6 +749,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/", h.SettingsPage)
 			r.Post("/", h.SettingsUpdate)
 			r.Post("/clear-upload-history", h.ClearUploadHistory)
+			r.Post("/clear-scan-history", h.ClearScanHistory)
 			r.Post("/regenerate-trigger-key", h.RegenerateTriggerKey)
 			r.Get("/about", h.SettingsAboutPage)
 			r.Get("/logging", h.SettingsLoggingPage)
@@ -770,6 +785,16 @@ func (s *Server) setupRoutes() {
 			r.Get("/rclone/status", h.SettingsRcloneStatus)
 			r.Get("/rclone/status-card", h.SettingsRcloneStatusCardPartial)
 			r.Get("/rclone/startstop-btn", h.SettingsRcloneStartStopBtn)
+
+			// Google Drive settings
+			r.Get("/gdrive", h.SettingsGDrivePage)
+			r.Post("/gdrive", h.SettingsGDriveUpdate)
+			r.Post("/gdrive/service-account", h.SettingsGDriveServiceAccountUpload)
+			r.Get("/gdrive/connect", h.SettingsGDriveConnect)
+			r.Get("/gdrive/callback", h.SettingsGDriveCallback)
+			r.Post("/gdrive/accounts/{id}/disconnect", h.SettingsGDriveDisconnect)
+			r.Get("/gdrive/accounts/{id}/drives", h.SettingsGDriveAccountDrives)
+			r.Get("/gdrive/accounts/{id}/folders", h.SettingsGDriveAccountFolders)
 		})
 
 		// History
@@ -777,7 +802,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/scans", h.HistoryScans)
 			r.Get("/scans/stats", h.HistoryScansStatsPartial)
 			r.Get("/scans/table", h.HistoryScansTablePartial)
-			r.Post("/scans/{id}/retry", h.RetryScan)
+			r.Post("/scans/{id}/delete", h.DeleteScanHistoryItem)
 			r.Get("/uploads", h.HistoryUploads)
 			r.Get("/uploads/stats", h.HistoryUploadsStatsPartial)
 			r.Get("/uploads/table", h.HistoryUploadsTablePartial)

@@ -536,6 +536,37 @@ func (db *db) GetCachedLibraries(targetID int64, maxAge time.Duration) ([]Target
 	return libraries, nil
 }
 
+// GetCachedLibrariesAnyAge returns cached libraries for a target without age filtering.
+func (db *db) GetCachedLibrariesAnyAge(targetID int64) ([]TargetLibrary, error) {
+	rows, err := db.query(`
+		SELECT id, target_id, library_id, name, type, path, fetched_at
+		FROM target_libraries
+		WHERE target_id = ?
+		ORDER BY name, path
+	`, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached libraries: %w", err)
+	}
+	defer rows.Close()
+
+	var libraries []TargetLibrary
+	for rows.Next() {
+		var lib TargetLibrary
+		var libType sql.NullString
+		if err := rows.Scan(&lib.ID, &lib.TargetID, &lib.LibraryID, &lib.Name, &libType, &lib.Path, &lib.FetchedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan library: %w", err)
+		}
+		lib.Type = libType.String
+		libraries = append(libraries, lib)
+	}
+
+	if len(libraries) == 0 {
+		return nil, nil
+	}
+
+	return libraries, nil
+}
+
 // GetCachedLibraryPaths returns just the paths from cached libraries for a target.
 // Returns nil if cache is older than maxAge or doesn't exist.
 func (db *db) GetCachedLibraryPaths(targetID int64, maxAge time.Duration) ([]string, error) {
@@ -547,6 +578,31 @@ func (db *db) GetCachedLibraryPaths(targetID int64, maxAge time.Duration) ([]str
 		WHERE target_id = ? AND fetched_at > ?
 		ORDER BY path
 	`, targetID, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached library paths: %w", err)
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, fmt.Errorf("failed to scan path: %w", err)
+		}
+		paths = append(paths, path)
+	}
+
+	return paths, nil
+}
+
+// GetCachedLibraryPathsAnyAge returns cached library paths without age filtering.
+func (db *db) GetCachedLibraryPathsAnyAge(targetID int64) ([]string, error) {
+	rows, err := db.query(`
+		SELECT DISTINCT path
+		FROM target_libraries
+		WHERE target_id = ?
+		ORDER BY path
+	`, targetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cached library paths: %w", err)
 	}

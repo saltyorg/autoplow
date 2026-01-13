@@ -16,6 +16,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/auth"
 	"github.com/saltyorg/autoplow/internal/config"
 	"github.com/saltyorg/autoplow/internal/database"
+	"github.com/saltyorg/autoplow/internal/gdrive"
 	"github.com/saltyorg/autoplow/internal/inotify"
 	"github.com/saltyorg/autoplow/internal/logging"
 	"github.com/saltyorg/autoplow/internal/matcharr"
@@ -313,6 +314,16 @@ func run(cmd *cobra.Command, args []string) error {
 		log.Warn().Err(err).Msg("Failed to start polling watcher")
 	} else if !started {
 		log.Debug().Msg("Polling watcher not started (no triggers configured)")
+	}
+
+	// Initialize Google Drive watcher
+	gdriveWatcher := gdrive.New(db, scanProcessor)
+	defer gdriveWatcher.Stop()
+	server.SetGDriveManager(gdriveWatcher)
+	if started, err := gdriveWatcher.Start(); err != nil {
+		log.Warn().Err(err).Msg("Failed to start Google Drive watcher")
+	} else if !started {
+		log.Debug().Msg("Google Drive watcher not started (no triggers configured)")
 	}
 
 	// Initialize matcharr manager for media server ID matching

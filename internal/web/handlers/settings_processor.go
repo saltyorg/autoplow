@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,12 +15,10 @@ import (
 
 // ProcessorSettings holds the processor configuration for display
 type ProcessorSettings struct {
-	PathNotFoundRetries      int
-	PathNotFoundDelaySeconds int
-	AnchorEnabled            bool
-	AnchorFiles              []string         // Default anchor files (at least one must exist)
-	PathAnchorFiles          []PathAnchorFile // Path-specific anchor files
-	UploadsEnabled           bool
+	AnchorEnabled   bool
+	AnchorFiles     []string         // Default anchor files (all must exist)
+	PathAnchorFiles []PathAnchorFile // Path-specific anchor files
+	UploadsEnabled  bool
 }
 
 // PathAnchorFile represents a path-to-anchor file mapping
@@ -33,10 +32,8 @@ func (h *Handlers) SettingsProcessorPage(w http.ResponseWriter, r *http.Request)
 	loader := config.NewLoader(h.db)
 
 	settings := ProcessorSettings{
-		PathNotFoundRetries:      loader.Int("processor.path_not_found_retries", 0),
-		PathNotFoundDelaySeconds: loader.Int("processor.path_not_found_delay_seconds", 5),
-		AnchorEnabled:            loader.BoolDefaultTrue("processor.anchor.enabled"),
-		UploadsEnabled:           loader.BoolDefaultTrue("uploads.enabled"),
+		AnchorEnabled:  loader.BoolDefaultTrue("processor.anchor.enabled"),
+		UploadsEnabled: loader.BoolDefaultTrue("uploads.enabled"),
 	}
 
 	// Load anchor files (JSON array)
@@ -68,8 +65,6 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Parse form values
-	pathNotFoundRetries, _ := strconv.Atoi(r.FormValue("path_not_found_retries"))
-	pathNotFoundDelaySeconds, _ := strconv.Atoi(r.FormValue("path_not_found_delay_seconds"))
 	anchorEnabled := r.FormValue("anchor_enabled") == "on"
 
 	// Parse default anchor files list
@@ -78,6 +73,7 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 	for _, f := range anchorFilesRaw {
 		f = strings.TrimSpace(f)
 		if f != "" {
+			f = filepath.Clean(f)
 			anchorFiles = append(anchorFiles, f)
 		}
 	}
@@ -91,27 +87,32 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 		path := strings.TrimSpace(pathAnchorPaths[i])
 		file := strings.TrimSpace(pathAnchorFileNames[i])
 		if path != "" && file != "" {
+			path = filepath.Clean(path)
+			file = filepath.Clean(file)
 			pathAnchorFiles = append(pathAnchorFiles, PathAnchorFile{Path: path, AnchorFile: file})
 			pathAnchorMap[path] = file
 		}
 	}
 
-	// Validate
-	if pathNotFoundRetries < 0 {
-		pathNotFoundRetries = 0
+	invalidAnchors := make([]string, 0, len(anchorFiles)+len(pathAnchorFiles))
+	for _, file := range anchorFiles {
+		if !filepath.IsAbs(file) {
+			invalidAnchors = append(invalidAnchors, file)
+		}
 	}
-	if pathNotFoundDelaySeconds < 1 {
-		pathNotFoundDelaySeconds = 5
+	for _, mapping := range pathAnchorFiles {
+		if !filepath.IsAbs(mapping.AnchorFile) {
+			invalidAnchors = append(invalidAnchors, mapping.AnchorFile)
+		}
+	}
+	if len(invalidAnchors) > 0 {
+		h.flashErr(w, "Anchor files must be absolute paths")
+		h.redirect(w, r, "/settings/processor")
+		return
 	}
 
 	// Save to database
 	var saveErr error
-	if err := h.db.SetSetting("processor.path_not_found_retries", strconv.Itoa(pathNotFoundRetries)); err != nil {
-		saveErr = err
-	}
-	if err := h.db.SetSetting("processor.path_not_found_delay_seconds", strconv.Itoa(pathNotFoundDelaySeconds)); err != nil {
-		saveErr = err
-	}
 	if err := h.db.SetSetting("processor.anchor.enabled", strconv.FormatBool(anchorEnabled)); err != nil {
 		saveErr = err
 	}
@@ -136,14 +137,11 @@ func (h *Handlers) SettingsProcessorUpdate(w http.ResponseWriter, r *http.Reques
 
 	// Update processor config if available
 	if h.processor != nil {
-		newConfig := processor.Config{
-			PathNotFoundRetries:      pathNotFoundRetries,
-			PathNotFoundDelaySeconds: pathNotFoundDelaySeconds,
-			Anchor: processor.AnchorConfig{
-				Enabled:         anchorEnabled,
-				AnchorFiles:     anchorFiles,
-				PathAnchorFiles: pathAnchorMap,
-			},
+		newConfig := h.processor.Config()
+		newConfig.Anchor = processor.AnchorConfig{
+			Enabled:         anchorEnabled,
+			AnchorFiles:     anchorFiles,
+			PathAnchorFiles: pathAnchorMap,
 		}
 		h.processor.UpdateConfig(newConfig)
 	}
