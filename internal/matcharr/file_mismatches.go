@@ -13,6 +13,7 @@ import (
 
 func compareEpisodeFiles(arrFiles []ArrEpisodeFile, targetFiles []TargetEpisodeFile) []fileMismatchDetail {
 	targetIndex := buildTargetEpisodeIndex(targetFiles)
+	fileEpisodes := buildArrFileEpisodeIndex(arrFiles)
 	mismatches := make([]fileMismatchDetail, 0)
 
 	for _, arrFile := range arrFiles {
@@ -20,6 +21,7 @@ func compareEpisodeFiles(arrFiles []ArrEpisodeFile, targetFiles []TargetEpisodeF
 		if arrName == "" {
 			continue
 		}
+		multiEpisodeLabel := formatMultiEpisodeLabel(fileEpisodes[arrFile.FilePath])
 		key := seasonEpisodeKey(arrFile.SeasonNumber, arrFile.EpisodeNumber)
 		targetEntry, ok := targetIndex[key]
 		if !ok || len(targetEntry.names) == 0 {
@@ -30,6 +32,7 @@ func compareEpisodeFiles(arrFiles []ArrEpisodeFile, targetFiles []TargetEpisodeF
 				ArrFilePath:     arrFile.FilePath,
 				TargetFileNames: nil,
 				TargetFilePaths: nil,
+				MultiEpisode:    multiEpisodeLabel,
 			})
 			continue
 		}
@@ -52,6 +55,7 @@ func compareEpisodeFiles(arrFiles []ArrEpisodeFile, targetFiles []TargetEpisodeF
 			ArrFilePath:     arrFile.FilePath,
 			TargetFileNames: targetEntry.names,
 			TargetFilePaths: targetEntry.paths,
+			MultiEpisode:    multiEpisodeLabel,
 		})
 	}
 
@@ -234,6 +238,7 @@ func (m *Manager) compareFileMismatches(
 					ArrFilePath:      mismatch.ArrFilePath,
 					TargetItemPath:   targetItemPath,
 					TargetFilePaths:  strings.Join(mismatch.TargetFilePaths, ", "),
+					MultiEpisode:     mismatch.MultiEpisode,
 				}
 
 				if err := m.db.CreateMatcharrFileMismatch(record); err != nil {
@@ -294,6 +299,7 @@ func (m *Manager) compareFileMismatches(
 					ArrFilePath:      mismatch.ArrFilePath,
 					TargetItemPath:   targetItemPath,
 					TargetFilePaths:  strings.Join(mismatch.TargetFilePaths, ", "),
+					MultiEpisode:     mismatch.MultiEpisode,
 				}
 
 				if err := m.db.CreateMatcharrFileMismatch(record); err != nil {
@@ -422,7 +428,7 @@ func (m *Manager) recheckFileMismatches(
 		targetFilePaths := strings.Join(detail.TargetFilePaths, ", ")
 
 		if existingMismatch, ok := existingMap[key]; ok {
-			if err := m.db.UpdateMatcharrFileMismatch(existingMismatch.ID, targetFileNames, detail.ArrFilePath, targetItemPath, targetFilePaths); err != nil {
+			if err := m.db.UpdateMatcharrFileMismatch(existingMismatch.ID, targetFileNames, detail.ArrFilePath, targetItemPath, targetFilePaths, detail.MultiEpisode); err != nil {
 				return 0, err
 			}
 			continue
@@ -445,6 +451,7 @@ func (m *Manager) recheckFileMismatches(
 			ArrFilePath:      detail.ArrFilePath,
 			TargetItemPath:   targetItemPath,
 			TargetFilePaths:  targetFilePaths,
+			MultiEpisode:     detail.MultiEpisode,
 		}
 		if err := m.db.CreateMatcharrFileMismatch(record); err != nil {
 			return 0, err

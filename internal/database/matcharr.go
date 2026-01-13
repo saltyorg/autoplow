@@ -132,6 +132,7 @@ type MatcharrFileMismatch struct {
 	ArrFilePath      string    `json:"arr_file_path"`
 	TargetItemPath   string    `json:"target_item_path"`
 	TargetFilePaths  string    `json:"target_file_paths"`
+	MultiEpisode     string    `json:"multi_episode,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -511,12 +512,12 @@ func (db *db) CreateMatcharrFileMismatch(mismatch *MatcharrFileMismatch) error {
 		INSERT INTO matcharr_file_mismatches (
 			run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
-			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, multi_episode
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, mismatch.RunID, mismatch.ArrID, mismatch.TargetID, mismatch.ArrType, mismatch.ArrName, mismatch.TargetName,
 		mismatch.MediaTitle, mismatch.ArrMediaID, mismatch.TargetMetadataID, mismatch.SeasonNumber,
 		mismatch.EpisodeNumber, mismatch.ArrFileName, mismatch.TargetFileNames, mismatch.ArrFilePath,
-		mismatch.TargetItemPath, mismatch.TargetFilePaths)
+		mismatch.TargetItemPath, mismatch.TargetFilePaths, mismatch.MultiEpisode)
 	if err != nil {
 		return fmt.Errorf("failed to create matcharr file mismatch: %w", err)
 	}
@@ -535,14 +536,14 @@ func (db *db) GetMatcharrFileMismatch(id int64) (*MatcharrFileMismatch, error) {
 	err := db.queryRow(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
-			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, multi_episode, created_at
 		FROM matcharr_file_mismatches WHERE id = ?
 	`, id).Scan(
 		&mismatch.ID, &mismatch.RunID, &mismatch.ArrID, &mismatch.TargetID, &mismatch.ArrType,
 		&mismatch.ArrName, &mismatch.TargetName, &mismatch.MediaTitle, &mismatch.ArrMediaID,
 		&mismatch.TargetMetadataID, &mismatch.SeasonNumber, &mismatch.EpisodeNumber,
 		&mismatch.ArrFileName, &mismatch.TargetFileNames, &mismatch.ArrFilePath, &mismatch.TargetItemPath,
-		&mismatch.TargetFilePaths,
+		&mismatch.TargetFilePaths, &mismatch.MultiEpisode,
 		&mismatch.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -559,7 +560,7 @@ func (db *db) ListMatcharrFileMismatches(runID int64) ([]*MatcharrFileMismatch, 
 	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
-			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, multi_episode, created_at
 		FROM matcharr_file_mismatches
 		WHERE run_id = ?
 		ORDER BY id
@@ -577,7 +578,7 @@ func (db *db) ListMatcharrFileMismatches(runID int64) ([]*MatcharrFileMismatch, 
 			&mismatch.ArrName, &mismatch.TargetName, &mismatch.MediaTitle, &mismatch.ArrMediaID,
 			&mismatch.TargetMetadataID, &mismatch.SeasonNumber, &mismatch.EpisodeNumber,
 			&mismatch.ArrFileName, &mismatch.TargetFileNames, &mismatch.ArrFilePath, &mismatch.TargetItemPath,
-			&mismatch.TargetFilePaths, &mismatch.CreatedAt,
+			&mismatch.TargetFilePaths, &mismatch.MultiEpisode, &mismatch.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan matcharr file mismatch: %w", err)
 		}
@@ -591,7 +592,7 @@ func (db *db) ListMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMedi
 	rows, err := db.query(`
 		SELECT id, run_id, arr_id, target_id, arr_type, arr_name, target_name, media_title,
 			arr_media_id, target_metadata_id, season_number, episode_number,
-			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, created_at
+			arr_file_name, target_file_names, arr_file_path, target_item_path, target_file_paths, multi_episode, created_at
 		FROM matcharr_file_mismatches
 		WHERE run_id = ? AND arr_id = ? AND target_id = ? AND arr_media_id = ?
 		ORDER BY id
@@ -609,7 +610,7 @@ func (db *db) ListMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMedi
 			&mismatch.ArrName, &mismatch.TargetName, &mismatch.MediaTitle, &mismatch.ArrMediaID,
 			&mismatch.TargetMetadataID, &mismatch.SeasonNumber, &mismatch.EpisodeNumber,
 			&mismatch.ArrFileName, &mismatch.TargetFileNames, &mismatch.ArrFilePath, &mismatch.TargetItemPath,
-			&mismatch.TargetFilePaths, &mismatch.CreatedAt,
+			&mismatch.TargetFilePaths, &mismatch.MultiEpisode, &mismatch.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan matcharr file mismatch: %w", err)
 		}
@@ -619,12 +620,12 @@ func (db *db) ListMatcharrFileMismatchesForMedia(runID, arrID, targetID, arrMedi
 }
 
 // UpdateMatcharrFileMismatch updates stored filename mismatch details.
-func (db *db) UpdateMatcharrFileMismatch(id int64, targetFileNames, arrFilePath, targetItemPath, targetFilePaths string) error {
+func (db *db) UpdateMatcharrFileMismatch(id int64, targetFileNames, arrFilePath, targetItemPath, targetFilePaths, multiEpisode string) error {
 	_, err := db.exec(`
 		UPDATE matcharr_file_mismatches
-		SET target_file_names = ?, arr_file_path = ?, target_item_path = ?, target_file_paths = ?
+		SET target_file_names = ?, arr_file_path = ?, target_item_path = ?, target_file_paths = ?, multi_episode = ?
 		WHERE id = ?
-	`, targetFileNames, arrFilePath, targetItemPath, targetFilePaths, id)
+	`, targetFileNames, arrFilePath, targetItemPath, targetFilePaths, multiEpisode, id)
 	if err != nil {
 		return fmt.Errorf("failed to update matcharr file mismatch: %w", err)
 	}

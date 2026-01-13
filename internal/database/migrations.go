@@ -897,6 +897,13 @@ var migrations = []migration{
 			ALTER TABLE uploads ADD COLUMN trigger_id INTEGER;
 		`,
 	},
+	{
+		Version: 30,
+		Name:    "matcharr_file_mismatch_multi_episode",
+		SQL: `
+			ALTER TABLE matcharr_file_mismatches ADD COLUMN multi_episode TEXT DEFAULT '';
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

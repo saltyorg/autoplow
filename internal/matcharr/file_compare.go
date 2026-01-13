@@ -3,6 +3,7 @@ package matcharr
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/saltyorg/autoplow/internal/database"
@@ -15,11 +16,17 @@ type fileMismatchDetail struct {
 	ArrFilePath     string
 	TargetFileNames []string
 	TargetFilePaths []string
+	MultiEpisode    string
 }
 
 type targetFileInfo struct {
 	names []string
 	paths []string
+}
+
+type episodeRef struct {
+	SeasonNumber  int
+	EpisodeNumber int
 }
 
 func seasonEpisodeKey(season, episode int) string {
@@ -59,6 +66,52 @@ func addUnique(list []string, value string) []string {
 		}
 	}
 	return append(list, value)
+}
+
+func formatEpisodeCode(season, episode int) string {
+	if season < 0 || episode < 0 {
+		return ""
+	}
+	return fmt.Sprintf("S%02dE%02d", season, episode)
+}
+
+func formatMultiEpisodeLabel(episodes []episodeRef) string {
+	if len(episodes) < 2 {
+		return ""
+	}
+	unique := make(map[string]struct{}, len(episodes))
+	ordered := make([]string, 0, len(episodes))
+	for _, ep := range episodes {
+		code := formatEpisodeCode(ep.SeasonNumber, ep.EpisodeNumber)
+		if code == "" {
+			continue
+		}
+		if _, exists := unique[code]; exists {
+			continue
+		}
+		unique[code] = struct{}{}
+		ordered = append(ordered, code)
+	}
+	if len(ordered) < 2 {
+		return ""
+	}
+	sort.Strings(ordered)
+	return strings.Join(ordered, ", ")
+}
+
+func buildArrFileEpisodeIndex(files []ArrEpisodeFile) map[string][]episodeRef {
+	index := make(map[string][]episodeRef)
+	for _, file := range files {
+		path := strings.TrimSpace(file.FilePath)
+		if path == "" {
+			continue
+		}
+		index[path] = append(index[path], episodeRef{
+			SeasonNumber:  file.SeasonNumber,
+			EpisodeNumber: file.EpisodeNumber,
+		})
+	}
+	return index
 }
 
 func buildTargetEpisodeIndex(files []TargetEpisodeFile) map[string]targetFileInfo {
