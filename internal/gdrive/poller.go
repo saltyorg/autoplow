@@ -133,6 +133,22 @@ func (p *Poller) ReloadTrigger(triggerID int64) error {
 	return p.addTriggerLocked(trigger)
 }
 
+// ResetSnapshot clears snapshot state for a trigger and forces a fresh poll.
+func (p *Poller) ResetSnapshot(triggerID int64) error {
+	p.mu.Lock()
+	p.removeTriggerLocked(triggerID)
+	p.mu.Unlock()
+
+	if err := p.db.DeleteGDriveSyncState(triggerID); err != nil {
+		return err
+	}
+	if err := p.db.ReplaceGDriveSnapshotEntries(triggerID, nil); err != nil {
+		return err
+	}
+
+	return p.ReloadTrigger(triggerID)
+}
+
 // RemoveTrigger removes a trigger and stops its polling loop.
 func (p *Poller) RemoveTrigger(triggerID int64) {
 	p.mu.Lock()
@@ -826,6 +842,10 @@ func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolve
 		return
 	}
 
+	if file != nil {
+		resolver.SeedFile(file)
+	}
+
 	pathValue, ok := resolveChangePath(fileID, resolver, tp.snapshot, tp.trigger.Config.GDriveDriveID)
 	if !ok {
 		log.Debug().Str("file_id", fileID).Msg("Failed to resolve gdrive path")
@@ -863,12 +883,22 @@ func (p *Poller) handleSnapshotDelete(fileID string, prev *database.GDriveSnapsh
 }
 
 func resolveChangePath(fileID string, resolver *PathResolver, snapshot map[string]*database.GDriveSnapshotEntry, driveID string) (string, bool) {
+	if snapshot != nil {
+		if _, ok := snapshot[fileID]; ok {
+			pathValue, ok := snapshotPath(fileID, snapshot, driveID)
+			if ok && pathValue != "" {
+				return pathValue, true
+			}
+		}
+	}
+
 	if resolver != nil {
 		pathValue, _, err := resolver.ResolvePath(fileID)
 		if err == nil && pathValue != "" {
 			return pathValue, true
 		}
 	}
+
 	return snapshotPath(fileID, snapshot, driveID)
 }
 

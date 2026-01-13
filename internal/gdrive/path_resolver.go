@@ -66,6 +66,52 @@ func (r *PathResolver) ResolvePath(fileID string) (string, []string, error) {
 	return path, ancestors, nil
 }
 
+// SeedFile stores a change-list file in the cache to avoid extra API calls.
+func (r *PathResolver) SeedFile(file *drive.File) {
+	if file == nil {
+		return
+	}
+	fileID := strings.TrimSpace(file.Id)
+	if fileID == "" {
+		return
+	}
+
+	cleaned := &drive.File{
+		Id:       fileID,
+		Name:     strings.TrimSpace(file.Name),
+		MimeType: strings.TrimSpace(file.MimeType),
+		Trashed:  file.Trashed,
+	}
+	if len(file.Parents) > 0 {
+		parents := make([]string, 0, len(file.Parents))
+		for _, parent := range file.Parents {
+			parent = strings.TrimSpace(parent)
+			if parent != "" {
+				parents = append(parents, parent)
+			}
+		}
+		cleaned.Parents = parents
+	}
+
+	r.mu.Lock()
+	if cached, ok := r.cache[fileID]; ok && cached != nil {
+		if cleaned.Name != "" {
+			cached.Name = cleaned.Name
+		}
+		if len(cleaned.Parents) > 0 {
+			cached.Parents = cleaned.Parents
+		}
+		if cleaned.MimeType != "" {
+			cached.MimeType = cleaned.MimeType
+		}
+		cached.Trashed = cleaned.Trashed
+	} else {
+		r.cache[fileID] = cleaned
+	}
+	delete(r.pathCache, fileID)
+	r.mu.Unlock()
+}
+
 func (r *PathResolver) resolve(file *drive.File) (string, []string, error) {
 	if file == nil {
 		return "", nil, fmt.Errorf("file not found")

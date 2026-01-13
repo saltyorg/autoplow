@@ -287,6 +287,7 @@ type PageData struct {
 	Content         any
 	ScanningEnabled bool   // Global setting to show/hide scanning functionality
 	UploadsEnabled  bool   // Global setting to show/hide upload functionality
+	GDriveConnected bool   // Whether a Google Drive account is connected
 	DateFormat      string // Display date format: ymd, dmy, mdy
 	TimeFormat      string // Display time format: 24h, 12h
 	Version         VersionInfo
@@ -320,12 +321,20 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, name string, d
 		timeFormat = val
 	}
 
+	gdriveConnected := false
+	if connected, err := h.db.HasGDriveAccounts(); err != nil {
+		log.Error().Err(err).Msg("Failed to check gdrive accounts")
+	} else {
+		gdriveConnected = connected
+	}
+
 	pageData := PageData{
 		Title:           "Autoplow",
 		User:            user,
 		Content:         data,
 		ScanningEnabled: scanningEnabled,
 		UploadsEnabled:  uploadsEnabled,
+		GDriveConnected: gdriveConnected,
 		DateFormat:      dateFormat,
 		TimeFormat:      timeFormat,
 		Version:         h.getVersionInfo(),

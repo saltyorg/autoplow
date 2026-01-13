@@ -110,6 +110,17 @@ func (db *db) ListGDriveAccounts() ([]*GDriveAccount, error) {
 	return accounts, rows.Err()
 }
 
+// HasGDriveAccounts returns whether any Google Drive accounts are connected.
+func (db *db) HasGDriveAccounts() (bool, error) {
+	var exists bool
+	if err := db.queryRow(`
+		SELECT EXISTS(SELECT 1 FROM gdrive_accounts LIMIT 1)
+	`).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check gdrive accounts: %w", err)
+	}
+	return exists, nil
+}
+
 // DeleteGDriveAccount deletes a Google Drive account by ID.
 func (db *db) DeleteGDriveAccount(id int64) error {
 	if err := db.execAndVerifyAffected("DELETE FROM gdrive_accounts WHERE id = ?", id); err != nil {

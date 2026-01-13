@@ -693,6 +693,16 @@
                         </a>
                     </li>
                     {{end}}
+                    {{if .GDriveConnected}}
+                    <li>
+                        <a href="/gdrive-snapshot" class="group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
+                            <svg class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V6.375A2.625 2.625 0 014.875 3.75h5.25A2.625 2.625 0 0112.75 6.375v.375h6.375A2.625 2.625 0 0121.75 9.375v7.5A2.625 2.625 0 0119.125 19.5H4.875A2.625 2.625 0 012.25 16.875v-4.125z" />
+                            </svg>
+                            GDrive Snapshot
+                        </a>
+                    </li>
+                    {{end}}
                     <li>
                         <a href="/matcharr" class="group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
                             <svg class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">

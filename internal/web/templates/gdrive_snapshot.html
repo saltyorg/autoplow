@@ -1,0 +1,190 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Google Drive Snapshot</h1>
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Inspect the cached folder snapshot used for Google Drive polling.</p>
+        </div>
+        {{if .Content.SelectedTrigger}}
+        <form method="POST" action="/gdrive-snapshot/{{.Content.SelectedTrigger.ID}}/reset"
+              onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Reset Snapshot', body: 'Clear the cached snapshot and force a full resync? This will rebuild on the next poll tick.', confirmText: 'Reset', cancelText: 'Cancel' });">
+            <button type="submit" class="btn-danger">Force Clean Snapshot</button>
+        </form>
+        {{end}}
+    </div>
+
+    {{if and .Content.SelectedTrigger (not .Content.GDriveRunning)}}
+    <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 p-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                </svg>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-200">Google Drive watcher not running</h3>
+                <p class="mt-1 text-sm text-yellow-700 dark:text-yellow-300">Snapshot rebuilds will resume when the watcher starts.</p>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-4">
+        <form method="GET" action="/gdrive-snapshot" class="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div class="flex-1">
+                <label for="gdrive-trigger" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Trigger</label>
+                <select id="gdrive-trigger" name="trigger_id" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    <option value="">Select a Google Drive trigger</option>
+                    {{range .Content.Triggers}}
+                    <option value="{{.ID}}" {{if eq .ID $.Content.SelectedTriggerID}}selected{{end}}>
+                        {{.Name}}{{if not .Enabled}} (disabled){{end}}
+                    </option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="flex-1">
+                <label for="gdrive-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
+                <input id="gdrive-search" type="text" name="q" value="{{.Content.Query}}" placeholder="Path, file ID, name, or mime type"
+                       class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="submit" class="btn-primary">Apply</button>
+            </div>
+        </form>
+    </div>
+
+    {{if .Content.SelectedTrigger}}
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Snapshot Entries</dt>
+            <dd class="mt-2 grid grid-cols-2 gap-4">
+                <div>
+                    <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Folders</div>
+                    <div class="text-2xl font-semibold text-gray-900 dark:text-white">{{.Content.TotalFolderCount}}</div>
+                </div>
+                <div>
+                    <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Files</div>
+                    <div class="text-2xl font-semibold text-gray-900 dark:text-white">{{.Content.TotalFileCount}}</div>
+                </div>
+            </dd>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Filtered Entries</dt>
+            <dd class="mt-2 grid grid-cols-2 gap-4">
+                <div>
+                    <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Folders</div>
+                    <div class="text-2xl font-semibold text-gray-900 dark:text-white">{{.Content.FilteredFolderCount}}</div>
+                </div>
+                <div>
+                    <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Files</div>
+                    <div class="text-2xl font-semibold text-gray-900 dark:text-white">{{.Content.FilteredFileCount}}</div>
+                </div>
+            </dd>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
+            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Last Sync</dt>
+            <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                {{if .Content.SyncState}}
+                <span class="pal-time" data-utc="{{isoTime .Content.SyncState.UpdatedAt}}">{{formatTime .Content.SyncState.UpdatedAt}}</span>
+                {{else}}
+                <span class="text-gray-500 dark:text-gray-400">Unknown</span>
+                {{end}}
+            </dd>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+        <div class="px-4 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="text-sm text-gray-500 dark:text-gray-400">
+                Trigger: <span class="text-gray-900 dark:text-white font-medium">{{.Content.SelectedTrigger.Name}}</span>
+                {{if .Content.SelectedTrigger.Config.GDriveDriveID}}
+                <span class="ml-2">Drive ID: <span class="text-gray-900 dark:text-white font-medium">{{.Content.SelectedTrigger.Config.GDriveDriveID}}</span></span>
+                {{end}}
+                {{if .Content.SelectedTrigger.Config.GDriveAccountID}}
+                <span class="ml-2">Account ID: <span class="text-gray-900 dark:text-white font-medium">{{.Content.SelectedTrigger.Config.GDriveAccountID}}</span></span>
+                {{end}}
+            </div>
+        </div>
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Path</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">File ID</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Parent ID</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Mime Type</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Updated</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {{if .Content.SnapshotEntries}}
+                {{range .Content.SnapshotEntries}}
+                <tr>
+                    <td class="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                        <div class="break-all">
+                            {{if .Resolved}}
+                                {{.Path}}
+                            {{else}}
+                                <span class="text-gray-500 dark:text-gray-400">{{.Name}}</span>
+                                <span class="text-xs text-gray-400 dark:text-gray-500"> (unresolved)</span>
+                            {{end}}
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 font-mono break-all">{{.FileID}}</td>
+                    <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 font-mono break-all">{{.ParentID}}</td>
+                    <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 break-all">{{.MimeType}}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        <span class="pal-time" data-utc="{{isoTime .UpdatedAt}}">{{formatTime .UpdatedAt}}</span>
+                    </td>
+                </tr>
+                {{end}}
+                {{else}}
+                <tr>
+                    <td colspan="5" class="px-4 py-6 text-sm text-gray-500 dark:text-gray-400 text-center">No snapshot entries found</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{if gt .Content.TotalPages 1}}
+        <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="text-sm text-gray-700 dark:text-gray-300">
+                <span class="font-medium">{{.Content.FilteredCount}}</span> entries
+            </div>
+            <div class="flex items-center gap-2">
+                <a href="/gdrive-snapshot?page=1{{if .Content.SelectedTriggerID}}&trigger_id={{.Content.SelectedTriggerID}}{{end}}{{if .Content.Query}}&q={{.Content.Query | urlquery}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if eq .Content.Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                    « First
+                </a>
+                <a href="/gdrive-snapshot?page={{.Content.PrevPage}}{{if .Content.SelectedTriggerID}}&trigger_id={{.Content.SelectedTriggerID}}{{end}}{{if .Content.Query}}&q={{.Content.Query | urlquery}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if .Content.HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                    ‹ Prev
+                </a>
+                <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Content.Page}} / {{.Content.TotalPages}}</span>
+                <a href="/gdrive-snapshot?page={{.Content.NextPage}}{{if .Content.SelectedTriggerID}}&trigger_id={{.Content.SelectedTriggerID}}{{end}}{{if .Content.Query}}&q={{.Content.Query | urlquery}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if .Content.HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
+                    Next ›
+                </a>
+                <a href="/gdrive-snapshot?page={{.Content.TotalPages}}{{if .Content.SelectedTriggerID}}&trigger_id={{.Content.SelectedTriggerID}}{{end}}{{if .Content.Query}}&q={{.Content.Query | urlquery}}{{end}}"
+                   class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
+                   {{if eq .Content.Page .Content.TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
+                    Last »
+                </a>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 text-sm text-gray-500 dark:text-gray-400">
+        {{if eq (len .Content.Triggers) 0}}
+        Configure a Google Drive trigger to view snapshot entries.
+        {{else}}
+        Select a Google Drive trigger to view snapshot entries.
+        {{end}}
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{template "base" .}}

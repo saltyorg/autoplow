@@ -554,6 +554,7 @@ func (s *Server) loadTemplates() {
 		"rclone_options.html",
 		"matcharr.html",
 		"matcharr_run.html",
+		"gdrive_snapshot.html",
 		"plexautolang.html",
 	}
 
@@ -750,6 +751,8 @@ func (s *Server) setupRoutes() {
 			r.Post("/", h.SettingsUpdate)
 			r.Post("/clear-upload-history", h.ClearUploadHistory)
 			r.Post("/clear-scan-history", h.ClearScanHistory)
+			r.Post("/database/optimize", h.DatabaseOptimize)
+			r.Post("/database/vacuum", h.DatabaseVacuum)
 			r.Post("/regenerate-trigger-key", h.RegenerateTriggerKey)
 			r.Get("/about", h.SettingsAboutPage)
 			r.Get("/logging", h.SettingsLoggingPage)
@@ -810,6 +813,10 @@ func (s *Server) setupRoutes() {
 
 		// Logs
 		r.Get("/logs", h.LogsPage)
+
+		// Google Drive Snapshot
+		r.Get("/gdrive-snapshot", h.GDriveSnapshotPage)
+		r.Post("/gdrive-snapshot/{id}/reset", h.GDriveSnapshotReset)
 
 		// Rclone Options Explorer
 		r.Route("/rclone", func(r chi.Router) {

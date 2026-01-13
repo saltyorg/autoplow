@@ -174,6 +174,32 @@ func (h *Handlers) ClearScanHistory(w http.ResponseWriter, r *http.Request) {
 	h.redirect(w, r, "/settings")
 }
 
+// DatabaseOptimize runs SQLite's PRAGMA optimize via the database manager.
+func (h *Handlers) DatabaseOptimize(w http.ResponseWriter, r *http.Request) {
+	if err := h.db.Optimize(); err != nil {
+		log.Error().Err(err).Msg("Failed to optimize database")
+		h.flashErr(w, "Failed to optimize database")
+		h.redirect(w, r, "/settings")
+		return
+	}
+
+	h.flash(w, "Database optimized")
+	h.redirect(w, r, "/settings")
+}
+
+// DatabaseVacuum rebuilds the database file to reclaim unused space.
+func (h *Handlers) DatabaseVacuum(w http.ResponseWriter, r *http.Request) {
+	if err := h.db.Vacuum(); err != nil {
+		log.Error().Err(err).Msg("Failed to vacuum database")
+		h.flashErr(w, "Failed to vacuum database")
+		h.redirect(w, r, "/settings")
+		return
+	}
+
+	h.flash(w, "Database vacuum completed")
+	h.redirect(w, r, "/settings")
+}
+
 // RegenerateTriggerKey regenerates the per-install trigger key and re-encrypts trigger passwords.
 func (h *Handlers) RegenerateTriggerKey(w http.ResponseWriter, r *http.Request) {
 	migrated, failed, err := auth.RegenerateTriggerPasswordKey(h.db)

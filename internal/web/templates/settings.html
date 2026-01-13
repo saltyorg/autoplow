@@ -346,6 +346,37 @@
             </div>
         </div>
     </div>
+
+    <!-- Database Maintenance -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Database Maintenance</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">Optimize Database</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Refresh query planner stats to keep performance consistent.</p>
+                </div>
+                <form method="POST" action="/settings/database/optimize" onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Optimize Database', body: 'Run SQLite PRAGMA optimize? This is safe and usually quick.', confirmText: 'Optimize', cancelText: 'Cancel' });">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        Optimize
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">Vacuum Database</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Rebuild the database file to reclaim space. This can take time and may pause the app.</p>
+                </div>
+                <form method="POST" action="/settings/database/vacuum" onsubmit="return confirmFormSubmit(event, { type: 'warning', title: 'Vacuum Database', body: 'Vacuum rebuilds the database file and can block the app while it runs. Run during idle time.', confirmText: 'Vacuum', cancelText: 'Cancel' });">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500">
+                        Vacuum
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
     {{end}}
 
     {{if eq .Content.Tab "gdrive"}}
