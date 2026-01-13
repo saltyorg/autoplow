@@ -449,18 +449,18 @@ func (m *Manager) handlePlayingNotification(targetID int64, target PlexTargetInt
 			return
 		}
 		m.enqueueTask(targetID, config.MaxConcurrent, func() {
-			m.processPlayingSession(targetID, target, cache, playing.ClientIdentifier, ratingKey, config)
+			m.processPlayingSession(targetID, target, cache, sessionKey, playing.ClientIdentifier, ratingKey, config)
 		})
 	} else {
 		// Session stopped - cleanup but also check for final track changes
 		m.enqueueTask(targetID, config.MaxConcurrent, func() {
-			m.processPlaybackStopped(targetID, target, playing.ClientIdentifier, ratingKey, config)
+			m.processPlaybackStopped(targetID, target, sessionKey, playing.ClientIdentifier, ratingKey, config)
 		})
 	}
 }
 
 // processPlayingSession handles an active playing session to detect track changes
-func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterface, cache *Cache, clientIdentifier string, ratingKey string, config *database.PlexAutoLanguagesConfig) {
+func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterface, cache *Cache, sessionKey string, clientIdentifier string, ratingKey string, config *database.PlexAutoLanguagesConfig) {
 	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	defer cancel()
 
@@ -489,29 +489,28 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 		userToken = ""
 	}
 
-	// Fetch episode metadata using the user's token to see their stream preferences
-	var episode *Episode
-	if userToken != "" {
-		episode, err = target.GetEpisodeWithStreamsAsUser(ctx, ratingKey, userToken)
-		if err != nil {
-			log.Debug().Err(err).Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get episode as user, clearing token cache")
-			// Token might be invalid, clear it and try again next time
-			cache.ClearUserToken(user.ID)
-			userToken = ""
-			// Fall back to admin token
-			episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
-			if err != nil {
-				log.Debug().Err(err).Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get episode")
-				return
-			}
+	// Prefer live session data to avoid repeated library metadata calls.
+	episode, err := target.GetSessionEpisodeWithStreams(ctx, clientIdentifier, ratingKey)
+	if err != nil {
+		if errors.Is(err, ErrNoActiveSessions) {
+			log.Trace().
+				Str("ratingKey", ratingKey).
+				Str("clientIdentifier", clientIdentifier).
+				Msg("No active sessions found, falling back to cached metadata")
+		} else {
+			log.Trace().
+				Err(err).
+				Str("ratingKey", ratingKey).
+				Str("clientIdentifier", clientIdentifier).
+				Msg("Failed to get live session episode, falling back to cached metadata")
 		}
-	} else {
-		// No user token available, use admin token
-		episode, err = target.GetEpisodeWithStreams(ctx, ratingKey)
+		episode, err = m.getSessionCachedEpisode(ctx, target, cache, sessionKey, ratingKey, user.ID, userLabel, &userToken)
 		if err != nil {
 			log.Debug().Err(err).Str("ratingKey", ratingKey).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get episode")
 			return
 		}
+	} else if cache != nil && sessionKey != "" {
+		cache.SetSessionEpisode(sessionKey, ratingKey, episode)
 	}
 
 	if episode.GrandparentKey == "" || len(episode.Parts) == 0 {
@@ -625,9 +624,17 @@ func (m *Manager) processPlayingSession(targetID int64, target PlexTargetInterfa
 }
 
 // processPlaybackStopped handles when a user stops playing an episode
-func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterface, clientIdentifier string, ratingKey string, config *database.PlexAutoLanguagesConfig) {
+func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterface, sessionKey string, clientIdentifier string, ratingKey string, config *database.PlexAutoLanguagesConfig) {
 	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	defer cancel()
+
+	m.mu.RLock()
+	cache := m.caches[targetID]
+	m.mu.RUnlock()
+
+	if cache != nil && sessionKey != "" {
+		defer cache.ClearSessionEpisode(sessionKey)
+	}
 
 	// Get the episode with streams to see what was selected (prefer live session data)
 	liveData := true
@@ -675,11 +682,6 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 	// If live data is gone (session already stopped), try to reapply the last known stream
 	// selection from cache so we don't lose mid-playback changes.
 	if !liveData {
-		var cache *Cache
-		m.mu.RLock()
-		cache = m.caches[targetID]
-		m.mu.RUnlock()
-
 		if cache != nil {
 			if cachedStreams, ok := cache.GetDefaultStreams(user.ID, ratingKey); ok {
 				part := &episode.Parts[0]
@@ -746,10 +748,6 @@ func (m *Manager) processPlaybackStopped(targetID int64, target PlexTargetInterf
 		Msg("Plex Auto Languages: User track preference saved")
 
 	// Apply preference to other episodes
-	m.mu.RLock()
-	cache := m.caches[targetID]
-	m.mu.RUnlock()
-
 	userToken, err := m.getUserToken(ctx, cache, target, user.ID)
 	if err != nil {
 		log.Debug().Err(err).Str("user", userLabel).Msg("Plex Auto Languages: Failed to get user token, skipping apply")
@@ -1350,6 +1348,52 @@ func (m *Manager) getUserToken(ctx context.Context, cache *Cache, target PlexTar
 		cache.SetUserToken(userID, token)
 	}
 	return token, nil
+}
+
+func (m *Manager) getSessionCachedEpisode(
+	ctx context.Context,
+	target PlexTargetInterface,
+	cache *Cache,
+	sessionKey string,
+	ratingKey string,
+	userID string,
+	userLabel string,
+	userToken *string,
+) (*Episode, error) {
+	if cache != nil {
+		if cached, ok := cache.GetSessionEpisode(sessionKey, ratingKey); ok {
+			return cached, nil
+		}
+	}
+
+	if userToken != nil && *userToken != "" {
+		episode, err := target.GetEpisodeWithStreamsAsUser(ctx, ratingKey, *userToken)
+		if err == nil {
+			if cache != nil && sessionKey != "" {
+				cache.SetSessionEpisode(sessionKey, ratingKey, episode)
+			}
+			return episode, nil
+		}
+
+		log.Debug().
+			Err(err).
+			Str("ratingKey", ratingKey).
+			Str("user", userLabel).
+			Msg("Plex Auto Languages: Failed to get episode as user, clearing token cache")
+		if cache != nil {
+			cache.ClearUserToken(userID)
+		}
+		*userToken = ""
+	}
+
+	episode, err := target.GetEpisodeWithStreams(ctx, ratingKey)
+	if err != nil {
+		return nil, err
+	}
+	if cache != nil && sessionKey != "" {
+		cache.SetSessionEpisode(sessionKey, ratingKey, episode)
+	}
+	return episode, nil
 }
 
 // tracksMatchPreference checks if selected tracks match the stored preference

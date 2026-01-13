@@ -31,6 +31,13 @@ type MachineIdentifier struct {
 	CachedAt time.Time
 }
 
+// SessionEpisode caches episode metadata for an active session
+type SessionEpisode struct {
+	Episode   *Episode
+	RatingKey string
+	CachedAt  time.Time
+}
+
 // Cache holds in-memory caches for Plex Auto Languages
 type Cache struct {
 	mu sync.RWMutex
@@ -61,6 +68,9 @@ type Cache struct {
 	// lastProcessed tracks when we last processed a client/ratingKey combo
 	// Key: "clientIdentifier:ratingKey"
 	lastProcessed map[string]time.Time
+
+	// sessionEpisodes caches episode metadata per session key
+	sessionEpisodes map[string]*SessionEpisode
 }
 
 // NewCache creates a new cache instance
@@ -73,6 +83,7 @@ func NewCache() *Cache {
 		newlyAdded:       make(map[string]time.Time),
 		recentActivities: make(map[string]time.Time),
 		lastProcessed:    make(map[string]time.Time),
+		sessionEpisodes:  make(map[string]*SessionEpisode),
 	}
 }
 
@@ -93,6 +104,41 @@ func (c *Cache) SetSessionState(sessionKey, state string) {
 	} else {
 		c.sessionStates[sessionKey] = state
 	}
+}
+
+// GetSessionEpisode returns the cached episode for a session key
+func (c *Cache) GetSessionEpisode(sessionKey, ratingKey string) (*Episode, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	sessionEpisode, ok := c.sessionEpisodes[sessionKey]
+	if !ok || sessionEpisode == nil {
+		return nil, false
+	}
+	if ratingKey != "" && sessionEpisode.RatingKey != ratingKey {
+		return nil, false
+	}
+	return sessionEpisode.Episode, true
+}
+
+// SetSessionEpisode caches episode metadata for a session key
+func (c *Cache) SetSessionEpisode(sessionKey, ratingKey string, episode *Episode) {
+	if sessionKey == "" || episode == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sessionEpisodes[sessionKey] = &SessionEpisode{
+		Episode:   episode,
+		RatingKey: ratingKey,
+		CachedAt:  time.Now(),
+	}
+}
+
+// ClearSessionEpisode removes cached episode metadata for a session key
+func (c *Cache) ClearSessionEpisode(sessionKey string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.sessionEpisodes, sessionKey)
 }
 
 // GetDefaultStreams returns the cached default streams for an episode and user
@@ -296,6 +342,17 @@ func (c *Cache) CleanupExpired(maxAge time.Duration) {
 			delete(c.lastProcessed, key)
 		}
 	}
+
+	// Clean up session episode cache
+	for key, sessionEpisode := range c.sessionEpisodes {
+		if sessionEpisode == nil {
+			delete(c.sessionEpisodes, key)
+			continue
+		}
+		if now.Sub(sessionEpisode.CachedAt) > maxAge {
+			delete(c.sessionEpisodes, key)
+		}
+	}
 }
 
 // Clear removes all entries from all caches
@@ -310,6 +367,7 @@ func (c *Cache) Clear() {
 	c.newlyAdded = make(map[string]time.Time)
 	c.recentActivities = make(map[string]time.Time)
 	c.lastProcessed = make(map[string]time.Time)
+	c.sessionEpisodes = make(map[string]*SessionEpisode)
 }
 
 func defaultStreamKey(userID, ratingKey string) string {
