@@ -159,29 +159,32 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 	eventType := extractEventType(expectedType, bodyBytes)
 
 	// Check for ignored events from *arr applications and return success without queueing
-	if _, ignored := shouldIgnoreEvent(expectedType, bodyBytes); ignored {
-		log.Debug().
-			Str("type", expectedType).
-			Int64("trigger_id", triggerID).
-			Str("event_type", eventType).
-			Msg("Ignoring event")
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"message": "Event ignored: " + eventType,
-		})
-		return
+	if expectedType != "sonarr" && expectedType != "radarr" && expectedType != "lidarr" {
+		if _, ignored := shouldIgnoreEvent(expectedType, bodyBytes); ignored {
+			log.Debug().
+				Str("type", expectedType).
+				Int64("trigger_id", triggerID).
+				Str("event_type", eventType).
+				Msg("Ignoring event")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"message": "Event ignored: " + eventType,
+			})
+			return
+		}
 	}
 
 	// Parse request body based on type
 	var paths []string
+	var arrOutcome arrParseOutcome
 	switch expectedType {
 	case "sonarr":
-		paths = h.parseSonarrWebhook(r)
+		paths, arrOutcome = h.parseSonarrWebhook(r)
 	case "radarr":
-		paths = h.parseRadarrWebhook(r)
+		paths, arrOutcome = h.parseRadarrWebhook(r)
 	case "lidarr":
-		paths = h.parseLidarrWebhook(r)
+		paths, arrOutcome = h.parseLidarrWebhook(r)
 	case "webhook", "autoplow":
 		paths = h.parseWebhookTrigger(r)
 	case "a_train":
@@ -190,6 +193,26 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 		paths = h.parseAutoscanTrigger(r)
 	case "bazarr":
 		paths = h.parseBazarrTrigger(r)
+	}
+
+	if expectedType == "sonarr" || expectedType == "radarr" || expectedType == "lidarr" {
+		switch arrOutcome {
+		case arrOutcomeIgnored, arrOutcomeUnknown:
+			w.Header().Set("Content-Type", "application/json")
+			message := "Event ignored"
+			if eventType != "" {
+				message = "Event ignored: " + eventType
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"message": message,
+			})
+			return
+		case arrOutcomeInvalid:
+			payloadType := strings.ToUpper(expectedType[:1]) + expectedType[1:]
+			h.jsonError(w, "Invalid "+payloadType+" webhook payload", http.StatusBadRequest)
+			return
+		}
 	}
 
 	if len(paths) == 0 {
@@ -247,11 +270,90 @@ func (h *Handlers) handleTrigger(w http.ResponseWriter, r *http.Request, expecte
 	})
 }
 
+type arrParseOutcome int
+
+const (
+	arrOutcomeScan arrParseOutcome = iota
+	arrOutcomeIgnored
+	arrOutcomeUnknown
+	arrOutcomeInvalid
+)
+
+// Sonarr webhook event types (from NzbDrone.Core.Notifications.Webhook.WebhookEventType).
+var sonarrKnownEvents = map[string]struct{}{
+	"Test":                      {},
+	"Grab":                      {},
+	"Download":                  {},
+	"Rename":                    {},
+	"SeriesAdd":                 {},
+	"SeriesDelete":              {},
+	"EpisodeFileDelete":         {},
+	"Health":                    {},
+	"ApplicationUpdate":         {},
+	"HealthRestored":            {},
+	"ManualInteractionRequired": {},
+}
+
+var sonarrFileChangeEvents = map[string]struct{}{
+	"Download":          {},
+	"Rename":            {},
+	"EpisodeFileDelete": {},
+	"SeriesDelete":      {},
+}
+
+// Radarr webhook event types (from NzbDrone.Core.Notifications.Webhook.WebhookEventType).
+var radarrKnownEvents = map[string]struct{}{
+	"Test":                      {},
+	"Grab":                      {},
+	"Download":                  {},
+	"Rename":                    {},
+	"MovieDelete":               {},
+	"MovieFileDelete":           {},
+	"Health":                    {},
+	"ApplicationUpdate":         {},
+	"MovieAdded":                {},
+	"HealthRestored":            {},
+	"ManualInteractionRequired": {},
+}
+
+var radarrFileChangeEvents = map[string]struct{}{
+	"Download":        {},
+	"Rename":          {},
+	"MovieDelete":     {},
+	"MovieFileDelete": {},
+}
+
+// Lidarr webhook event types (from NzbDrone.Core.Notifications.Webhook.WebhookEventType).
+var lidarrKnownEvents = map[string]struct{}{
+	"Test":              {},
+	"Grab":              {},
+	"Download":          {},
+	"DownloadFailure":   {},
+	"ImportFailure":     {},
+	"Rename":            {},
+	"ArtistAdd":         {},
+	"ArtistDelete":      {},
+	"AlbumDelete":       {},
+	"Health":            {},
+	"Retag":             {},
+	"ApplicationUpdate": {},
+	"HealthRestored":    {},
+}
+
+var lidarrFileChangeEvents = map[string]struct{}{
+	"Download":     {},
+	"Rename":       {},
+	"ArtistDelete": {},
+	"AlbumDelete":  {},
+	"Retag":        {},
+}
+
 // parseSonarrWebhook extracts paths from Sonarr webhook payload
-func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
+func (h *Handlers) parseSonarrWebhook(r *http.Request) ([]string, arrParseOutcome) {
 	var payload struct {
 		EventType       string `json:"eventType"`
 		DestinationPath string `json:"destinationPath"`
+		DeletedFiles    bool   `json:"deletedFiles"`
 		Series          struct {
 			Path string `json:"path"`
 		} `json:"series"`
@@ -271,11 +373,27 @@ func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		log.Error().Err(err).Msg("Failed to parse Sonarr webhook")
-		return nil
+		return nil, arrOutcomeInvalid
+	}
+
+	eventType := payload.EventType
+	if eventType == "" {
+		log.Trace().Msg("Sonarr webhook missing event type")
+		return nil, arrOutcomeInvalid
+	}
+
+	if _, ok := sonarrKnownEvents[eventType]; !ok {
+		log.Trace().Str("event_type", eventType).Msg("Sonarr event not recognized")
+		return nil, arrOutcomeUnknown
+	}
+
+	if _, ok := sonarrFileChangeEvents[eventType]; !ok {
+		log.Trace().Str("event_type", eventType).Msg("Sonarr event ignored (no file changes)")
+		return nil, arrOutcomeIgnored
 	}
 
 	if payload.Series.Path == "" {
-		return nil
+		return nil, arrOutcomeInvalid
 	}
 
 	seasonPathFromFile := func(filePath, relativePath string) string {
@@ -329,7 +447,7 @@ func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 		return paths
 	}
 
-	switch payload.EventType {
+	switch eventType {
 	case "Rename":
 		// Return season folder paths for renamed files when available.
 		seen := make(map[string]struct{})
@@ -349,29 +467,31 @@ func (h *Handlers) parseSonarrWebhook(r *http.Request) []string {
 			}
 		}
 		if len(paths) == 0 {
-			return []string{payload.Series.Path}
+			return []string{payload.Series.Path}, arrOutcomeScan
 		}
-		return paths
+		return paths, arrOutcomeScan
 	case "EpisodeFileDelete":
 		if paths := collectSeasonPaths(); len(paths) > 0 {
-			return paths
+			return paths, arrOutcomeScan
 		}
 		// Fallback to series folder path for episode deletion (file no longer exists)
-		return []string{payload.Series.Path}
+		return []string{payload.Series.Path}, arrOutcomeScan
+	case "SeriesDelete":
+		return []string{payload.Series.Path}, arrOutcomeScan
 	default:
 		if paths := collectSeasonPaths(); len(paths) > 0 {
-			return paths
+			return paths, arrOutcomeScan
 		}
-		// For other events (Download, SeriesDelete, Test, etc.), return series path
-		return []string{payload.Series.Path}
+		return []string{payload.Series.Path}, arrOutcomeScan
 	}
 }
 
 // parseRadarrWebhook extracts paths from Radarr webhook payload
-func (h *Handlers) parseRadarrWebhook(r *http.Request) []string {
+func (h *Handlers) parseRadarrWebhook(r *http.Request) ([]string, arrParseOutcome) {
 	var payload struct {
-		EventType string `json:"eventType"`
-		Movie     struct {
+		EventType    string `json:"eventType"`
+		DeletedFiles bool   `json:"deletedFiles"`
+		Movie        struct {
 			FolderPath string `json:"folderPath"`
 		} `json:"movie"`
 		MovieFile struct {
@@ -381,23 +501,40 @@ func (h *Handlers) parseRadarrWebhook(r *http.Request) []string {
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		log.Error().Err(err).Msg("Failed to parse Radarr webhook")
-		return nil
+		return nil, arrOutcomeInvalid
+	}
+
+	eventType := payload.EventType
+	if eventType == "" {
+		log.Trace().Msg("Radarr webhook missing event type")
+		return nil, arrOutcomeInvalid
+	}
+
+	if _, ok := radarrKnownEvents[eventType]; !ok {
+		log.Trace().Str("event_type", eventType).Msg("Radarr event not recognized")
+		return nil, arrOutcomeUnknown
+	}
+
+	if _, ok := radarrFileChangeEvents[eventType]; !ok {
+		log.Trace().Str("event_type", eventType).Msg("Radarr event ignored (no file changes)")
+		return nil, arrOutcomeIgnored
 	}
 
 	if payload.Movie.FolderPath == "" {
-		return nil
+		return nil, arrOutcomeInvalid
 	}
 
-	// All events return the movie folder path
+	// All file-change events return the movie folder path
 	// For MovieFileDelete, the file no longer exists so we scan the folder
-	return []string{payload.Movie.FolderPath}
+	return []string{payload.Movie.FolderPath}, arrOutcomeScan
 }
 
 // parseLidarrWebhook extracts paths from Lidarr webhook payload
-func (h *Handlers) parseLidarrWebhook(r *http.Request) []string {
+func (h *Handlers) parseLidarrWebhook(r *http.Request) ([]string, arrParseOutcome) {
 	var payload struct {
-		EventType string `json:"eventType"`
-		Artist    struct {
+		EventType    string `json:"eventType"`
+		DeletedFiles bool   `json:"deletedFiles"`
+		Artist       struct {
 			Path string `json:"path"`
 		} `json:"artist"`
 		RenamedTrackFiles []struct {
@@ -408,14 +545,30 @@ func (h *Handlers) parseLidarrWebhook(r *http.Request) []string {
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		log.Error().Err(err).Msg("Failed to parse Lidarr webhook")
-		return nil
+		return nil, arrOutcomeInvalid
+	}
+
+	eventType := payload.EventType
+	if eventType == "" {
+		log.Trace().Msg("Lidarr webhook missing event type")
+		return nil, arrOutcomeInvalid
+	}
+
+	if _, ok := lidarrKnownEvents[eventType]; !ok {
+		log.Trace().Str("event_type", eventType).Msg("Lidarr event not recognized")
+		return nil, arrOutcomeUnknown
+	}
+
+	if _, ok := lidarrFileChangeEvents[eventType]; !ok {
+		log.Trace().Str("event_type", eventType).Msg("Lidarr event ignored (no file changes)")
+		return nil, arrOutcomeIgnored
 	}
 
 	if payload.Artist.Path == "" {
-		return nil
+		return nil, arrOutcomeInvalid
 	}
 
-	switch payload.EventType {
+	switch eventType {
 	case "Rename":
 		// Return both old and new paths for each renamed track
 		var paths []string
@@ -424,12 +577,18 @@ func (h *Handlers) parseLidarrWebhook(r *http.Request) []string {
 			paths = append(paths, file.Path)
 		}
 		if len(paths) == 0 {
-			return []string{payload.Artist.Path}
+			return []string{payload.Artist.Path}, arrOutcomeScan
 		}
-		return paths
+		return paths, arrOutcomeScan
+	case "ArtistDelete", "AlbumDelete":
+		if !payload.DeletedFiles {
+			log.Trace().Str("event_type", eventType).Msg("Lidarr event ignored (deleted without files)")
+			return nil, arrOutcomeIgnored
+		}
+		return []string{payload.Artist.Path}, arrOutcomeScan
 	default:
-		// For other events (Download, ArtistDelete, AlbumDelete, Test, etc.), return artist path
-		return []string{payload.Artist.Path}
+		// For other file-change events, return artist path
+		return []string{payload.Artist.Path}, arrOutcomeScan
 	}
 }
 
