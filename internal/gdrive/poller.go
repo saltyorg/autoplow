@@ -515,6 +515,15 @@ func (p *Poller) ensureSnapshotLoaded(tp *triggerPoll) error {
 }
 
 func (p *Poller) refreshSnapshot(ctx context.Context, svc *drive.Service, tp *triggerPoll, trigger *database.Trigger, queueDiff bool) error {
+	if trigger != nil {
+		log.Info().
+			Int64("trigger_id", trigger.ID).
+			Str("trigger", trigger.Name).
+			Str("drive_id", trigger.Config.GDriveDriveID).
+			Bool("queue_diff", queueDiff).
+			Msg("GDrive full sync started")
+	}
+
 	startToken, err := p.getStartPageToken(ctx, svc, trigger.Config.GDriveDriveID)
 	if err != nil {
 		return err
@@ -554,7 +563,21 @@ func (p *Poller) refreshSnapshot(ctx context.Context, svc *drive.Service, tp *tr
 		return fmt.Errorf("missing start page token")
 	}
 
-	return p.db.UpsertGDriveSyncState(trigger.ID, nextToken)
+	if err := p.db.UpsertGDriveSyncState(trigger.ID, nextToken); err != nil {
+		return err
+	}
+
+	if trigger != nil {
+		log.Info().
+			Int64("trigger_id", trigger.ID).
+			Str("trigger", trigger.Name).
+			Str("drive_id", trigger.Config.GDriveDriveID).
+			Int("entries", len(entries)).
+			Bool("queue_diff", queueDiff).
+			Msg("GDrive full sync completed")
+	}
+
+	return nil
 }
 
 func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, currentSnapshot map[string]*database.GDriveSnapshotEntry) {

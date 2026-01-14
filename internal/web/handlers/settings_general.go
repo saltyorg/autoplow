@@ -176,6 +176,7 @@ func (h *Handlers) ClearScanHistory(w http.ResponseWriter, r *http.Request) {
 
 // DatabaseOptimize runs SQLite's PRAGMA optimize via the database manager.
 func (h *Handlers) DatabaseOptimize(w http.ResponseWriter, r *http.Request) {
+	log.Info().Msg("Database optimize started")
 	if err := h.db.Optimize(); err != nil {
 		log.Error().Err(err).Msg("Failed to optimize database")
 		h.flashErr(w, "Failed to optimize database")
@@ -183,12 +184,14 @@ func (h *Handlers) DatabaseOptimize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Info().Msg("Database optimize completed")
 	h.flash(w, "Database optimized")
 	h.redirect(w, r, "/settings")
 }
 
 // DatabaseVacuum rebuilds the database file to reclaim unused space.
 func (h *Handlers) DatabaseVacuum(w http.ResponseWriter, r *http.Request) {
+	log.Info().Msg("Database vacuum started")
 	if err := h.db.Vacuum(); err != nil {
 		log.Error().Err(err).Msg("Failed to vacuum database")
 		h.flashErr(w, "Failed to vacuum database")
@@ -196,6 +199,7 @@ func (h *Handlers) DatabaseVacuum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Info().Msg("Database vacuum completed")
 	h.flash(w, "Database vacuum completed")
 	h.redirect(w, r, "/settings")
 }
