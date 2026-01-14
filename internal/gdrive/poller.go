@@ -389,7 +389,7 @@ func (p *Poller) scheduleSnapshotRetry(trigger *database.Trigger, rootID string,
 		Msg(reason)
 }
 
-func (p *Poller) queuePaths(trigger *database.Trigger, paths map[string]struct{}, eventType string) {
+func (p *Poller) queuePaths(trigger *database.Trigger, paths map[string]struct{}, eventType string, filePathsByPath map[string][]string) {
 	if len(paths) == 0 {
 		return
 	}
@@ -402,13 +402,58 @@ func (p *Poller) queuePaths(trigger *database.Trigger, paths map[string]struct{}
 	type queuedPath struct {
 		raw       string
 		rewritten string
+		filePaths []string
 	}
 
-	matchesFilters := func(path string) bool {
+	matchesFilters := func(rawPath, rewrittenPath string, rawFilePaths, rewrittenFilePaths []string) bool {
 		if trigger.Type == database.TriggerTypeGDrive {
-			return true
+			matcher := trigger.Config.MatchesPathFiltersWithoutPrefixes
+			if trigger.Config.FilterAfterRewrite {
+				if len(rewrittenFilePaths) > 0 {
+					for _, path := range rewrittenFilePaths {
+						if matcher(path) {
+							return true
+						}
+					}
+					return false
+				}
+				return matcher(rewrittenPath)
+			}
+			if len(rawFilePaths) > 0 {
+				for _, path := range rawFilePaths {
+					if matcher(path) {
+						return true
+					}
+				}
+				return false
+			}
+			return matcher(rawPath)
 		}
-		return trigger.Config.MatchesPathFilters(path)
+		if trigger.Config.FilterAfterRewrite {
+			return trigger.Config.MatchesPathFilters(rewrittenPath)
+		}
+		return trigger.Config.MatchesPathFilters(rawPath)
+	}
+
+	appendUnique := func(existing, incoming []string) []string {
+		if len(incoming) == 0 {
+			return existing
+		}
+		if len(existing) == 0 {
+			return append([]string(nil), incoming...)
+		}
+		seen := make(map[string]struct{}, len(existing))
+		for _, path := range existing {
+			seen[path] = struct{}{}
+		}
+		for _, path := range incoming {
+			if _, ok := seen[path]; ok {
+				continue
+			}
+			existing = append(existing, path)
+			seen[path] = struct{}{}
+		}
+		return existing
 	}
 
 	unique := make([]string, 0, len(paths))
@@ -428,21 +473,38 @@ func (p *Poller) queuePaths(trigger *database.Trigger, paths map[string]struct{}
 				continue
 			}
 		}
-		if trigger.Config.FilterAfterRewrite {
-			rewritten := triggerpaths.ApplyPathRewrites([]string{raw}, rewrites)[0]
-			rewritten = filepath.Clean(rewritten)
-			if !matchesFilters(rewritten) {
-				continue
-			}
-			pairs = append(pairs, queuedPath{raw: raw, rewritten: rewritten})
-		} else {
-			if !matchesFilters(raw) {
-				continue
-			}
-			rewritten := triggerpaths.ApplyPathRewrites([]string{raw}, rewrites)[0]
-			rewritten = filepath.Clean(rewritten)
-			pairs = append(pairs, queuedPath{raw: raw, rewritten: rewritten})
+
+		rawFilePaths := []string(nil)
+		if filePathsByPath != nil {
+			rawFilePaths = filePathsByPath[raw]
 		}
+		if len(rawFilePaths) > 0 {
+			cleanedFilePaths := make([]string, 0, len(rawFilePaths))
+			for _, path := range rawFilePaths {
+				cleaned := filepath.Clean(path)
+				if cleaned == "" || cleaned == "." {
+					continue
+				}
+				cleanedFilePaths = append(cleanedFilePaths, cleaned)
+			}
+			rawFilePaths = cleanedFilePaths
+		}
+
+		rewritten := triggerpaths.ApplyPathRewrites([]string{raw}, rewrites)[0]
+		rewritten = filepath.Clean(rewritten)
+
+		var rewrittenFilePaths []string
+		if len(rawFilePaths) > 0 {
+			rewrittenFilePaths = triggerpaths.ApplyPathRewrites(rawFilePaths, rewrites)
+			for i := range rewrittenFilePaths {
+				rewrittenFilePaths[i] = filepath.Clean(rewrittenFilePaths[i])
+			}
+		}
+
+		if !matchesFilters(raw, rewritten, rawFilePaths, rewrittenFilePaths) {
+			continue
+		}
+		pairs = append(pairs, queuedPath{raw: raw, rewritten: rewritten, filePaths: rewrittenFilePaths})
 	}
 
 	postFilterCount := len(pairs)
@@ -510,21 +572,24 @@ func (p *Poller) queuePaths(trigger *database.Trigger, paths map[string]struct{}
 		return
 	}
 
-	uniqueRewritten := make(map[string]string, len(filteredPairs))
+	uniqueRewritten := make(map[string]queuedPath, len(filteredPairs))
 	for _, pair := range filteredPairs {
-		if _, exists := uniqueRewritten[pair.rewritten]; exists {
+		if existing, exists := uniqueRewritten[pair.rewritten]; exists {
+			existing.filePaths = appendUnique(existing.filePaths, pair.filePaths)
+			uniqueRewritten[pair.rewritten] = existing
 			continue
 		}
-		uniqueRewritten[pair.rewritten] = pair.raw
+		uniqueRewritten[pair.rewritten] = pair
 	}
 
-	for rewritten, raw := range uniqueRewritten {
+	for _, pair := range uniqueRewritten {
 		p.proc.QueueScan(processor.ScanRequest{
-			Path:        rewritten,
-			TriggerPath: raw,
+			Path:        pair.rewritten,
+			TriggerPath: pair.raw,
 			TriggerID:   &trigger.ID,
 			Priority:    trigger.Priority,
 			EventType:   eventType,
+			FilePaths:   pair.filePaths,
 		})
 	}
 }
@@ -663,8 +728,10 @@ func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, curr
 
 	changePaths := make(map[string]struct{})
 	directChangePaths := make(map[string]struct{})
+	changeFilePaths := make(map[string][]string)
 	deleteFolderPaths := make(map[string]struct{})
 	deleteFilePaths := make(map[string]struct{})
+	deleteFilePathsByDir := make(map[string][]string)
 
 	for fileID, prev := range prevSnapshot {
 		if prev == nil {
@@ -682,7 +749,9 @@ func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, curr
 		if prev.MimeType == gdriveFolderMimeType {
 			deleteFolderPaths[pathValue] = struct{}{}
 		} else {
-			deleteFilePaths[filepath.Dir(pathValue)] = struct{}{}
+			dirPath := filepath.Clean(filepath.Dir(pathValue))
+			deleteFilePaths[dirPath] = struct{}{}
+			deleteFilePathsByDir[dirPath] = append(deleteFilePathsByDir[dirPath], pathValue)
 		}
 	}
 
@@ -712,9 +781,10 @@ func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, curr
 			changePaths[pathValue] = struct{}{}
 			directChangePaths[pathValue] = struct{}{}
 		} else {
-			dirPath := filepath.Dir(pathValue)
+			dirPath := filepath.Clean(filepath.Dir(pathValue))
 			changePaths[dirPath] = struct{}{}
 			directChangePaths[dirPath] = struct{}{}
+			changeFilePaths[dirPath] = append(changeFilePaths[dirPath], pathValue)
 		}
 	}
 
@@ -736,8 +806,8 @@ func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, curr
 		deletePaths[pathValue] = struct{}{}
 	}
 
-	p.queuePaths(trigger, changePaths, "gdrive_change")
-	p.queuePaths(trigger, deletePaths, "gdrive_delete")
+	p.queuePaths(trigger, changePaths, "gdrive_change", changeFilePaths)
+	p.queuePaths(trigger, deletePaths, "gdrive_delete", deleteFilePathsByDir)
 }
 
 func (p *Poller) fetchSnapshotEntries(ctx context.Context, svc *drive.Service, trigger *database.Trigger) (map[string]*database.GDriveSnapshotEntry, []*database.GDriveSnapshotEntry, error) {
@@ -810,8 +880,10 @@ func (p *Poller) fetchSnapshotEntries(ctx context.Context, svc *drive.Service, t
 func (p *Poller) processChanges(ctx context.Context, svc *drive.Service, trigger *database.Trigger, tp *triggerPoll, resolver *PathResolver, pageToken string, queue bool) (string, error) {
 	changePaths := make(map[string]struct{})
 	directChangePaths := make(map[string]struct{})
+	changeFilePaths := make(map[string][]string)
 	deleteFolderPaths := make(map[string]struct{})
 	deleteFilePaths := make(map[string]struct{})
+	deleteFilePathsByDir := make(map[string][]string)
 
 	var nextToken string
 	for pageToken != "" {
@@ -836,7 +908,7 @@ func (p *Poller) processChanges(ctx context.Context, svc *drive.Service, trigger
 					Bool("removed", change.Removed).
 					Msg("GDrive change item")
 			}
-			p.applySnapshotChange(change, resolver, tp, changePaths, directChangePaths, deleteFolderPaths, deleteFilePaths, queue)
+			p.applySnapshotChange(change, resolver, tp, changePaths, directChangePaths, deleteFolderPaths, deleteFilePaths, changeFilePaths, deleteFilePathsByDir, queue)
 		}
 
 		if resp.NextPageToken != "" {
@@ -868,13 +940,13 @@ func (p *Poller) processChanges(ctx context.Context, svc *drive.Service, trigger
 		deletePaths[path] = struct{}{}
 	}
 
-	p.queuePaths(trigger, changePaths, "gdrive_change")
-	p.queuePaths(trigger, deletePaths, "gdrive_delete")
+	p.queuePaths(trigger, changePaths, "gdrive_change", changeFilePaths)
+	p.queuePaths(trigger, deletePaths, "gdrive_delete", deleteFilePathsByDir)
 
 	return nextToken, nil
 }
 
-func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolver, tp *triggerPoll, changePaths, directChangePaths, deleteFolderPaths, deleteFilePaths map[string]struct{}, queue bool) {
+func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolver, tp *triggerPoll, changePaths, directChangePaths, deleteFolderPaths, deleteFilePaths map[string]struct{}, changeFilePaths, deleteFilePathsByDir map[string][]string, queue bool) {
 	if change == nil || tp == nil || tp.trigger == nil {
 		return
 	}
@@ -891,7 +963,7 @@ func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolve
 
 	if change.File == nil {
 		if change.Removed {
-			p.handleSnapshotDelete(fileID, prev, tp, deleteFolderPaths, deleteFilePaths, queue)
+			p.handleSnapshotDelete(fileID, prev, tp, deleteFolderPaths, deleteFilePaths, deleteFilePathsByDir, queue)
 		}
 		return
 	}
@@ -917,7 +989,7 @@ func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolve
 	mimeType := strings.TrimSpace(file.MimeType)
 
 	if change.Removed || file.Trashed {
-		p.handleSnapshotDelete(fileID, prev, tp, deleteFolderPaths, deleteFilePaths, queue)
+		p.handleSnapshotDelete(fileID, prev, tp, deleteFolderPaths, deleteFilePaths, deleteFilePathsByDir, queue)
 		return
 	}
 
@@ -968,12 +1040,15 @@ func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolve
 		return
 	}
 
-	dirPath := filepath.Dir(pathValue)
+	dirPath := filepath.Clean(filepath.Dir(pathValue))
 	changePaths[dirPath] = struct{}{}
 	directChangePaths[dirPath] = struct{}{}
+	if changeFilePaths != nil {
+		changeFilePaths[dirPath] = append(changeFilePaths[dirPath], pathValue)
+	}
 }
 
-func (p *Poller) handleSnapshotDelete(fileID string, prev *database.GDriveSnapshotEntry, tp *triggerPoll, deleteFolderPaths, deleteFilePaths map[string]struct{}, queue bool) {
+func (p *Poller) handleSnapshotDelete(fileID string, prev *database.GDriveSnapshotEntry, tp *triggerPoll, deleteFolderPaths, deleteFilePaths map[string]struct{}, deleteFilePathsByDir map[string][]string, queue bool) {
 	if prev != nil {
 		if queue {
 			pathValue, ok := snapshotPath(fileID, tp.snapshot, tp.trigger.Config.GDriveDriveID, tp.rootID)
@@ -981,7 +1056,11 @@ func (p *Poller) handleSnapshotDelete(fileID string, prev *database.GDriveSnapsh
 				if prev.MimeType == gdriveFolderMimeType {
 					deleteFolderPaths[pathValue] = struct{}{}
 				} else {
-					deleteFilePaths[filepath.Dir(pathValue)] = struct{}{}
+					dirPath := filepath.Clean(filepath.Dir(pathValue))
+					deleteFilePaths[dirPath] = struct{}{}
+					if deleteFilePathsByDir != nil {
+						deleteFilePathsByDir[dirPath] = append(deleteFilePathsByDir[dirPath], pathValue)
+					}
 				}
 			}
 		}

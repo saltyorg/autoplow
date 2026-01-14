@@ -275,8 +275,9 @@
 
         <!-- Path Filters Section -->
         <div id="path-filters-section" class="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Path Filters (Optional)</h4>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Filter which paths this trigger will accept. Include paths are checked first (if any specified, path must match at least one). Exclude paths are then checked (path matching any will be rejected).</p>
+            <h4 id="path-filters-title" class="text-sm font-medium text-gray-900 dark:text-white mb-2">Path Filters (Optional)</h4>
+            <h4 id="gdrive-filters-title" class="hidden text-sm font-medium text-gray-900 dark:text-white mb-2">Google Drive Filters (Optional)</h4>
+            <p id="path-filters-description" class="text-xs text-gray-500 dark:text-gray-400 mb-4">Filter which paths this trigger will accept. Prefix filters are checked first (if configured), then extension and regex filters.</p>
 
             <div id="path-prefix-filters" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <!-- Include Paths -->
@@ -431,6 +432,10 @@
         const minAgeInput = document.getElementById('minimum_age_seconds');
         const filterTimingToggle = document.getElementById('filter-timing-toggle');
         const pathFiltersSection = document.getElementById('path-filters-section');
+        const pathPrefixFilters = document.getElementById('path-prefix-filters');
+        const pathFiltersTitle = document.getElementById('path-filters-title');
+        const gdriveFiltersTitle = document.getElementById('gdrive-filters-title');
+        const pathFiltersDescription = document.getElementById('path-filters-description');
 
         function setSectionEnabled(section, enabled) {
             if (!section) return;
@@ -469,8 +474,21 @@
             }
 
             if (pathFiltersSection) {
-                pathFiltersSection.classList.toggle('hidden', isGDrive);
-                setSectionEnabled(pathFiltersSection, !isGDrive);
+                pathFiltersSection.classList.remove('hidden');
+                setSectionEnabled(pathFiltersSection, true);
+            }
+
+            if (pathPrefixFilters) {
+                pathPrefixFilters.classList.toggle('hidden', isGDrive);
+                setSectionEnabled(pathPrefixFilters, !isGDrive);
+            }
+
+            if (pathFiltersTitle && gdriveFiltersTitle) {
+                pathFiltersTitle.classList.toggle('hidden', isGDrive);
+                gdriveFiltersTitle.classList.toggle('hidden', !isGDrive);
+            }
+            if (pathFiltersDescription) {
+                pathFiltersDescription.classList.toggle('hidden', isGDrive);
             }
 
             // Hide filter timing toggle for local triggers (they don't use path rewrites)
@@ -486,6 +504,12 @@
                 minAgeDesc.textContent = 'Wait time before processing (minimum 1 second)';
                 stabilityCheckField.classList.remove('hidden');
                 minAgeInput.min = '1';
+            } else if (isGDrive) {
+                fsTypeField.classList.add('hidden');
+                fsTypeSelect.value = 'remote';
+                fsSettingsDesc.textContent = 'Configure how long to wait before processing Google Drive files.';
+                minAgeDesc.textContent = 'Wait time before processing (minimum 60 seconds)';
+                updateFilesystemFields();
             } else {
                 // Show filesystem type selector for webhook triggers
                 fsTypeField.classList.remove('hidden');
@@ -1361,12 +1385,18 @@
         }
         </script>
 
-        {{if ne .Content.Trigger.Type "gdrive"}}
         <!-- Path Filters Section (Edit form) -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+            {{if eq .Content.Trigger.Type "gdrive"}}
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Google Drive Filters (Optional)</h4>
+            {{else}}
             <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Path Filters (Optional)</h4>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Filter which paths this trigger will accept. Include paths are checked first (if any specified, path must match at least one). Exclude paths are then checked (path matching any will be rejected).</p>
+            {{end}}
+            {{if ne .Content.Trigger.Type "gdrive"}}
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Filter which paths this trigger will accept. Prefix filters are checked first (if configured), then extension and regex filters.</p>
+            {{end}}
 
+            {{if ne .Content.Trigger.Type "gdrive"}}
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <!-- Include Paths -->
                 <div>
@@ -1416,6 +1446,7 @@
                     </div>
                 </div>
             </div>
+            {{end}}
 
             <!-- Filter Timing Toggle (for webhook triggers only) -->
             {{if and (ne .Content.Trigger.Type "inotify") (ne .Content.Trigger.Type "polling") (ne .Content.Trigger.Type "gdrive")}}
@@ -1506,7 +1537,6 @@
                 <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Examples: <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">.*\.(mkv|mp4)$</code> for video files, <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">(?i)sample</code> for case-insensitive "sample"</p>
             </div>
         </div>
-        {{end}}
 
         <!-- Filesystem Settings Section (Edit form) -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
@@ -1531,9 +1561,16 @@
                 </div>
             </div>
             {{else}}
+            {{if eq .Content.Trigger.Type "gdrive"}}
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Configure how long to wait before processing Google Drive files.</p>
+            {{else}}
             <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Configure how to wait for files before processing. Remote filesystems use a simple delay; local filesystems check if file size has stopped changing.</p>
+            {{end}}
 
             <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                {{if eq .Content.Trigger.Type "gdrive"}}
+                <input type="hidden" name="filesystem_type" value="remote">
+                {{else}}
                 <div>
                     <label for="edit_filesystem_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Filesystem Type</label>
                     <select name="filesystem_type" id="edit_filesystem_type"
@@ -1543,20 +1580,28 @@
                     </select>
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Remote uses dumb delay; local checks file stability</p>
                 </div>
+                {{end}}
                 <div>
                     <label for="edit_minimum_age_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum Age (seconds)</label>
                     <input type="text" inputmode="numeric" name="minimum_age_seconds" id="edit_minimum_age_seconds" value="{{if .Content.Trigger.Config.MinimumAgeSeconds}}{{.Content.Trigger.Config.MinimumAgeSeconds}}{{else}}60{{end}}"
                         class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
+                    {{if eq .Content.Trigger.Type "gdrive"}}
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Wait time before processing (minimum 60 seconds)</p>
+                    {{else}}
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Wait time before processing (min 60s for remote, 1s for local)</p>
+                    {{end}}
                 </div>
+                {{if ne .Content.Trigger.Type "gdrive"}}
                 <div id="edit-stability-check-field">
                     <label for="edit_stability_check_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Stability Check Interval (seconds)</label>
                     <input type="text" inputmode="numeric" name="stability_check_seconds" id="edit_stability_check_seconds" value="{{if .Content.Trigger.Config.StabilityCheckSeconds}}{{.Content.Trigger.Config.StabilityCheckSeconds}}{{else}}10{{end}}"
                         class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How often to check if file size has changed (local only)</p>
                 </div>
+                {{end}}
             </div>
 
+            {{if ne .Content.Trigger.Type "gdrive"}}
             <script>
             (function() {
                 const fsTypeSelect = document.getElementById('edit_filesystem_type');
@@ -1580,6 +1625,7 @@
                 updateEditFilesystemFields();
             })();
             </script>
+            {{end}}
             {{end}}
         </div>
 

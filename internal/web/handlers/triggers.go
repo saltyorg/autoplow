@@ -267,9 +267,27 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 	if trigger.Type == database.TriggerTypeGDrive {
 		trigger.Config.IncludePaths = nil
 		trigger.Config.ExcludePaths = nil
-		trigger.Config.ExcludeExtensions = nil
-		trigger.Config.AdvancedFilters = nil
 		trigger.Config.FilterAfterRewrite = false
+
+		// Parse exclude extensions
+		trigger.Config.ExcludeExtensions = parsePathList(r, "exclude_extensions[]")
+
+		// Parse advanced filters (regex patterns)
+		advIncludePatterns := parsePathList(r, "advanced_include_patterns[]")
+		advExcludePatterns := parsePathList(r, "advanced_exclude_patterns[]")
+		if len(advIncludePatterns) > 0 || len(advExcludePatterns) > 0 {
+			trigger.Config.AdvancedFilters = &database.AdvancedFilters{
+				IncludePatterns: advIncludePatterns,
+				ExcludePatterns: advExcludePatterns,
+			}
+			// Validate regex patterns
+			if err := trigger.Config.AdvancedFilters.Compile(); err != nil {
+				respondError(http.StatusBadRequest, "Invalid regex pattern: "+err.Error())
+				return
+			}
+		} else {
+			trigger.Config.AdvancedFilters = nil
+		}
 	} else {
 		trigger.Config.IncludePaths = parsePathList(r, "include_paths[]")
 		trigger.Config.ExcludePaths = parsePathList(r, "exclude_paths[]")
@@ -298,6 +316,9 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 	trigger.Config.FilesystemType = database.FilesystemType(r.FormValue("filesystem_type"))
 	if trigger.Config.FilesystemType == "" {
 		trigger.Config.FilesystemType = database.FilesystemTypeRemote // default
+	}
+	if trigger.Type == database.TriggerTypeGDrive {
+		trigger.Config.FilesystemType = database.FilesystemTypeRemote
 	}
 
 	minAgeSeconds, _ := strconv.Atoi(r.FormValue("minimum_age_seconds"))
@@ -598,9 +619,27 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 	if trigger.Type == database.TriggerTypeGDrive {
 		trigger.Config.IncludePaths = nil
 		trigger.Config.ExcludePaths = nil
-		trigger.Config.ExcludeExtensions = nil
-		trigger.Config.AdvancedFilters = nil
 		trigger.Config.FilterAfterRewrite = false
+
+		// Parse exclude extensions
+		trigger.Config.ExcludeExtensions = parsePathList(r, "exclude_extensions[]")
+
+		// Parse advanced filters (regex patterns)
+		advIncludePatterns := parsePathList(r, "advanced_include_patterns[]")
+		advExcludePatterns := parsePathList(r, "advanced_exclude_patterns[]")
+		if len(advIncludePatterns) > 0 || len(advExcludePatterns) > 0 {
+			trigger.Config.AdvancedFilters = &database.AdvancedFilters{
+				IncludePatterns: advIncludePatterns,
+				ExcludePatterns: advExcludePatterns,
+			}
+			// Validate regex patterns
+			if err := trigger.Config.AdvancedFilters.Compile(); err != nil {
+				respondError(http.StatusBadRequest, "Invalid regex pattern: "+err.Error(), "/triggers/"+idStr)
+				return
+			}
+		} else {
+			trigger.Config.AdvancedFilters = nil
+		}
 	} else {
 		trigger.Config.IncludePaths = parsePathList(r, "include_paths[]")
 		trigger.Config.ExcludePaths = parsePathList(r, "exclude_paths[]")
@@ -631,6 +670,9 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 	trigger.Config.FilesystemType = database.FilesystemType(r.FormValue("filesystem_type"))
 	if trigger.Config.FilesystemType == "" {
 		trigger.Config.FilesystemType = database.FilesystemTypeRemote // default
+	}
+	if trigger.Type == database.TriggerTypeGDrive {
+		trigger.Config.FilesystemType = database.FilesystemTypeRemote
 	}
 
 	minAgeSeconds, _ := strconv.Atoi(r.FormValue("minimum_age_seconds"))
