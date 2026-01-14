@@ -320,7 +320,7 @@ func (h *Handlers) SettingsGDriveAccountFolders(w http.ResponseWriter, r *http.R
 	rootPrefix := gdrive.RootPrefix(driveID, driveName)
 	parentPath := rootPrefix
 	if parentID != "root" && parentID != driveID {
-		resolver := gdrive.NewPathResolver(svc, driveID, driveName)
+		resolver := gdrive.NewPathResolver(ctx, svc, driveID, driveName, "")
 		resolved, _, err := resolver.ResolvePath(parentID)
 		if err != nil {
 			h.jsonError(w, "Failed to resolve parent folder path", http.StatusInternalServerError)

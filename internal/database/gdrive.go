@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -134,36 +135,92 @@ func (db *db) DeleteGDriveAccount(id int64) error {
 
 // GDriveSyncState tracks the last sync token for a trigger.
 type GDriveSyncState struct {
-	TriggerID int64     `json:"trigger_id"`
-	PageToken string    `json:"page_token"`
-	UpdatedAt time.Time `json:"updated_at"`
+	TriggerID   int64            `json:"trigger_id"`
+	PageToken   string           `json:"page_token"`
+	Status      GDriveSyncStatus `json:"status"`
+	LastError   string           `json:"last_error"`
+	RootID      string           `json:"root_id"`
+	NextRetryAt *time.Time       `json:"next_retry_at,omitempty"`
+	UpdatedAt   time.Time        `json:"updated_at"`
 }
+
+// GDriveSyncStatus represents the sync lifecycle for a trigger.
+type GDriveSyncStatus string
+
+const (
+	GDriveSyncStatusPending GDriveSyncStatus = "pending"
+	GDriveSyncStatusReady   GDriveSyncStatus = "ready"
+	GDriveSyncStatusFailed  GDriveSyncStatus = "failed"
+)
 
 // GetGDriveSyncState retrieves sync state for a trigger.
 func (db *db) GetGDriveSyncState(triggerID int64) (*GDriveSyncState, error) {
 	var state GDriveSyncState
+	var status sql.NullString
+	var lastError sql.NullString
+	var rootID sql.NullString
+	var nextRetryAt sql.NullTime
 	err := db.queryRow(`
-		SELECT trigger_id, page_token, updated_at
+		SELECT trigger_id, page_token, status, last_error, root_id, next_retry_at, updated_at
 		FROM gdrive_sync_state WHERE trigger_id = ?
-	`, triggerID).Scan(&state.TriggerID, &state.PageToken, &state.UpdatedAt)
+	`, triggerID).Scan(&state.TriggerID, &state.PageToken, &status, &lastError, &rootID, &nextRetryAt, &state.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get gdrive sync state: %w", err)
 	}
+	if status.Valid {
+		state.Status = GDriveSyncStatus(status.String)
+	}
+	if state.Status == "" {
+		if strings.TrimSpace(state.PageToken) != "" {
+			state.Status = GDriveSyncStatusReady
+		} else {
+			state.Status = GDriveSyncStatusPending
+		}
+	}
+	if lastError.Valid {
+		state.LastError = lastError.String
+	}
+	if rootID.Valid {
+		state.RootID = rootID.String
+	}
+	if nextRetryAt.Valid {
+		t := nextRetryAt.Time
+		state.NextRetryAt = &t
+	}
 	return &state, nil
 }
 
 // UpsertGDriveSyncState stores sync state for a trigger.
-func (db *db) UpsertGDriveSyncState(triggerID int64, pageToken string) error {
+func (db *db) UpsertGDriveSyncState(state *GDriveSyncState) error {
+	if state == nil {
+		return fmt.Errorf("missing gdrive sync state")
+	}
+	status := state.Status
+	if status == "" {
+		if strings.TrimSpace(state.PageToken) != "" {
+			status = GDriveSyncStatusReady
+		} else {
+			status = GDriveSyncStatusPending
+		}
+	}
+	var nextRetryAt any
+	if state.NextRetryAt != nil {
+		nextRetryAt = *state.NextRetryAt
+	}
 	_, err := db.exec(`
-		INSERT INTO gdrive_sync_state (trigger_id, page_token, updated_at)
-		VALUES (?, ?, ?)
+		INSERT INTO gdrive_sync_state (trigger_id, page_token, status, last_error, root_id, next_retry_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(trigger_id) DO UPDATE SET
 			page_token = excluded.page_token,
+			status = excluded.status,
+			last_error = excluded.last_error,
+			root_id = excluded.root_id,
+			next_retry_at = excluded.next_retry_at,
 			updated_at = excluded.updated_at
-	`, triggerID, pageToken, time.Now())
+	`, state.TriggerID, state.PageToken, status, state.LastError, state.RootID, nextRetryAt, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to upsert gdrive sync state: %w", err)
 	}

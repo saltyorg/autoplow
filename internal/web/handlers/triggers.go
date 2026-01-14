@@ -949,7 +949,7 @@ func (h *Handlers) resolveGDrivePathMappings(ctx context.Context, accountID int6
 		return nil, fmt.Errorf("failed to connect to Google Drive")
 	}
 
-	resolver := gdrive.NewPathResolver(driveSvc, driveID, "")
+	resolver := gdrive.NewPathResolver(ctx, driveSvc, driveID, "", "")
 	rewrites := make([]database.GDrivePathRewrite, 0, len(fromIDs))
 	for i := 0; i < len(fromIDs) && i < len(toPaths); i++ {
 		fromID := strings.TrimSpace(fromIDs[i])

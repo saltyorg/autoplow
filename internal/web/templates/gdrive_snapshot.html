@@ -54,6 +54,14 @@
                     {{.SyncStatusLabel}}
                 </span>
             </div>
+            {{if and .SyncState (eq .SyncState.Status "failed")}}
+            {{if .SyncState.LastError}}
+            <div class="mt-2 text-xs text-red-600 dark:text-red-400 break-words">Last error: {{.SyncState.LastError}}</div>
+            {{end}}
+            {{if .SyncState.NextRetryAt}}
+            <div class="mt-1 text-xs text-red-600 dark:text-red-400">Next retry: <span class="pal-time" data-utc="{{isoTimePtr .SyncState.NextRetryAt}}">{{formatTimePtr .SyncState.NextRetryAt}}</span></div>
+            {{end}}
+            {{end}}
         </div>
     </div>
 

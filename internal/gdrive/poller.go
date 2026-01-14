@@ -26,6 +26,7 @@ import (
 const pollInterval = 60 * time.Second
 const gdriveFolderMimeType = "application/vnd.google-apps.folder"
 const gdriveTraceLimit = 20
+const gdriveInitialSyncRetryDelay = 5 * time.Minute
 
 // Poller watches Google Drive for changes and queues scans.
 type Poller struct {
@@ -47,6 +48,7 @@ type triggerPoll struct {
 	cancel    context.CancelFunc
 	driveID   string
 	driveName string
+	rootID    string
 	snapshot  map[string]*database.GDriveSnapshotEntry
 	loaded    bool
 }
@@ -279,6 +281,12 @@ func (p *Poller) pollOnce(tp *triggerPoll) {
 		return
 	}
 
+	rootID, err := p.ensureDriveRootID(tp.ctx, driveSvc, tp, trigger.Config.GDriveDriveID)
+	if err != nil {
+		p.scheduleSnapshotRetry(trigger, "", err, "Failed to resolve gdrive root id")
+		return
+	}
+
 	if log.Trace().Enabled() {
 		log.Trace().
 			Int64("trigger_id", trigger.ID).
@@ -299,9 +307,20 @@ func (p *Poller) pollOnce(tp *triggerPoll) {
 		return
 	}
 
-	if state == nil || state.PageToken == "" {
+	if state != nil && state.Status == database.GDriveSyncStatusFailed {
+		if state.NextRetryAt != nil && time.Now().Before(*state.NextRetryAt) {
+			log.Debug().
+				Int64("trigger_id", trigger.ID).
+				Str("trigger", trigger.Name).
+				Time("retry_at", *state.NextRetryAt).
+				Msg("GDrive initial sync retry pending")
+			return
+		}
+	}
+
+	if state == nil || state.PageToken == "" || state.Status != database.GDriveSyncStatusReady {
 		if err := p.refreshSnapshot(tp.ctx, driveSvc, tp, trigger, false); err != nil {
-			log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to initialize gdrive snapshot")
+			p.scheduleSnapshotRetry(trigger, rootID, err, "Failed to initialize gdrive snapshot")
 			return
 		}
 		log.Debug().
@@ -311,14 +330,14 @@ func (p *Poller) pollOnce(tp *triggerPoll) {
 		return
 	}
 
-	resolver := NewPathResolver(driveSvc, trigger.Config.GDriveDriveID, driveName)
+	resolver := NewPathResolver(tp.ctx, driveSvc, trigger.Config.GDriveDriveID, driveName, rootID)
 
 	nextToken, err := p.processChanges(tp.ctx, driveSvc, trigger, tp, resolver, state.PageToken, true)
 	if err != nil {
 		if isInvalidPageToken(err) {
 			log.Warn().Err(err).Int64("trigger_id", trigger.ID).Msg("GDrive page token expired; rebuilding snapshot")
 			if err := p.refreshSnapshot(tp.ctx, driveSvc, tp, trigger, true); err != nil {
-				log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to rebuild gdrive snapshot")
+				p.scheduleSnapshotRetry(trigger, rootID, err, "Failed to rebuild gdrive snapshot")
 			}
 			return
 		}
@@ -330,9 +349,44 @@ func (p *Poller) pollOnce(tp *triggerPoll) {
 		return
 	}
 
-	if err := p.db.UpsertGDriveSyncState(trigger.ID, nextToken); err != nil {
+	if err := p.db.UpsertGDriveSyncState(&database.GDriveSyncState{
+		TriggerID: trigger.ID,
+		PageToken: nextToken,
+		Status:    database.GDriveSyncStatusReady,
+		LastError: "",
+		RootID:    rootID,
+	}); err != nil {
 		log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to update gdrive page token")
 	}
+}
+
+func (p *Poller) scheduleSnapshotRetry(trigger *database.Trigger, rootID string, err error, reason string) {
+	if trigger == nil || err == nil {
+		return
+	}
+
+	retryAt := time.Now().Add(gdriveInitialSyncRetryDelay)
+	errMsg := err.Error()
+	if len(errMsg) > 500 {
+		errMsg = errMsg[:500]
+	}
+
+	if dbErr := p.db.UpsertGDriveSyncState(&database.GDriveSyncState{
+		TriggerID:   trigger.ID,
+		Status:      database.GDriveSyncStatusFailed,
+		LastError:   errMsg,
+		RootID:      strings.TrimSpace(rootID),
+		NextRetryAt: &retryAt,
+	}); dbErr != nil {
+		log.Error().Err(dbErr).Int64("trigger_id", trigger.ID).Msg("Failed to record gdrive sync failure")
+	}
+
+	log.Error().
+		Err(err).
+		Int64("trigger_id", trigger.ID).
+		Str("trigger", trigger.Name).
+		Time("retry_at", retryAt).
+		Msg(reason)
 }
 
 func (p *Poller) queuePaths(trigger *database.Trigger, paths map[string]struct{}, eventType string) {
@@ -559,7 +613,7 @@ func (p *Poller) refreshSnapshot(ctx context.Context, svc *drive.Service, tp *tr
 	}
 
 	if queueDiff && len(prevSnapshot) > 0 {
-		p.queueSnapshotDiff(trigger, prevSnapshot, tp.snapshot)
+		p.queueSnapshotDiff(trigger, prevSnapshot, tp.snapshot, tp.rootID)
 	}
 
 	nextToken, err := p.getStartPageToken(ctx, svc, trigger.Config.GDriveDriveID)
@@ -573,7 +627,13 @@ func (p *Poller) refreshSnapshot(ctx context.Context, svc *drive.Service, tp *tr
 		return fmt.Errorf("missing start page token")
 	}
 
-	if err := p.db.UpsertGDriveSyncState(trigger.ID, nextToken); err != nil {
+	if err := p.db.UpsertGDriveSyncState(&database.GDriveSyncState{
+		TriggerID: trigger.ID,
+		PageToken: nextToken,
+		Status:    database.GDriveSyncStatusReady,
+		LastError: "",
+		RootID:    tp.rootID,
+	}); err != nil {
 		return err
 	}
 
@@ -596,7 +656,7 @@ func (p *Poller) refreshSnapshot(ctx context.Context, svc *drive.Service, tp *tr
 	return nil
 }
 
-func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, currentSnapshot map[string]*database.GDriveSnapshotEntry) {
+func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, currentSnapshot map[string]*database.GDriveSnapshotEntry, rootID string) {
 	if trigger == nil {
 		return
 	}
@@ -614,7 +674,7 @@ func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, curr
 			continue
 		}
 
-		pathValue, ok := snapshotPath(fileID, prevSnapshot, trigger.Config.GDriveDriveID)
+		pathValue, ok := snapshotPath(fileID, prevSnapshot, trigger.Config.GDriveDriveID, rootID)
 		if !ok || pathValue == "" {
 			continue
 		}
@@ -643,7 +703,7 @@ func (p *Poller) queueSnapshotDiff(trigger *database.Trigger, prevSnapshot, curr
 			continue
 		}
 
-		pathValue, ok := snapshotPath(fileID, currentSnapshot, trigger.Config.GDriveDriveID)
+		pathValue, ok := snapshotPath(fileID, currentSnapshot, trigger.Config.GDriveDriveID, rootID)
 		if !ok || pathValue == "" {
 			continue
 		}
@@ -684,22 +744,33 @@ func (p *Poller) fetchSnapshotEntries(ctx context.Context, svc *drive.Service, t
 	snapshot := make(map[string]*database.GDriveSnapshotEntry)
 	entries := make([]*database.GDriveSnapshotEntry, 0, 1024)
 
+	driveID := ""
+	if trigger != nil {
+		driveID = strings.TrimSpace(trigger.Config.GDriveDriveID)
+	}
+
 	pageToken := ""
 	for {
 		req := svc.Files.List().
 			Q("trashed=false").
-			SupportsAllDrives(true).
-			IncludeItemsFromAllDrives(true).
 			PageSize(1000).
 			Fields("nextPageToken,files(id,name,parents,mimeType,trashed)")
-		if trigger.Config.GDriveDriveID != "" {
-			req = req.DriveId(trigger.Config.GDriveDriveID).Corpora("drive")
+		if driveID != "" {
+			req = req.DriveId(driveID).
+				Corpora("drive").
+				SupportsAllDrives(true).
+				IncludeItemsFromAllDrives(true)
+		} else {
+			req = req.SupportsAllDrives(true).
+				IncludeItemsFromAllDrives(false)
 		}
 		if pageToken != "" {
 			req = req.PageToken(pageToken)
 		}
 
-		resp, err := req.Context(ctx).Do()
+		resp, err := doGDriveRequest(ctx, "gdrive.files.list", func() (*drive.FileList, error) {
+			return req.Context(ctx).Do()
+		})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -885,7 +956,7 @@ func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolve
 		resolver.SeedFile(file)
 	}
 
-	pathValue, ok := resolveChangePath(fileID, resolver, tp.snapshot, tp.trigger.Config.GDriveDriveID)
+	pathValue, ok := resolveChangePath(fileID, resolver, tp.snapshot, tp.trigger.Config.GDriveDriveID, tp.rootID)
 	if !ok {
 		log.Debug().Str("file_id", fileID).Msg("Failed to resolve gdrive path")
 		return
@@ -905,7 +976,7 @@ func (p *Poller) applySnapshotChange(change *drive.Change, resolver *PathResolve
 func (p *Poller) handleSnapshotDelete(fileID string, prev *database.GDriveSnapshotEntry, tp *triggerPoll, deleteFolderPaths, deleteFilePaths map[string]struct{}, queue bool) {
 	if prev != nil {
 		if queue {
-			pathValue, ok := snapshotPath(fileID, tp.snapshot, tp.trigger.Config.GDriveDriveID)
+			pathValue, ok := snapshotPath(fileID, tp.snapshot, tp.trigger.Config.GDriveDriveID, tp.rootID)
 			if ok && pathValue != "" {
 				if prev.MimeType == gdriveFolderMimeType {
 					deleteFolderPaths[pathValue] = struct{}{}
@@ -921,10 +992,10 @@ func (p *Poller) handleSnapshotDelete(fileID string, prev *database.GDriveSnapsh
 	}
 }
 
-func resolveChangePath(fileID string, resolver *PathResolver, snapshot map[string]*database.GDriveSnapshotEntry, driveID string) (string, bool) {
+func resolveChangePath(fileID string, resolver *PathResolver, snapshot map[string]*database.GDriveSnapshotEntry, driveID, rootID string) (string, bool) {
 	if snapshot != nil {
 		if _, ok := snapshot[fileID]; ok {
-			pathValue, ok := snapshotPath(fileID, snapshot, driveID)
+			pathValue, ok := snapshotPath(fileID, snapshot, driveID, rootID)
 			if ok && pathValue != "" {
 				return pathValue, true
 			}
@@ -938,19 +1009,20 @@ func resolveChangePath(fileID string, resolver *PathResolver, snapshot map[strin
 		}
 	}
 
-	return snapshotPath(fileID, snapshot, driveID)
+	return snapshotPath(fileID, snapshot, driveID, rootID)
 }
 
-func snapshotPath(fileID string, snapshot map[string]*database.GDriveSnapshotEntry, driveID string) (string, bool) {
+func snapshotPath(fileID string, snapshot map[string]*database.GDriveSnapshotEntry, driveID, rootID string) (string, bool) {
 	if fileID == "" {
 		return "", false
 	}
 
+	rootID = strings.TrimSpace(rootID)
 	visited := make(map[string]struct{})
 	parts := make([]string, 0, 8)
 	currentID := fileID
 	for {
-		if currentID == "" || currentID == "root" || (driveID != "" && currentID == driveID) {
+		if currentID == "" || currentID == "root" || (driveID != "" && currentID == driveID) || (rootID != "" && currentID == rootID) {
 			break
 		}
 		if _, seen := visited[currentID]; seen {
@@ -968,7 +1040,7 @@ func snapshotPath(fileID string, snapshot map[string]*database.GDriveSnapshotEnt
 		}
 
 		parentID := strings.TrimSpace(entry.ParentID)
-		if parentID == "" || parentID == "root" || (driveID != "" && parentID == driveID) {
+		if parentID == "" || parentID == "root" || (driveID != "" && parentID == driveID) || (rootID != "" && parentID == rootID) {
 			break
 		}
 		currentID = parentID
@@ -1083,7 +1155,9 @@ func (p *Poller) getStartPageToken(ctx context.Context, svc *drive.Service, driv
 	if driveID != "" {
 		req = req.DriveId(driveID).SupportsAllDrives(true)
 	}
-	resp, err := req.Context(ctx).Do()
+	resp, err := doGDriveRequest(ctx, "gdrive.changes.start_token", func() (*drive.StartPageToken, error) {
+		return req.Context(ctx).Do()
+	})
 	if err != nil {
 		return "", err
 	}
@@ -1094,15 +1168,20 @@ func (p *Poller) getStartPageToken(ctx context.Context, svc *drive.Service, driv
 }
 
 func (p *Poller) listChanges(ctx context.Context, svc *drive.Service, driveID, pageToken string) (*drive.ChangeList, error) {
+	driveID = strings.TrimSpace(driveID)
 	req := svc.Changes.List(pageToken).
-		IncludeItemsFromAllDrives(true).
 		SupportsAllDrives(true).
 		IncludeRemoved(true).
 		Fields("nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,parents,mimeType,trashed))")
 	if driveID != "" {
-		req = req.DriveId(driveID)
+		req = req.DriveId(driveID).
+			IncludeItemsFromAllDrives(true)
+	} else {
+		req = req.IncludeItemsFromAllDrives(false)
 	}
-	resp, err := req.Context(ctx).Do()
+	resp, err := doGDriveRequest(ctx, "gdrive.changes.list", func() (*drive.ChangeList, error) {
+		return req.Context(ctx).Do()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1126,7 +1205,10 @@ func (p *Poller) ensureDriveName(ctx context.Context, svc *drive.Service, tp *tr
 		return tp.driveName, nil
 	}
 
-	resp, err := svc.Drives.Get(driveID).Context(ctx).Do()
+	req := svc.Drives.Get(driveID)
+	resp, err := doGDriveRequest(ctx, "gdrive.drives.get", func() (*drive.Drive, error) {
+		return req.Context(ctx).Do()
+	})
 	if err != nil {
 		return "", err
 	}
@@ -1139,6 +1221,31 @@ func (p *Poller) ensureDriveName(ctx context.Context, svc *drive.Service, tp *tr
 	tp.driveName = resp.Name
 	tp.driveID = driveID
 	return tp.driveName, nil
+}
+
+func (p *Poller) ensureDriveRootID(ctx context.Context, svc *drive.Service, tp *triggerPoll, driveID string) (string, error) {
+	driveID = strings.TrimSpace(driveID)
+	if driveID != "" {
+		tp.rootID = driveID
+		return tp.rootID, nil
+	}
+	if tp.rootID != "" {
+		return tp.rootID, nil
+	}
+
+	req := svc.Files.Get("root").SupportsAllDrives(true).Fields("id")
+	root, err := doGDriveRequest(ctx, "gdrive.files.get_root", func() (*drive.File, error) {
+		return req.Context(ctx).Do()
+	})
+	if err != nil {
+		return "", err
+	}
+	rootID := strings.TrimSpace(root.Id)
+	if rootID == "" {
+		return "", fmt.Errorf("missing gdrive root id")
+	}
+	tp.rootID = rootID
+	return rootID, nil
 }
 
 func pruneGDriveChangePaths(paths, directPaths map[string]struct{}) map[string]struct{} {

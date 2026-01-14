@@ -134,7 +134,12 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 			snapshot[entry.FileID] = entry
 		}
 
-		pathCache := buildSnapshotPathCache(snapshot, selectedTrigger.Config.GDriveDriveID)
+		syncState, _ = h.db.GetGDriveSyncState(selectedTrigger.ID)
+		rootID := ""
+		if syncState != nil {
+			rootID = syncState.RootID
+		}
+		pathCache := buildSnapshotPathCache(snapshot, selectedTrigger.Config.GDriveDriveID, rootID)
 
 		items = make([]gdriveSnapshotItem, 0, len(entries))
 		for _, entry := range entries {
@@ -214,8 +219,10 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 		prevPage = page - 1
 		nextPage = page + 1
 
-		syncState, _ = h.db.GetGDriveSyncState(selectedTrigger.ID)
-		if syncState == nil || syncState.PageToken == "" {
+		if syncState != nil && syncState.Status == database.GDriveSyncStatusFailed {
+			syncStatusLabel = "Sync failed"
+			syncStatusBadge = "bg-red-50 dark:bg-red-900/50 text-red-700 dark:text-red-400"
+		} else if syncState == nil || syncState.PageToken == "" || syncState.Status != database.GDriveSyncStatusReady {
 			if gdriveRunning {
 				syncStatusLabel = "Initial sync in progress"
 				syncStatusBadge = "bg-yellow-50 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400"
@@ -303,7 +310,7 @@ func (h *Handlers) GDriveSnapshotReset(w http.ResponseWriter, r *http.Request) {
 	h.redirect(w, r, "/gdrive-snapshot?trigger_id="+strconv.FormatInt(triggerID, 10))
 }
 
-func buildSnapshotPathCache(snapshot map[string]*database.GDriveSnapshotEntry, driveID string) map[string]string {
+func buildSnapshotPathCache(snapshot map[string]*database.GDriveSnapshotEntry, driveID, rootID string) map[string]string {
 	cache := make(map[string]string, len(snapshot))
 
 	var resolve func(fileID string, visited map[string]struct{}) (string, bool)
@@ -311,7 +318,7 @@ func buildSnapshotPathCache(snapshot map[string]*database.GDriveSnapshotEntry, d
 		if fileID == "" {
 			return "", false
 		}
-		if fileID == "root" || (driveID != "" && fileID == driveID) {
+		if fileID == "root" || (driveID != "" && fileID == driveID) || (rootID != "" && fileID == rootID) {
 			return "/", true
 		}
 		if cached, ok := cache[fileID]; ok {
@@ -332,7 +339,7 @@ func buildSnapshotPathCache(snapshot map[string]*database.GDriveSnapshotEntry, d
 		}
 
 		parentID := strings.TrimSpace(entry.ParentID)
-		if parentID == "" || parentID == "root" || (driveID != "" && parentID == driveID) {
+		if parentID == "" || parentID == "root" || (driveID != "" && parentID == driveID) || (rootID != "" && parentID == rootID) {
 			pathValue := path.Join("/", name)
 			cache[fileID] = pathValue
 			return pathValue, true

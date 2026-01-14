@@ -966,6 +966,26 @@ var migrations = []migration{
 			CREATE INDEX idx_gdrive_snapshot_trigger ON gdrive_snapshot_entries(trigger_id);
 		`,
 	},
+	{
+		Version: 35,
+		Name:    "gdrive_sync_state_status",
+		SQL: `
+			ALTER TABLE gdrive_sync_state ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';
+			ALTER TABLE gdrive_sync_state ADD COLUMN last_error TEXT NOT NULL DEFAULT '';
+			ALTER TABLE gdrive_sync_state ADD COLUMN next_retry_at TIMESTAMP;
+
+			UPDATE gdrive_sync_state
+			SET status = 'ready'
+			WHERE page_token IS NOT NULL AND page_token != '';
+		`,
+	},
+	{
+		Version: 36,
+		Name:    "gdrive_sync_state_root_id",
+		SQL: `
+			ALTER TABLE gdrive_sync_state ADD COLUMN root_id TEXT NOT NULL DEFAULT '';
+		`,
+	},
 }
 
 // ensureMatcharrMismatchSchema backfills critical columns if migrations were skipped

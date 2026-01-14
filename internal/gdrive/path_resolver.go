@@ -1,6 +1,7 @@
 package gdrive
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -12,8 +13,10 @@ import (
 
 // PathResolver resolves Google Drive file or folder IDs to full paths with caching.
 type PathResolver struct {
+	ctx        context.Context
 	svc        *drive.Service
 	driveID    string
+	rootID     string
 	rootPrefix string
 	mu         sync.Mutex
 	cache      map[string]*drive.File
@@ -26,12 +29,17 @@ type resolvedPath struct {
 }
 
 // NewPathResolver creates a resolver for a specific drive ID and name.
-func NewPathResolver(svc *drive.Service, driveID, driveName string) *PathResolver {
+func NewPathResolver(ctx context.Context, svc *drive.Service, driveID, driveName, rootID string) *PathResolver {
 	prefix := RootPrefix(driveID, driveName)
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	return &PathResolver{
+		ctx:        ctx,
 		svc:        svc,
 		driveID:    driveID,
+		rootID:     strings.TrimSpace(rootID),
 		rootPrefix: prefix,
 		cache:      make(map[string]*drive.File),
 		pathCache:  make(map[string]resolvedPath),
@@ -40,6 +48,12 @@ func NewPathResolver(svc *drive.Service, driveID, driveName string) *PathResolve
 
 // ResolvePath resolves a file ID to a full path and its ancestor IDs.
 func (r *PathResolver) ResolvePath(fileID string) (string, []string, error) {
+	if r.driveID == "" && r.rootID == "" {
+		if err := r.ensureRootID(); err != nil {
+			return "", nil, err
+		}
+	}
+
 	r.mu.Lock()
 	if cached, ok := r.pathCache[fileID]; ok {
 		path := cached.path
@@ -117,7 +131,11 @@ func (r *PathResolver) resolve(file *drive.File) (string, []string, error) {
 		return "", nil, fmt.Errorf("file not found")
 	}
 
-	if len(file.Parents) == 0 || file.Parents[0] == "root" || (r.driveID != "" && file.Parents[0] == r.driveID) {
+	if r.isRootID(file.Id) {
+		return r.rootPrefix, []string{file.Id}, nil
+	}
+
+	if len(file.Parents) == 0 || file.Parents[0] == "root" || (r.driveID != "" && file.Parents[0] == r.driveID) || (r.rootID != "" && file.Parents[0] == r.rootID) {
 		path := filepath.ToSlash(filepath.Join(r.rootPrefix, file.Name))
 		return path, []string{file.Id}, nil
 	}
@@ -139,6 +157,11 @@ func (r *PathResolver) resolve(file *drive.File) (string, []string, error) {
 }
 
 func (r *PathResolver) getFile(fileID string) (*drive.File, error) {
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	r.mu.Lock()
 	if cached, ok := r.cache[fileID]; ok {
 		r.mu.Unlock()
@@ -150,7 +173,9 @@ func (r *PathResolver) getFile(fileID string) (*drive.File, error) {
 		SupportsAllDrives(true).
 		Fields("id,name,parents,mimeType,trashed")
 
-	file, err := req.Do()
+	file, err := doGDriveRequest(ctx, "gdrive.files.get", func() (*drive.File, error) {
+		return req.Context(ctx).Do()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -168,4 +193,49 @@ func (r *PathResolver) getFile(fileID string) (*drive.File, error) {
 	r.mu.Unlock()
 
 	return file, nil
+}
+
+func (r *PathResolver) ensureRootID() error {
+	r.mu.Lock()
+	if r.rootID != "" {
+		r.mu.Unlock()
+		return nil
+	}
+	r.mu.Unlock()
+
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	req := r.svc.Files.Get("root").SupportsAllDrives(true).Fields("id")
+	root, err := doGDriveRequest(ctx, "gdrive.files.get_root", func() (*drive.File, error) {
+		return req.Context(ctx).Do()
+	})
+	if err != nil {
+		return err
+	}
+
+	rootID := strings.TrimSpace(root.Id)
+	if rootID == "" {
+		return fmt.Errorf("missing gdrive root id")
+	}
+
+	r.mu.Lock()
+	r.rootID = rootID
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *PathResolver) isRootID(fileID string) bool {
+	if fileID == "" {
+		return false
+	}
+	if fileID == "root" {
+		return true
+	}
+	if r.driveID != "" && fileID == r.driveID {
+		return true
+	}
+	return r.rootID != "" && fileID == r.rootID
 }
