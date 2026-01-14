@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -342,13 +343,13 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, name string, d
 
 	// Check for flash messages in cookies
 	if cookie, err := r.Cookie("flash"); err == nil {
-		pageData.Flash = cookie.Value
+		pageData.Flash = decodeFlashValue(cookie.Value)
 		clear := &http.Cookie{Name: "flash", MaxAge: -1, Path: "/"}
 		h.applyCookieSecurity(clear)
 		http.SetCookie(w, clear)
 	}
 	if cookie, err := r.Cookie("flash_err"); err == nil {
-		pageData.FlashErr = cookie.Value
+		pageData.FlashErr = decodeFlashValue(cookie.Value)
 		clear := &http.Cookie{Name: "flash_err", MaxAge: -1, Path: "/"}
 		h.applyCookieSecurity(clear)
 		http.SetCookie(w, clear)
@@ -389,7 +390,7 @@ func (h *Handlers) renderPartial(w http.ResponseWriter, pageTemplate string, par
 func (h *Handlers) flash(w http.ResponseWriter, message string) {
 	c := &http.Cookie{
 		Name:     "flash",
-		Value:    message,
+		Value:    encodeFlashValue(message),
 		Path:     "/",
 		MaxAge:   60,
 		HttpOnly: true,
@@ -402,7 +403,7 @@ func (h *Handlers) flash(w http.ResponseWriter, message string) {
 func (h *Handlers) flashErr(w http.ResponseWriter, message string) {
 	c := &http.Cookie{
 		Name:     "flash_err",
-		Value:    message,
+		Value:    encodeFlashValue(message),
 		Path:     "/",
 		MaxAge:   60,
 		HttpOnly: true,
@@ -435,6 +436,18 @@ func (h *Handlers) applyCookieSecurity(c *http.Cookie) {
 	if c.SameSite == 0 {
 		c.SameSite = http.SameSiteStrictMode
 	}
+}
+
+func encodeFlashValue(message string) string {
+	return url.QueryEscape(message)
+}
+
+func decodeFlashValue(message string) string {
+	decoded, err := url.QueryUnescape(message)
+	if err != nil {
+		return message
+	}
+	return decoded
 }
 
 // jsonSuccess sends a JSON success response
