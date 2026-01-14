@@ -111,6 +111,13 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 	prevPage := 0
 	nextPage := 0
 	var syncState *database.GDriveSyncState
+	syncStatusLabel := ""
+	syncStatusBadge := "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
+	syncInProgress := false
+	gdriveRunning := false
+	if h.gdriveMgr != nil {
+		gdriveRunning = h.gdriveMgr.IsRunning()
+	}
 
 	if selectedTrigger != nil {
 		entries, err := h.db.ListGDriveSnapshotEntries(selectedTrigger.ID)
@@ -208,11 +215,18 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 		nextPage = page + 1
 
 		syncState, _ = h.db.GetGDriveSyncState(selectedTrigger.ID)
-	}
-
-	gdriveRunning := false
-	if h.gdriveMgr != nil {
-		gdriveRunning = h.gdriveMgr.IsRunning()
+		if syncState == nil || syncState.PageToken == "" {
+			if gdriveRunning {
+				syncStatusLabel = "Initial sync in progress"
+				syncStatusBadge = "bg-yellow-50 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400"
+				syncInProgress = true
+			} else {
+				syncStatusLabel = "Initial sync pending"
+			}
+		} else {
+			syncStatusLabel = "Synced"
+			syncStatusBadge = "bg-green-50 dark:bg-green-900/50 text-green-700 dark:text-green-400"
+		}
 	}
 
 	return map[string]any{
@@ -234,6 +248,9 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 		"NextPage":            nextPage,
 		"Query":               query,
 		"SyncState":           syncState,
+		"SyncStatusLabel":     syncStatusLabel,
+		"SyncStatusBadge":     syncStatusBadge,
+		"SyncInProgress":      syncInProgress,
 		"GDriveRunning":       gdriveRunning,
 	}, nil
 }
