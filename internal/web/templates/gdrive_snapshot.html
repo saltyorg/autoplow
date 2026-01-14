@@ -1,11 +1,13 @@
 {{define "gdrive_snapshot_content"}}
 <div id="gdrive-snapshot-content"
      class="space-y-6"
-     hx-get="/gdrive-snapshot/content?page={{.Page}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}"
+     hx-get="/gdrive-snapshot/content?page={{.Page}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}{{if .SortKey}}&sort={{.SortKey}}&order={{.SortOrder}}{{end}}"
      hx-trigger="sse-refresh"
      hx-swap="innerHTML"
      hx-select="#gdrive-snapshot-content > *">
     {{if .SelectedTrigger}}
+    {{$sort := .SortKey}}
+    {{$order := .SortOrder}}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-4">
             <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Snapshot Entries</dt>
@@ -80,11 +82,51 @@
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead class="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Path</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">File ID</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Parent ID</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Mime Type</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Updated</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <a class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
+                           href="/gdrive-snapshot?page=1{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}&sort=path&order={{if and (eq $sort "path") (eq $order "asc")}}desc{{else}}asc{{end}}">
+                            Path
+                            {{if eq $sort "path"}}
+                            <span class="text-gray-400">{{if eq $order "asc"}}▲{{else}}▼{{end}}</span>
+                            {{end}}
+                        </a>
+                    </th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <a class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
+                           href="/gdrive-snapshot?page=1{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}&sort=file_id&order={{if and (eq $sort "file_id") (eq $order "asc")}}desc{{else}}asc{{end}}">
+                            File ID
+                            {{if eq $sort "file_id"}}
+                            <span class="text-gray-400">{{if eq $order "asc"}}▲{{else}}▼{{end}}</span>
+                            {{end}}
+                        </a>
+                    </th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <a class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
+                           href="/gdrive-snapshot?page=1{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}&sort=parent_id&order={{if and (eq $sort "parent_id") (eq $order "asc")}}desc{{else}}asc{{end}}">
+                            Parent ID
+                            {{if eq $sort "parent_id"}}
+                            <span class="text-gray-400">{{if eq $order "asc"}}▲{{else}}▼{{end}}</span>
+                            {{end}}
+                        </a>
+                    </th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <a class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
+                           href="/gdrive-snapshot?page=1{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}&sort=mime_type&order={{if and (eq $sort "mime_type") (eq $order "asc")}}desc{{else}}asc{{end}}">
+                            Mime Type
+                            {{if eq $sort "mime_type"}}
+                            <span class="text-gray-400">{{if eq $order "asc"}}▲{{else}}▼{{end}}</span>
+                            {{end}}
+                        </a>
+                    </th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <a class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-100"
+                           href="/gdrive-snapshot?page=1{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}&sort=updated&order={{if eq $sort "updated"}}{{if eq $order "asc"}}desc{{else}}asc{{end}}{{else}}desc{{end}}">
+                            Updated
+                            {{if eq $sort "updated"}}
+                            <span class="text-gray-400">{{if eq $order "asc"}}▲{{else}}▼{{end}}</span>
+                            {{end}}
+                        </a>
+                    </th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -122,23 +164,23 @@
                 <span class="font-medium">{{.FilteredCount}}</span> entries
             </div>
             <div class="flex items-center gap-2">
-                <a href="/gdrive-snapshot?page=1{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}"
+                <a href="/gdrive-snapshot?page=1{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}{{if .SortKey}}&sort={{.SortKey}}&order={{.SortOrder}}{{end}}"
                    class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
                    {{if eq .Page 1}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
                     « First
                 </a>
-                <a href="/gdrive-snapshot?page={{.PrevPage}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}"
+                <a href="/gdrive-snapshot?page={{.PrevPage}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}{{if .SortKey}}&sort={{.SortKey}}&order={{.SortOrder}}{{end}}"
                    class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
                    {{if .HasPrev}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
                     ‹ Prev
                 </a>
                 <span class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Page {{.Page}} / {{.TotalPages}}</span>
-                <a href="/gdrive-snapshot?page={{.NextPage}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}"
+                <a href="/gdrive-snapshot?page={{.NextPage}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}{{if .SortKey}}&sort={{.SortKey}}&order={{.SortOrder}}{{end}}"
                    class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
                    {{if .HasNext}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{else}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{end}}">
                     Next ›
                 </a>
-                <a href="/gdrive-snapshot?page={{.TotalPages}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}"
+                <a href="/gdrive-snapshot?page={{.TotalPages}}{{if .SelectedTriggerID}}&trigger_id={{.SelectedTriggerID}}{{end}}{{if .Query}}&q={{.Query | urlquery}}{{end}}{{if .SortKey}}&sort={{.SortKey}}&order={{.SortOrder}}{{end}}"
                    class="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600
                    {{if eq .Page .TotalPages}}text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 cursor-not-allowed{{else}}bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600{{end}}">
                     Last »
@@ -205,9 +247,13 @@
             </div>
             <div class="flex-1">
                 <label for="gdrive-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
-                <input id="gdrive-search" type="text" name="q" value="{{.Content.Query}}" placeholder="Path, file ID, name, or mime type"
+                <input id="gdrive-search" type="text" name="q" value="{{.Content.Query}}" placeholder="Path, file ID, name, or mime type (parent:ID fileid:ID)"
                        class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
             </div>
+            {{if .Content.SortKey}}
+            <input type="hidden" name="sort" value="{{.Content.SortKey}}">
+            <input type="hidden" name="order" value="{{.Content.SortOrder}}">
+            {{end}}
             <div class="flex items-center gap-2">
                 <button type="submit" class="btn-primary">Apply</button>
             </div>

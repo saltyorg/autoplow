@@ -91,6 +91,20 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 	}
 
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	sortKey := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	sortOrder := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
+	switch sortKey {
+	case "path", "file_id", "parent_id", "mime_type", "updated":
+	default:
+		sortKey = "path"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		if sortKey == "updated" {
+			sortOrder = "desc"
+		} else {
+			sortOrder = "asc"
+		}
+	}
 	page := 1
 	if raw := r.URL.Query().Get("page"); raw != "" {
 		if p, err := strconv.Atoi(raw); err == nil && p > 0 {
@@ -164,31 +178,29 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 			}
 		}
 
-		sort.Slice(items, func(i, j int) bool {
-			left := strings.ToLower(items[i].Path)
-			right := strings.ToLower(items[j].Path)
-			if left == right {
-				return items[i].FileID < items[j].FileID
-			}
-			return left < right
-		})
-
 		totalCount = len(items)
 		if query != "" {
 			filtered := items[:0]
 			queryLower := strings.ToLower(query)
+			filters := parseGDriveSnapshotQuery(queryLower)
 			for _, item := range items {
-				if strings.Contains(strings.ToLower(item.Path), queryLower) ||
+				if filters.HasTargets {
+					if !filters.Matches(item) {
+						continue
+					}
+				} else if !(strings.Contains(strings.ToLower(item.Path), queryLower) ||
 					strings.Contains(strings.ToLower(item.Name), queryLower) ||
 					strings.Contains(strings.ToLower(item.FileID), queryLower) ||
 					strings.Contains(strings.ToLower(item.ParentID), queryLower) ||
-					strings.Contains(strings.ToLower(item.MimeType), queryLower) {
-					filtered = append(filtered, item)
-					if item.MimeType == gdriveFolderMimeType {
-						filteredFolderCount++
-					} else {
-						filteredFileCount++
-					}
+					strings.Contains(strings.ToLower(item.MimeType), queryLower)) {
+					continue
+				}
+
+				filtered = append(filtered, item)
+				if item.MimeType == gdriveFolderMimeType {
+					filteredFolderCount++
+				} else {
+					filteredFileCount++
 				}
 			}
 			items = filtered
@@ -198,6 +210,7 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 		}
 
 		filteredCount = len(items)
+		sortGDriveSnapshotItems(items, sortKey, sortOrder)
 		if filteredCount > 0 {
 			totalPages = (filteredCount + gdriveSnapshotPageSize - 1) / gdriveSnapshotPageSize
 			if page > totalPages {
@@ -254,6 +267,8 @@ func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, err
 		"PrevPage":            prevPage,
 		"NextPage":            nextPage,
 		"Query":               query,
+		"SortKey":             sortKey,
+		"SortOrder":           sortOrder,
 		"SyncState":           syncState,
 		"SyncStatusLabel":     syncStatusLabel,
 		"SyncStatusBadge":     syncStatusBadge,
@@ -359,4 +374,153 @@ func buildSnapshotPathCache(snapshot map[string]*database.GDriveSnapshotEntry, d
 	}
 
 	return cache
+}
+
+type gdriveSnapshotQueryFilters struct {
+	HasTargets bool
+	Free       []string
+	Path       []string
+	Name       []string
+	FileID     []string
+	ParentID   []string
+	MimeType   []string
+}
+
+func parseGDriveSnapshotQuery(raw string) gdriveSnapshotQueryFilters {
+	filters := gdriveSnapshotQueryFilters{}
+	for _, token := range strings.Fields(raw) {
+		key, value, ok := strings.Cut(token, ":")
+		if !ok || strings.TrimSpace(value) == "" {
+			filters.Free = append(filters.Free, strings.ToLower(token))
+			continue
+		}
+
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			filters.Free = append(filters.Free, strings.ToLower(token))
+			continue
+		}
+
+		switch key {
+		case "parent", "parentid":
+			filters.ParentID = append(filters.ParentID, value)
+			filters.HasTargets = true
+		case "file", "fileid", "id":
+			filters.FileID = append(filters.FileID, value)
+			filters.HasTargets = true
+		case "name":
+			filters.Name = append(filters.Name, value)
+			filters.HasTargets = true
+		case "path":
+			filters.Path = append(filters.Path, value)
+			filters.HasTargets = true
+		case "mime", "mimetype":
+			filters.MimeType = append(filters.MimeType, value)
+			filters.HasTargets = true
+		default:
+			filters.Free = append(filters.Free, strings.ToLower(token))
+		}
+	}
+
+	return filters
+}
+
+func (f gdriveSnapshotQueryFilters) Matches(item gdriveSnapshotItem) bool {
+	path := strings.ToLower(item.Path)
+	name := strings.ToLower(item.Name)
+	fileID := strings.ToLower(item.FileID)
+	parentID := strings.ToLower(item.ParentID)
+	mimeType := strings.ToLower(item.MimeType)
+
+	if !containsAll(path, f.Path) || !containsAll(name, f.Name) || !containsAll(fileID, f.FileID) ||
+		!containsAll(parentID, f.ParentID) || !containsAll(mimeType, f.MimeType) {
+		return false
+	}
+
+	for _, token := range f.Free {
+		if !containsAny(token, path, name, fileID, parentID, mimeType) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func containsAll(value string, tokens []string) bool {
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		if !strings.Contains(value, token) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsAny(token string, values ...string) bool {
+	if token == "" {
+		return true
+	}
+	for _, value := range values {
+		if strings.Contains(value, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func sortGDriveSnapshotItems(items []gdriveSnapshotItem, sortKey, sortOrder string) {
+	if len(items) < 2 {
+		return
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		left := items[i]
+		right := items[j]
+		cmp := compareGDriveSnapshotItems(left, right, sortKey)
+		if cmp == 0 {
+			cmp = compareFold(left.FileID, right.FileID)
+		}
+		if sortOrder == "desc" {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+}
+
+func compareGDriveSnapshotItems(left, right gdriveSnapshotItem, sortKey string) int {
+	switch sortKey {
+	case "file_id":
+		return compareFold(left.FileID, right.FileID)
+	case "parent_id":
+		return compareFold(left.ParentID, right.ParentID)
+	case "mime_type":
+		return compareFold(left.MimeType, right.MimeType)
+	case "updated":
+		switch {
+		case left.UpdatedAt.Equal(right.UpdatedAt):
+			return 0
+		case left.UpdatedAt.Before(right.UpdatedAt):
+			return -1
+		default:
+			return 1
+		}
+	default:
+		return compareFold(left.Path, right.Path)
+	}
+}
+
+func compareFold(left, right string) int {
+	left = strings.ToLower(left)
+	right = strings.ToLower(right)
+	switch {
+	case left == right:
+		return 0
+	case left < right:
+		return -1
+	default:
+		return 1
+	}
 }
