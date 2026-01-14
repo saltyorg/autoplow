@@ -426,15 +426,10 @@ func (h *Handlers) jsonError(w http.ResponseWriter, message string, status int) 
 
 // applyCookieSecurity sets Secure/SameSite defaults based on environment.
 func (h *Handlers) applyCookieSecurity(c *http.Cookie) {
-	if h.isDev {
-		if c.SameSite == 0 {
-			c.SameSite = http.SameSiteLaxMode
-		}
-		return
-	}
-	c.Secure = true
+	c.Secure = !h.isDev
+
 	if c.SameSite == 0 {
-		c.SameSite = http.SameSiteStrictMode
+		c.SameSite = http.SameSiteLaxMode
 	}
 }
 
