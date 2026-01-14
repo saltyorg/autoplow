@@ -267,16 +267,13 @@ func (p *Poller) pollOnce(tp *triggerPoll) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(tp.ctx, 30*time.Second)
-	defer cancel()
-
-	driveSvc, err := p.service.DriveServiceForAccount(ctx, account)
+	driveSvc, err := p.service.DriveServiceForAccount(tp.ctx, account)
 	if err != nil {
 		log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to create gdrive client")
 		return
 	}
 
-	driveName, err := p.ensureDriveName(ctx, driveSvc, tp, trigger.Config.GDriveDriveID)
+	driveName, err := p.ensureDriveName(tp.ctx, driveSvc, tp, trigger.Config.GDriveDriveID)
 	if err != nil {
 		log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to resolve gdrive name")
 		return
@@ -303,7 +300,7 @@ func (p *Poller) pollOnce(tp *triggerPoll) {
 	}
 
 	if state == nil || state.PageToken == "" {
-		if err := p.refreshSnapshot(ctx, driveSvc, tp, trigger, false); err != nil {
+		if err := p.refreshSnapshot(tp.ctx, driveSvc, tp, trigger, false); err != nil {
 			log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to initialize gdrive snapshot")
 			return
 		}
@@ -316,11 +313,11 @@ func (p *Poller) pollOnce(tp *triggerPoll) {
 
 	resolver := NewPathResolver(driveSvc, trigger.Config.GDriveDriveID, driveName)
 
-	nextToken, err := p.processChanges(ctx, driveSvc, trigger, tp, resolver, state.PageToken, true)
+	nextToken, err := p.processChanges(tp.ctx, driveSvc, trigger, tp, resolver, state.PageToken, true)
 	if err != nil {
 		if isInvalidPageToken(err) {
 			log.Warn().Err(err).Int64("trigger_id", trigger.ID).Msg("GDrive page token expired; rebuilding snapshot")
-			if err := p.refreshSnapshot(ctx, driveSvc, tp, trigger, true); err != nil {
+			if err := p.refreshSnapshot(tp.ctx, driveSvc, tp, trigger, true); err != nil {
 				log.Error().Err(err).Int64("trigger_id", trigger.ID).Msg("Failed to rebuild gdrive snapshot")
 			}
 			return
