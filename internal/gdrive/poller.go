@@ -20,6 +20,7 @@ import (
 	"github.com/saltyorg/autoplow/internal/processor"
 	"github.com/saltyorg/autoplow/internal/targets"
 	"github.com/saltyorg/autoplow/internal/triggerpaths"
+	"github.com/saltyorg/autoplow/internal/web/sse"
 )
 
 const pollInterval = 60 * time.Second
@@ -28,9 +29,10 @@ const gdriveTraceLimit = 20
 
 // Poller watches Google Drive for changes and queues scans.
 type Poller struct {
-	db      *database.Manager
-	proc    *processor.Processor
-	service *Service
+	db        *database.Manager
+	proc      *processor.Processor
+	service   *Service
+	sseBroker *sse.Broker
 
 	mu       sync.Mutex
 	triggers map[int64]*triggerPoll
@@ -59,6 +61,17 @@ func New(db *database.Manager, proc *processor.Processor) *Poller {
 		triggers: make(map[int64]*triggerPoll),
 		ctx:      ctx,
 		cancel:   cancel,
+	}
+}
+
+// SetSSEBroker sets the SSE broker for broadcasting events.
+func (p *Poller) SetSSEBroker(broker *sse.Broker) {
+	p.sseBroker = broker
+}
+
+func (p *Poller) broadcastEvent(eventType sse.EventType, data map[string]any) {
+	if p.sseBroker != nil {
+		p.sseBroker.Broadcast(sse.Event{Type: eventType, Data: data})
 	}
 }
 
@@ -575,6 +588,12 @@ func (p *Poller) refreshSnapshot(ctx context.Context, svc *drive.Service, tp *tr
 			Int("entries", len(entries)).
 			Bool("queue_diff", queueDiff).
 			Msg("GDrive full sync completed")
+		p.broadcastEvent(sse.EventGDriveSnapshotComplete, map[string]any{
+			"trigger_id": trigger.ID,
+			"trigger":    trigger.Name,
+			"drive_id":   trigger.Config.GDriveDriveID,
+			"entries":    len(entries),
+		})
 	}
 
 	return nil

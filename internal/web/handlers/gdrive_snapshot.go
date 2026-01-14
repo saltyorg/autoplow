@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"path"
 	"sort"
@@ -16,6 +17,11 @@ import (
 
 const gdriveSnapshotPageSize = 200
 
+var (
+	errGDriveSnapshotTriggers = errors.New("gdrive snapshot triggers")
+	errGDriveSnapshotEntries  = errors.New("gdrive snapshot entries")
+)
+
 type gdriveSnapshotItem struct {
 	FileID    string
 	ParentID  string
@@ -27,12 +33,41 @@ type gdriveSnapshotItem struct {
 }
 
 func (h *Handlers) GDriveSnapshotPage(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildGDriveSnapshotData(r)
+	if err != nil {
+		switch err {
+		case errGDriveSnapshotTriggers:
+			h.flashErr(w, "Failed to load Google Drive triggers")
+			h.redirect(w, r, "/")
+		case errGDriveSnapshotEntries:
+			h.flashErr(w, "Failed to load Google Drive snapshot entries")
+			h.redirect(w, r, "/gdrive-snapshot")
+		default:
+			h.flashErr(w, "Failed to load Google Drive snapshot")
+			h.redirect(w, r, "/gdrive-snapshot")
+		}
+		return
+	}
+
+	h.render(w, r, "gdrive_snapshot.html", data)
+}
+
+// GDriveSnapshotContentPartial renders the snapshot section for SSE refresh.
+func (h *Handlers) GDriveSnapshotContentPartial(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildGDriveSnapshotData(r)
+	if err != nil {
+		http.Error(w, "Failed to load Google Drive snapshot", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderPartial(w, "gdrive_snapshot.html", "gdrive_snapshot_content", data)
+}
+
+func (h *Handlers) buildGDriveSnapshotData(r *http.Request) (map[string]any, error) {
 	triggers, err := h.db.ListTriggersByType(database.TriggerTypeGDrive)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to load gdrive triggers")
-		h.flashErr(w, "Failed to load Google Drive triggers")
-		h.redirect(w, r, "/")
-		return
+		return nil, errGDriveSnapshotTriggers
 	}
 
 	selectedTriggerID := int64(0)
@@ -81,9 +116,7 @@ func (h *Handlers) GDriveSnapshotPage(w http.ResponseWriter, r *http.Request) {
 		entries, err := h.db.ListGDriveSnapshotEntries(selectedTrigger.ID)
 		if err != nil {
 			log.Error().Err(err).Int64("trigger_id", selectedTrigger.ID).Msg("Failed to load gdrive snapshot entries")
-			h.flashErr(w, "Failed to load Google Drive snapshot entries")
-			h.redirect(w, r, "/gdrive-snapshot")
-			return
+			return nil, errGDriveSnapshotEntries
 		}
 
 		snapshot := make(map[string]*database.GDriveSnapshotEntry, len(entries))
@@ -182,7 +215,7 @@ func (h *Handlers) GDriveSnapshotPage(w http.ResponseWriter, r *http.Request) {
 		gdriveRunning = h.gdriveMgr.IsRunning()
 	}
 
-	h.render(w, r, "gdrive_snapshot.html", map[string]any{
+	return map[string]any{
 		"Triggers":            triggers,
 		"SelectedTrigger":     selectedTrigger,
 		"SelectedTriggerID":   selectedTriggerID,
@@ -202,7 +235,7 @@ func (h *Handlers) GDriveSnapshotPage(w http.ResponseWriter, r *http.Request) {
 		"Query":               query,
 		"SyncState":           syncState,
 		"GDriveRunning":       gdriveRunning,
-	})
+	}, nil
 }
 
 func (h *Handlers) GDriveSnapshotReset(w http.ResponseWriter, r *http.Request) {

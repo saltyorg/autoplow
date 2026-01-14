@@ -42,7 +42,8 @@
         // Plex Auto Languages events
         'plex_auto_languages_track_changed': ['#pal-recent-activity', '#pal-history', '.pal-preferences-target', '#pal-status'],
         'notification_logged': ['#notification-stats', '#notification-logs'],
-        'rclone_status_changed': ['#rclone-status-card']
+        'rclone_status_changed': ['#rclone-status-card'],
+        'gdrive_snapshot_complete': ['#gdrive-snapshot-content']
     };
 
     // Debounce refresh requests to avoid hammering the server

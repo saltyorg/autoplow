@@ -42,6 +42,7 @@ const (
 	EventPlexAutoLanguagesTrackChanged EventType = "plex_auto_languages_track_changed"
 	EventNotificationLogged            EventType = "notification_logged"
 	EventRcloneStatusChanged           EventType = "rclone_status_changed"
+	EventGDriveSnapshotComplete        EventType = "gdrive_snapshot_complete"
 )
 
 // Event represents an SSE event to be sent to clients

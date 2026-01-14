@@ -371,6 +371,9 @@ func (s *Server) NotificationManager() *notification.Manager {
 // SetGDriveManager sets the Google Drive manager and updates handlers
 func (s *Server) SetGDriveManager(mgr *gdrive.Poller) {
 	s.gdriveMgr = mgr
+	if mgr != nil {
+		mgr.SetSSEBroker(s.sseBroker)
+	}
 	if s.handlers != nil {
 		s.handlers.SetGDriveManager(mgr)
 	}
@@ -816,6 +819,7 @@ func (s *Server) setupRoutes() {
 
 		// Google Drive Snapshot
 		r.Get("/gdrive-snapshot", h.GDriveSnapshotPage)
+		r.Get("/gdrive-snapshot/content", h.GDriveSnapshotContentPartial)
 		r.Post("/gdrive-snapshot/{id}/reset", h.GDriveSnapshotReset)
 
 		// Rclone Options Explorer
