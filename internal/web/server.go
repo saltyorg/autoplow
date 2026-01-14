@@ -795,7 +795,6 @@ func (s *Server) setupRoutes() {
 			// Google Drive settings
 			r.Get("/gdrive", h.SettingsGDrivePage)
 			r.Post("/gdrive", h.SettingsGDriveUpdate)
-			r.Post("/gdrive/service-account", h.SettingsGDriveServiceAccountUpload)
 			r.Get("/gdrive/connect", h.SettingsGDriveConnect)
 			r.Get("/gdrive/callback", h.SettingsGDriveCallback)
 			r.Post("/gdrive/accounts/{id}/disconnect", h.SettingsGDriveDisconnect)

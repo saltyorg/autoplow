@@ -151,11 +151,11 @@
                     class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                     <option value="">Select an account</option>
                     {{range .Content.GDriveAccounts}}
-                    <option value="{{.ID}}">{{if .DisplayName}}{{.DisplayName}}{{else}}Google Drive Account{{end}}{{if .Email}} ({{.Email}}){{end}} {{if eq .AuthType "service_account"}}[Service Account]{{else}}[OAuth]{{end}}</option>
+                    <option value="{{.ID}}">{{if .DisplayName}}{{.DisplayName}}{{else}}Google Drive Account{{end}}{{if .Email}} ({{.Email}}){{end}}</option>
                     {{end}}
                 </select>
                 {{else}}
-                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Connect a Google Drive account or add a service account in Settings before creating this trigger.</p>
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Connect a Google Drive account in Settings before creating this trigger.</p>
                 {{end}}
             </div>
             <div>
@@ -945,11 +945,11 @@
                     class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border">
                     <option value="">Select an account</option>
                     {{range .Content.GDriveAccounts}}
-                    <option value="{{.ID}}" {{if eq .ID $.Content.Trigger.Config.GDriveAccountID}}selected{{end}}>{{if .DisplayName}}{{.DisplayName}}{{else}}Google Drive Account{{end}}{{if .Email}} ({{.Email}}){{end}} {{if eq .AuthType "service_account"}}[Service Account]{{else}}[OAuth]{{end}}</option>
+                    <option value="{{.ID}}" {{if eq .ID $.Content.Trigger.Config.GDriveAccountID}}selected{{end}}>{{if .DisplayName}}{{.DisplayName}}{{else}}Google Drive Account{{end}}{{if .Email}} ({{.Email}}){{end}}</option>
                     {{end}}
                 </select>
                 {{else}}
-                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Connect a Google Drive account or add a service account in Settings before updating this trigger.</p>
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Connect a Google Drive account in Settings before updating this trigger.</p>
                 {{end}}
             </div>
             <div>

@@ -103,6 +103,7 @@ func (h *Handlers) TriggerNew(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Msg("Failed to list gdrive accounts")
 		accounts = nil
 	}
+	accounts = filterOAuthGDriveAccounts(accounts)
 
 	h.render(w, r, "triggers.html", map[string]any{
 		"IsNew":          true,
@@ -422,6 +423,7 @@ func (h *Handlers) TriggerEdit(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Msg("Failed to list gdrive accounts")
 		accounts = nil
 	}
+	accounts = filterOAuthGDriveAccounts(accounts)
 
 	h.render(w, r, "triggers.html", map[string]any{
 		"Trigger":           trigger,
@@ -852,6 +854,23 @@ func hasGDrivePathMapping(fromIDs, toPaths []string) bool {
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func filterOAuthGDriveAccounts(accounts []*database.GDriveAccount) []*database.GDriveAccount {
+	if len(accounts) == 0 {
+		return accounts
+	}
+	filtered := make([]*database.GDriveAccount, 0, len(accounts))
+	for _, account := range accounts {
+		if account == nil {
+			continue
+		}
+		if account.AuthType != "" && account.AuthType != database.GDriveAuthTypeOAuth {
+			continue
+		}
+		filtered = append(filtered, account)
+	}
+	return filtered
 }
 
 const gdrivePathRewriteValidationTimeout = 20 * time.Second

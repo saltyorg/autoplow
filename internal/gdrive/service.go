@@ -60,32 +60,23 @@ func (s *Service) DriveService(ctx context.Context, refreshToken string) (*drive
 	return drive.NewService(ctx, option.WithTokenSource(ts))
 }
 
-// DriveServiceForAccount creates a Drive API client for an account (OAuth or service account).
+// DriveServiceForAccount creates a Drive API client for an OAuth account.
 func (s *Service) DriveServiceForAccount(ctx context.Context, account *database.GDriveAccount) (*drive.Service, error) {
 	if account == nil {
 		return nil, fmt.Errorf("missing gdrive account")
 	}
 
-	switch account.AuthType {
-	case database.GDriveAuthTypeServiceAccount:
-		if account.ServiceAccountJSON == "" {
-			return nil, fmt.Errorf("missing service account credentials")
-		}
-		raw, err := s.DecryptServiceAccountJSON(account.ServiceAccountJSON)
-		if err != nil {
-			return nil, err
-		}
-		return s.DriveServiceFromServiceAccountJSON(ctx, raw)
-	default:
-		if account.RefreshToken == "" {
-			return nil, fmt.Errorf("missing refresh token")
-		}
-		refreshToken, err := s.DecryptRefreshToken(account.RefreshToken)
-		if err != nil {
-			return nil, err
-		}
-		return s.DriveService(ctx, refreshToken)
+	if account.AuthType != "" && account.AuthType != database.GDriveAuthTypeOAuth {
+		return nil, fmt.Errorf("gdrive auth type %q is not supported", account.AuthType)
 	}
+	if account.RefreshToken == "" {
+		return nil, fmt.Errorf("missing refresh token")
+	}
+	refreshToken, err := s.DecryptRefreshToken(account.RefreshToken)
+	if err != nil {
+		return nil, err
+	}
+	return s.DriveService(ctx, refreshToken)
 }
 
 // EncryptRefreshToken encrypts a refresh token for storage.
@@ -96,24 +87,4 @@ func (s *Service) EncryptRefreshToken(refreshToken string) (string, error) {
 // DecryptRefreshToken decrypts a stored refresh token.
 func (s *Service) DecryptRefreshToken(encrypted string) (string, error) {
 	return auth.DecryptTriggerPassword(encrypted)
-}
-
-// EncryptServiceAccountJSON encrypts a service account JSON blob for storage.
-func (s *Service) EncryptServiceAccountJSON(serviceAccountJSON string) (string, error) {
-	return auth.EncryptTriggerPassword(serviceAccountJSON)
-}
-
-// DecryptServiceAccountJSON decrypts a stored service account JSON blob.
-func (s *Service) DecryptServiceAccountJSON(encrypted string) (string, error) {
-	return auth.DecryptTriggerPassword(encrypted)
-}
-
-// DriveServiceFromServiceAccountJSON creates a Drive API client from raw service account JSON.
-func (s *Service) DriveServiceFromServiceAccountJSON(ctx context.Context, serviceAccountJSON string) (*drive.Service, error) {
-	cfg, err := google.JWTConfigFromJSON([]byte(serviceAccountJSON), drive.DriveReadonlyScope)
-	if err != nil {
-		return nil, err
-	}
-	ts := cfg.TokenSource(ctx)
-	return drive.NewService(ctx, option.WithTokenSource(ts))
 }

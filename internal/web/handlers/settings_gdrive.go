@@ -5,9 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"path"
 	"strconv"
@@ -18,7 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/drive/v3"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
 	"github.com/saltyorg/autoplow/internal/database"
@@ -27,25 +24,16 @@ import (
 
 const gdriveStateTTL = 10 * time.Minute
 const gdriveFolderMimeType = "application/vnd.google-apps.folder"
-const gdriveServiceAccountMaxSize = 2 << 20
 
 type gdriveOAuthState struct {
 	expiresAt time.Time
 }
 
-type gdriveServiceAccountCredentials struct {
-	Type        string `json:"type"`
-	ProjectID   string `json:"project_id"`
-	ClientEmail string `json:"client_email"`
-	PrivateKey  string `json:"private_key"`
-}
-
 type gdriveSettings struct {
-	ClientID        string
-	ClientSecret    string
-	OAuthAccounts   []*database.GDriveAccount
-	ServiceAccounts []*database.GDriveAccount
-	RedirectURL     string
+	ClientID      string
+	ClientSecret  string
+	OAuthAccounts []*database.GDriveAccount
+	RedirectURL   string
 }
 
 // SettingsGDrivePage renders the Google Drive settings page.
@@ -61,24 +49,21 @@ func (h *Handlers) SettingsGDrivePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var oauthAccounts []*database.GDriveAccount
-	var serviceAccounts []*database.GDriveAccount
+	oauthAccounts := make([]*database.GDriveAccount, 0, len(accounts))
 	for _, account := range accounts {
-		if account.AuthType == database.GDriveAuthTypeServiceAccount {
-			serviceAccounts = append(serviceAccounts, account)
-		} else {
-			oauthAccounts = append(oauthAccounts, account)
+		if account.AuthType != "" && account.AuthType != database.GDriveAuthTypeOAuth {
+			continue
 		}
+		oauthAccounts = append(oauthAccounts, account)
 	}
 
 	h.render(w, r, "settings.html", map[string]any{
 		"Tab": "gdrive",
 		"Settings": gdriveSettings{
-			ClientID:        clientID,
-			ClientSecret:    clientSecret,
-			OAuthAccounts:   oauthAccounts,
-			ServiceAccounts: serviceAccounts,
-			RedirectURL:     getBaseURL(r) + "/settings/gdrive/callback",
+			ClientID:      clientID,
+			ClientSecret:  clientSecret,
+			OAuthAccounts: oauthAccounts,
+			RedirectURL:   getBaseURL(r) + "/settings/gdrive/callback",
 		},
 	})
 }
@@ -106,109 +91,6 @@ func (h *Handlers) SettingsGDriveUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.flash(w, "Google Drive settings saved")
-	h.redirect(w, r, "/settings/gdrive")
-}
-
-// SettingsGDriveServiceAccountUpload saves a Google Drive service account JSON.
-func (h *Handlers) SettingsGDriveServiceAccountUpload(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(gdriveServiceAccountMaxSize); err != nil {
-		h.flashErr(w, "Invalid upload")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-
-	file, _, err := r.FormFile("gdrive_service_account")
-	if err != nil {
-		h.flashErr(w, "Service account JSON file is required")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-	defer file.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(file, gdriveServiceAccountMaxSize+1))
-	if err != nil {
-		h.flashErr(w, "Failed to read service account file")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-	if len(raw) == 0 {
-		h.flashErr(w, "Service account file is empty")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-	if len(raw) > gdriveServiceAccountMaxSize {
-		h.flashErr(w, "Service account file is too large")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-
-	rawJSON := strings.TrimSpace(string(raw))
-	creds, err := parseGDriveServiceAccountCredentials(rawJSON)
-	if err != nil {
-		h.flashErr(w, err.Error())
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-
-	svc := gdrive.NewService(h.db)
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
-
-	driveSvc, err := svc.DriveServiceFromServiceAccountJSON(ctx, rawJSON)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create gdrive client from service account")
-		msg := gdriveAPIErrorMessage(err)
-		if msg == "" {
-			msg = "Failed to authenticate Google Drive service account"
-		}
-		h.flashErr(w, msg)
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-
-	hasAccess, err := validateGDriveServiceAccountAccess(ctx, driveSvc)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to validate gdrive service account access")
-		h.flashErr(w, err.Error())
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-	if !hasAccess {
-		h.flashErr(w, "Service account credentials are valid, but no drives are accessible. Share a Shared Drive or folder with the service account email.")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-
-	encryptedJSON, err := svc.EncryptServiceAccountJSON(rawJSON)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to encrypt gdrive service account JSON")
-		h.flashErr(w, "Failed to store service account credentials")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-
-	displayName := strings.TrimSpace(creds.ProjectID)
-	if displayName == "" {
-		displayName = "Service Account"
-	}
-
-	account := &database.GDriveAccount{
-		Subject:            creds.ClientEmail,
-		Email:              creds.ClientEmail,
-		DisplayName:        displayName,
-		RefreshToken:       "",
-		ServiceAccountJSON: encryptedJSON,
-		AuthType:           database.GDriveAuthTypeServiceAccount,
-	}
-
-	if err := h.db.UpsertGDriveAccount(account); err != nil {
-		log.Error().Err(err).Msg("Failed to store gdrive service account")
-		h.flashErr(w, "Failed to store Google Drive service account")
-		h.redirect(w, r, "/settings/gdrive")
-		return
-	}
-
-	h.flash(w, "Google Drive service account connected")
 	h.redirect(w, r, "/settings/gdrive")
 }
 
@@ -521,83 +403,10 @@ func (h *Handlers) gdriveAccountFromRequest(r *http.Request) (*database.GDriveAc
 	if account == nil {
 		return nil, fmt.Errorf("account not found")
 	}
+	if account.AuthType != "" && account.AuthType != database.GDriveAuthTypeOAuth {
+		return nil, fmt.Errorf("service accounts are not supported")
+	}
 	return account, nil
-}
-
-func parseGDriveServiceAccountCredentials(raw string) (gdriveServiceAccountCredentials, error) {
-	var creds gdriveServiceAccountCredentials
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return creds, fmt.Errorf("Service account file is empty")
-	}
-	if err := json.Unmarshal([]byte(raw), &creds); err != nil {
-		return creds, fmt.Errorf("Invalid service account JSON")
-	}
-	if strings.TrimSpace(creds.Type) != "service_account" {
-		return creds, fmt.Errorf("Uploaded file is not a service account key")
-	}
-	if strings.TrimSpace(creds.ClientEmail) == "" || strings.TrimSpace(creds.PrivateKey) == "" {
-		return creds, fmt.Errorf("Service account JSON is missing required fields")
-	}
-	return creds, nil
-}
-
-func validateGDriveServiceAccountAccess(ctx context.Context, svc *drive.Service) (bool, error) {
-	var sharedErr, rootErr error
-	hasShared := false
-	hasRoot := false
-
-	sharedResp, sharedErr := svc.Drives.List().Fields("drives(id)").PageSize(1).Context(ctx).Do()
-	if sharedErr == nil && len(sharedResp.Drives) > 0 {
-		hasShared = true
-	}
-
-	rootResp, rootErr := svc.Files.Get("root").Fields("id").SupportsAllDrives(true).Context(ctx).Do()
-	if rootErr == nil && rootResp != nil && rootResp.Id != "" {
-		hasRoot = true
-	}
-
-	if hasShared || hasRoot {
-		return true, nil
-	}
-
-	if msg := gdriveAPIErrorMessage(sharedErr); msg != "" {
-		return false, errors.New(msg)
-	}
-	if msg := gdriveAPIErrorMessage(rootErr); msg != "" {
-		return false, errors.New(msg)
-	}
-
-	if sharedErr != nil || rootErr != nil {
-		return false, fmt.Errorf("Failed to validate Google Drive access")
-	}
-
-	return false, nil
-}
-
-func gdriveAPIErrorMessage(err error) string {
-	if err == nil {
-		return ""
-	}
-
-	var apiErr *googleapi.Error
-	if errors.As(err, &apiErr) {
-		for _, item := range apiErr.Errors {
-			switch item.Reason {
-			case "accessNotConfigured", "serviceDisabled", "apiDisabled", "serviceDisabledByDefault":
-				return "Google Drive API is disabled for this project. Enable the Drive API in Google Cloud."
-			}
-		}
-
-		msg := strings.ToLower(apiErr.Message)
-		if strings.Contains(msg, "access not configured") ||
-			strings.Contains(msg, "has not been used in project") ||
-			strings.Contains(msg, "drive.googleapis.com") && apiErr.Code == http.StatusForbidden {
-			return "Google Drive API is disabled for this project. Enable the Drive API in Google Cloud."
-		}
-	}
-
-	return ""
 }
 
 func (h *Handlers) createGDriveState() string {
