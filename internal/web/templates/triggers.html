@@ -166,7 +166,7 @@
                 </select>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Choose My Drive or a shared drive for this trigger.</p>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400">This trigger always monitors the full drive. Use Include Paths below to scope what gets processed.</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">This trigger always monitors the full drive. Add at least one path mapping below to process files.</p>
         </div>
 
         <div id="gdrive-mapping-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/60 px-4">
@@ -239,7 +239,7 @@
             <div class="flex items-center justify-between mb-2">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Mapping (Google Drive)</label>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map a Drive folder to a local path using the folder picker.</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map a Drive folder to a local path using the folder picker. At least one mapping is required.</p>
                 </div>
                 <button type="button" id="gdrive-add-path-rewrite" class="btn-secondary text-xs">
                     Add Mapping
@@ -581,6 +581,37 @@
         return true;
     }
 
+    function validateGDriveMappings() {
+        const typeSelect = document.getElementById('type');
+        if (!typeSelect || typeSelect.value !== 'gdrive') {
+            return true;
+        }
+        const list = document.getElementById('gdrive-path-rewrites-list');
+        if (!list) {
+            return true;
+        }
+        const rows = list.querySelectorAll('[data-role="gdrive-map-row"]');
+        let hasMapping = false;
+
+        rows.forEach((row) => {
+            const fromInput = row.querySelector('[data-role="gdrive-map-from-id"]');
+            const toInput = row.querySelector('[data-role="gdrive-map-to"]');
+            if (!fromInput || !toInput) {
+                return;
+            }
+            if (fromInput.value.trim() !== '' && toInput.value.trim() !== '') {
+                hasMapping = true;
+            }
+        });
+
+        if (!hasMapping) {
+            showAlertModal('error', 'Missing Path Mapping', 'Add at least one Google Drive path mapping.');
+            return false;
+        }
+
+        return true;
+    }
+
     function handleTriggerFormSubmit(event, listId) {
         if (event) {
             event.preventDefault();
@@ -593,6 +624,9 @@
             return false;
         }
         if (listId && !validatePathRewrites(listId)) {
+            return false;
+        }
+        if (!validateGDriveMappings()) {
             return false;
         }
         if (!form.checkValidity()) {
@@ -1069,7 +1103,7 @@
             <div class="flex items-center justify-between mb-2">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Path Mapping (Google Drive)</label>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map a Drive folder to a local path using the folder picker.</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Map a Drive folder to a local path using the folder picker. At least one mapping is required.</p>
                 </div>
                 <button type="button" id="gdrive-add-path-rewrite" class="btn-secondary text-xs">
                     Add Mapping
@@ -1154,6 +1188,33 @@
             return true;
         }
 
+        function validateGDriveMappings() {
+            const list = document.getElementById('gdrive-path-rewrites-list');
+            if (!list) {
+                return true;
+            }
+            const rows = list.querySelectorAll('[data-role="gdrive-map-row"]');
+            let hasMapping = false;
+
+            rows.forEach((row) => {
+                const fromInput = row.querySelector('[data-role="gdrive-map-from-id"]');
+                const toInput = row.querySelector('[data-role="gdrive-map-to"]');
+                if (!fromInput || !toInput) {
+                    return;
+                }
+                if (fromInput.value.trim() !== '' && toInput.value.trim() !== '') {
+                    hasMapping = true;
+                }
+            });
+
+            if (!hasMapping) {
+                showAlertModal('error', 'Missing Path Mapping', 'Add at least one Google Drive path mapping.');
+                return false;
+            }
+
+            return true;
+        }
+
         function handleTriggerFormSubmit(event) {
             if (event) {
                 event.preventDefault();
@@ -1166,6 +1227,9 @@
                 return false;
             }
             if (!validateEditPathRewrites()) {
+                return false;
+            }
+            if (!validateGDriveMappings()) {
                 return false;
             }
             if (!form.checkValidity()) {

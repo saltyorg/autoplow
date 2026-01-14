@@ -239,6 +239,10 @@ func (h *Handlers) TriggerCreate(w http.ResponseWriter, r *http.Request) {
 
 		mappingIDs := r.Form["gdrive_path_rewrite_from_id[]"]
 		mappingTargets := r.Form["gdrive_path_rewrite_to[]"]
+		if !hasGDrivePathMapping(mappingIDs, mappingTargets) {
+			respondError(http.StatusBadRequest, "At least one Google Drive path mapping is required")
+			return
+		}
 		mappings, err := h.resolveGDrivePathMappings(r.Context(), accountID, driveID, mappingIDs, mappingTargets)
 		if err != nil {
 			respondError(http.StatusBadRequest, "Invalid Google Drive path mapping: "+err.Error())
@@ -562,6 +566,10 @@ func (h *Handlers) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
 
 		mappingIDs := r.Form["gdrive_path_rewrite_from_id[]"]
 		mappingTargets := r.Form["gdrive_path_rewrite_to[]"]
+		if !hasGDrivePathMapping(mappingIDs, mappingTargets) {
+			respondError(http.StatusBadRequest, "At least one Google Drive path mapping is required", "/triggers/"+idStr)
+			return
+		}
 		mappings, err := h.resolveGDrivePathMappings(r.Context(), accountID, driveID, mappingIDs, mappingTargets)
 		if err != nil {
 			respondError(http.StatusBadRequest, "Invalid Google Drive path mapping: "+err.Error(), "/triggers/"+idStr)
@@ -825,6 +833,21 @@ func parsePathList(r *http.Request, fieldName string) []string {
 		}
 	}
 	return paths
+}
+
+func hasGDrivePathMapping(fromIDs, toPaths []string) bool {
+	max := len(fromIDs)
+	if len(toPaths) < max {
+		max = len(toPaths)
+	}
+	for i := 0; i < max; i++ {
+		fromID := strings.TrimSpace(fromIDs[i])
+		toPath := strings.TrimSpace(toPaths[i])
+		if fromID != "" && toPath != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func boolPtr(value bool) *bool {
