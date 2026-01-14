@@ -52,7 +52,16 @@
                             {{if eq .Status "pending"}}bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400{{end}}
                             {{if eq .Status "scanning"}}bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{{end}}
                             {{if eq .Status "failed"}}bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-400{{end}}
-                        ">{{.Status}}</span>
+                            {{if eq .Status "skipped"}}bg-gray-50 text-gray-700 dark:bg-gray-700 dark:text-gray-300{{end}}
+                        ">
+                            {{if eq .Status "scanning"}}
+                            <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            {{end}}
+                            {{.Status}}
+                        </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span class="pal-time" data-utc="{{isoTime .CreatedAt}}">{{formatTime .CreatedAt}}</span></td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
@@ -171,6 +180,10 @@
             <a href="/history/scans?status=completed"
                class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "completed"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
                Completed
+            </a>
+            <a href="/history/scans?status=skipped"
+               class="px-3 py-2 text-sm font-medium border-r border-gray-200 dark:border-gray-700 transition-colors {{if eq $status "skipped"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">
+               Skipped
             </a>
             <a href="/history/scans?status=failed"
                class="px-3 py-2 text-sm font-medium transition-colors {{if eq $status "failed"}}bg-indigo-600 text-white hover:bg-indigo-500{{else}}bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700{{end}}">

@@ -113,7 +113,13 @@ func (m *plexScanMatcher) PendingCount() int {
 	for _, record := range m.pending {
 		destPath, ok := m.destinationPaths[record.DestinationID]
 		if !ok || destPath == "" {
-			continue
+			if record.DestinationID != 0 {
+				continue
+			}
+			destPath = filepath.Clean(record.ScanPath)
+			if destPath == "" || destPath == "." {
+				continue
+			}
 		}
 		scanPath := filepath.Clean(record.ScanPath)
 		key := fmt.Sprintf("%d:%s", record.DestinationID, scanPath)
@@ -140,9 +146,10 @@ func (m *plexScanMatcher) HasPending(localPath string) bool {
 	for _, record := range m.pending {
 		destPath, ok := m.destinationPaths[record.DestinationID]
 		if !ok || destPath == "" {
-			continue
-		}
-		if !isUnderPath(cleanPath, destPath) {
+			if record.DestinationID != 0 {
+				continue
+			}
+		} else if !isUnderPath(cleanPath, destPath) {
 			continue
 		}
 

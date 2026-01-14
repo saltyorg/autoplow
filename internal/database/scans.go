@@ -14,6 +14,7 @@ const (
 	ScanStatusPending   ScanStatus = "pending"
 	ScanStatusScanning  ScanStatus = "scanning"
 	ScanStatusCompleted ScanStatus = "completed"
+	ScanStatusSkipped   ScanStatus = "skipped"
 	ScanStatusRetry     ScanStatus = "retry" // legacy status from removed retry scheduling
 	ScanStatusFailed    ScanStatus = "failed"
 )
@@ -191,7 +192,7 @@ func (db *db) UpdateScanStatus(id int64, status ScanStatus) error {
 	switch status {
 	case ScanStatusScanning:
 		_, err = db.exec(`UPDATE scans SET status = ?, started_at = ? WHERE id = ?`, status, time.Now(), id)
-	case ScanStatusCompleted:
+	case ScanStatusCompleted, ScanStatusSkipped:
 		_, err = db.exec(`UPDATE scans SET status = ?, completed_at = ? WHERE id = ?`, status, time.Now(), id)
 	default:
 		_, err = db.exec(`UPDATE scans SET status = ? WHERE id = ?`, status, id)
@@ -317,7 +318,7 @@ func (db *db) ClearScanHistory() (int64, error) {
 // DeleteOldScans deletes scans older than the given duration
 func (db *db) DeleteOldScans(age time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-age)
-	result, err := db.exec(`DELETE FROM scans WHERE created_at < ? AND status IN (?, ?, ?)`, cutoff, ScanStatusCompleted, ScanStatusFailed, ScanStatusRetry)
+	result, err := db.exec(`DELETE FROM scans WHERE created_at < ? AND status IN (?, ?, ?, ?)`, cutoff, ScanStatusCompleted, ScanStatusSkipped, ScanStatusFailed, ScanStatusRetry)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete old scans: %w", err)
 	}

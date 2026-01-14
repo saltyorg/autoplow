@@ -556,8 +556,8 @@ func (p *Processor) processBatch() {
 				Int64("scan_id", scanID).
 				Str("path", work.scan.Path).
 				Msg("Skipping scan (no eligible targets)")
-			if err := p.db.UpdateScanStatus(scanID, database.ScanStatusCompleted); err != nil {
-				log.Error().Err(err).Int64("scan_id", scanID).Msg("Failed to mark scan as completed")
+			if err := p.db.UpdateScanStatus(scanID, database.ScanStatusSkipped); err != nil {
+				log.Error().Err(err).Int64("scan_id", scanID).Msg("Failed to mark scan as skipped")
 			} else if p.sseBroker != nil {
 				p.sseBroker.Broadcast(sse.Event{
 					Type: sse.EventScanCompleted,
@@ -822,6 +822,7 @@ func (p *Processor) processScan(scan *database.Scan, triggerName string, targetI
 		default:
 		}
 
+		var plexWait <-chan struct{}
 		if scanningEnabled {
 			if len(targetPaths) > 0 {
 				if err := p.db.SetScanTargetPaths(scan.ID, targetPaths); err != nil {
@@ -899,9 +900,9 @@ func (p *Processor) processScan(scan *database.Scan, triggerName string, targetI
 				return
 			}
 
-			// Track Plex scan completion for upload-side gating.
+			// Track Plex scan completion for scan status and upload-side gating.
 			if p.plexTracker != nil && len(completionInfos) > 0 {
-				p.plexTracker.TrackScan(scan, completionInfos)
+				plexWait = p.plexTracker.TrackScan(scan, completionInfos)
 			}
 
 		} else {
@@ -909,6 +910,16 @@ func (p *Processor) processScan(scan *database.Scan, triggerName string, targetI
 				Int64("scan_id", scan.ID).
 				Str("path", scan.Path).
 				Msg("Scanning disabled, skipping target notifications")
+		}
+
+		if plexWait != nil {
+			log.Debug().Int64("scan_id", scan.ID).Str("path", scan.Path).Msg("Waiting for Plex scan completion")
+			select {
+			case <-p.ctx.Done():
+				log.Debug().Int64("scan_id", scan.ID).Msg("Scan cancelled while waiting for Plex scan completion")
+				return
+			case <-plexWait:
+			}
 		}
 
 		// Check for cancellation before marking complete

@@ -98,50 +98,74 @@ type scanRecord struct {
 	pending     bool
 	waiting     bool
 	completedAt time.Time
+	done        chan struct{}
 }
 
 // TrackScan registers a scan for Plex completion tracking.
-func (t *PlexTracker) TrackScan(scan *database.Scan, infos []targets.ScanCompletionInfo) {
+// It returns a channel that closes when tracking finishes for all targets.
+func (t *PlexTracker) TrackScan(scan *database.Scan, infos []targets.ScanCompletionInfo) <-chan struct{} {
+	done := make(chan struct{})
 	if t == nil || scan == nil || len(infos) == 0 {
-		return
+		close(done)
+		return done
 	}
 
 	localScanPath := filepath.Clean(scan.Path)
 	if localScanPath == "" || localScanPath == "." {
-		return
+		close(done)
+		return done
 	}
 
 	destinations, err := t.db.ListDestinationsWithPlexTracking()
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to list Plex tracking destinations")
-		return
-	}
-	if len(destinations) == 0 {
-		return
 	}
 
-	// Prefer the most specific destination match.
-	sort.Slice(destinations, func(i, j int) bool {
-		return len(destinations[i].LocalPath) > len(destinations[j].LocalPath)
-	})
+	destinationID := int64(0)
+	if len(destinations) > 0 {
+		// Prefer the most specific destination match.
+		sort.Slice(destinations, func(i, j int) bool {
+			return len(destinations[i].LocalPath) > len(destinations[j].LocalPath)
+		})
 
-	dest := matchDestination(destinations, localScanPath)
-	if dest == nil {
-		return
+		dest := matchDestination(destinations, localScanPath)
+		if dest != nil {
+			destinationID = dest.ID
+		}
 	}
 
+	waiters := make([]<-chan struct{}, 0, len(infos))
 	for _, info := range infos {
 		mappedScanPath := filepath.Clean(info.ScanPath)
 		if mappedScanPath == "" || mappedScanPath == "." {
 			mappedScanPath = localScanPath
 		}
-		t.trackScan(dest.ID, info.TargetID, mappedScanPath, info)
+		waiters = append(waiters, t.trackScan(destinationID, info.TargetID, mappedScanPath, info))
 	}
+
+	if len(waiters) == 0 {
+		close(done)
+		return done
+	}
+
+	go func() {
+		for _, waiter := range waiters {
+			if waiter == nil {
+				continue
+			}
+			<-waiter
+		}
+		close(done)
+	}()
+
+	return done
 }
 
-func (t *PlexTracker) trackScan(destinationID int64, targetID int64, mappedScanPath string, info targets.ScanCompletionInfo) {
+func (t *PlexTracker) trackScan(destinationID int64, targetID int64, mappedScanPath string, info targets.ScanCompletionInfo) <-chan struct{} {
 	if info.Target == nil {
-		return
+		done := make(chan struct{})
+		close(done)
+		return done
 	}
 
 	const minIdleThreshold = 60 * time.Second
@@ -165,13 +189,21 @@ func (t *PlexTracker) trackScan(destinationID int64, targetID int64, mappedScanP
 	record.completedAt = time.Time{}
 	if !record.waiting {
 		record.waiting = true
+		record.done = make(chan struct{})
 		startWait = true
 	}
+	done := record.done
 	t.mu.Unlock()
 
 	if startWait {
 		go t.waitForCompletion(key, info.Target, info.ScanPath, idleThreshold)
 	}
+
+	if done == nil {
+		done = make(chan struct{})
+		close(done)
+	}
+	return done
 }
 
 func (t *PlexTracker) waitForCompletion(key scanKey, target targets.Target, scanPath string, idleThreshold time.Duration) {
@@ -214,6 +246,7 @@ func (t *PlexTracker) waitForCompletion(key scanKey, target targets.Target, scan
 func (t *PlexTracker) finishRecord(key scanKey) {
 	var handler PlexScanCompletionHandler
 	var info PlexScanCompletion
+	var done chan struct{}
 
 	t.mu.Lock()
 	record := t.records[key]
@@ -230,8 +263,13 @@ func (t *PlexTracker) finishRecord(key scanKey) {
 		TargetID:      key.targetID,
 		ScanPath:      key.scanPath,
 	}
+	done = record.done
+	record.done = nil
 	t.mu.Unlock()
 
+	if done != nil {
+		close(done)
+	}
 	if handler != nil {
 		handler(info)
 	}
